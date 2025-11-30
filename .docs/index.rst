@@ -24,7 +24,7 @@ Welcome to RPEngine's documentation. This guide covers installation, usage, and 
    :maxdepth: 2
    :caption: DM Guide
 
-   guides/rulesets
+   guides/rulesets_clean
    guides/datasets
    guides/event-setup
    guides/event-run
