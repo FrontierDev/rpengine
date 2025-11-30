@@ -1,4 +1,4 @@
-Character Setup
+Event Setup
 ===============
 
 Create and manage character profiles.

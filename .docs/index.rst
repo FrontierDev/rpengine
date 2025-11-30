@@ -8,14 +8,13 @@ Welcome to RPEngine's documentation. This guide covers installation, usage, and 
    :caption: About RPEngine
 
    guides/introduction
-   guides/profiles
+   guides/customisation
    guides/secondary_features
 
 .. toctree::
    :maxdepth: 2
    :caption: User Guide
 
-   guides/customisation
    guides/character_setup
    guides/combat
    guides/crafting
@@ -27,9 +26,8 @@ Welcome to RPEngine's documentation. This guide covers installation, usage, and 
 
    guides/rulesets
    guides/datasets
-   guides/event-settings
-   guides/event-units
-   guides/event-control
+   guides/event-setup
+   guides/event-run
 
 Indices and tables
 ==================
