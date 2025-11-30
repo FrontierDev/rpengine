@@ -5,8 +5,8 @@ import os
 import sys
 
 project = 'RPEngine'
-copyright = '2024, FrontierDev'
-author = 'FrontierDev'
+copyright = '2024, Ortellus-ArgentDawn'
+author = 'Ortellus-ArgentDawn'
 release = '1.0'
 
 # Add project root to path
