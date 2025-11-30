@@ -22,6 +22,7 @@ Common.InlineIcons = {
     Check = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\check.png:12:12|t",
     Hidden = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\hidden.png:12:12|t",
     Flying = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\flying.png:12:12|t",
+    Reaction = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\reaction.png:12:12|t",
     Cancel = "|TInterface\\Buttons\\UI-GroupLoot-Pass-Up:12:12|t",
     Socket_Red = ("|T%s:12:12|t"):format(Common.SocketTextures.Red),
     Socket_Blue = ("|T%s:12:12|t"):format(Common.SocketTextures.Blue),
@@ -63,6 +64,24 @@ end
 -- Stat lookup hook.
 function Common:StatLookup(profile, id)
     RPE.Stats:GetValue(id)
+end
+
+--- Format a unit's display name for UI output
+-- For non-NPCs with realm names (e.g. "Ortellus-ArgentDawn"), strips the realm and capitalizes properly
+-- For NPCs, returns the name as-is
+---@param unit table Unit object with .name and .isNPC fields
+---@return string Formatted display name
+function Common:FormatUnitName(unit)
+    if not unit then return "Unknown" end
+    local name = unit.name or unit.key or "Unknown"
+    
+    -- Only format non-NPC player names
+    if not unit.isNPC and name:find("-") then
+        name = name:match("^[^-]+") or name
+        name = name:sub(1,1):upper() .. name:sub(2):lower()
+    end
+    
+    return name
 end
 
 function Common:GetEquipment()

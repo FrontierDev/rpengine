@@ -708,7 +708,7 @@ function ChatBoxWidget:BuildUI(opts)
     debugFilterIcon:SetTexture("Interface\\Addons\\RPEngine\\UI\\Textures\\filter.png")
     
     -- Quick filter buttons (shows messages from this channel)
-    local quickChannels = { "SAY", "YELL", "EMOTE", "PARTY", "RAID", "GUILD", "OFFICER", "WHISPER", "NPC" }
+    local quickChannels = { "SAY", "YELL", "EMOTE", "PARTY", "RAID", "GUILD", "OFFICER", "WHISPER", "NPC", "DICE" }
     self._quickChannels = quickChannels  -- Store reference for use in closures
     local buttonWidth = math.floor((quickChannelsFrame:GetWidth() - 40) / #quickChannels)  -- Reduced width to account for icon
     
@@ -903,6 +903,7 @@ function ChatBoxWidget:BuildUI(opts)
         GUILD = "GUILD", OFFICER = "OFFICER",
         WHISPER = "WHISPER", WHISPER_INFORM = "WHISPER",
         NPC = "NPC",
+        DICE = "DICE",
     }
     
     -- Function to check if a message should be displayed based on current filters
@@ -1133,9 +1134,40 @@ function ChatBoxWidget:PushNPCMessage(senderName, message)
     end
 end
 
+--- Push a dice/reaction roll message to the chat log (with DICE filter support)
+-- @param message string The reaction/roll outcome message
+function ChatBoxWidget:PushDiceMessage(message)
+    if not self.log or not message then return end
+    
+    -- Dice message color (grey/silver)
+    local r, g, b = 0.82, 0.82, 0.82  -- Silver/grey
+    
+    -- Store in chat history with DICE channel type
+    table.insert(self._chatHistory, {
+        text = message,
+        r = r,
+        g = g,
+        b = b,
+        ctype = "DICE",
+        level = "Info",
+    })
+    
+    -- Determine if message should be shown based on current filter state
+    local shouldShow = true
+    if self._filterMode and self._chatFilters then
+        -- Show if DICE is NOT filtered out
+        shouldShow = not self._chatFilters["DICE"]
+    end
+    
+    -- Show on Chat tab if passes filter
+    if self.currentTab == "Chat" and shouldShow then
+        self.log:AddMessage(message or "", r, g, b)
+    end
+end
+
 --- Push a debug message to the Debug tab of the chat log
 -- @param message string The debug message text
--- @param level string "Info", "Warning", or "Error" (defaults to "Info")
+-- @param level string "Info", "Warning", "Error", or "Dice" (defaults to "Info")
 function ChatBoxWidget:PushDebugMessage(message, level)
     if not self.log or not message then return end
     

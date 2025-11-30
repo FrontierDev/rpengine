@@ -30,10 +30,6 @@ local Colors       = assert(RPE_UI.Colors, "RPE_UI.Colors required")
 ---@field spawnRadiusMin number
 ---@field spawnRadiusMax number
 ---@field angleSpreadDeg number
----@field baseScale number
----@field popScale number
----@field critScale number
----@field fontTemplate string
 ---@field onlyWhenUIHidden boolean
 ---@field _pool table[]
 ---@field _active table[]
@@ -45,7 +41,6 @@ FloatingCombatText.__index = FloatingCombatText
 RPE_UI.Prefabs.FloatingCombatText = FloatingCombatText
 FloatingCombatText.Name = "FloatingCombatText"
 
--- Simple themed colors (override per call with opts.color)
 local THEME = {
     damage      = { 1.00, 0.25, 0.20, 1.0 },
     damageDealt = { 1.00, 1.00, 1.00, 1.00 },
@@ -58,17 +53,101 @@ local function clamp01(x) return (x < 0 and 0) or (x > 1 and 1) or x end
 -- Ease-out quad
 local function easeOutQuad(t) t = clamp01(t); return 1 - (1 - t) * (1 - t) end
 
--- Scale pop: quick overshoot then settle (crit uses larger peak)
-local function popScaleAt(t, base, peak)
-    t = clamp01(t)
-    if t <= 0.12 then
-        local k = t / 0.12
-        return base + (peak - base) * (0.2 + 0.8 * k)
-    elseif t <= 0.25 then
-        local k = (t - 0.12) / 0.13
-        return peak + (1 - peak) * k
+-- Helper: format numbers for AddNumber (centralized formatting)
+local function formatNumberText(kind, amount, opts)
+    opts = opts or {}
+    if kind == "damage" then
+        opts.variant = opts.variant or "damage"
+        return string.format("-%s", tostring(amount)), opts
+    elseif kind == "heal" then
+        opts.variant = opts.variant or "heal"
+        return string.format("+%s", tostring(amount)), opts
+    else
+        opts.variant = opts.variant or kind
+        return tostring(amount), opts
     end
-    return 1
+end
+
+---@param name string
+---@param opts table|nil
+---@return FloatingCombatText
+function FloatingCombatText:New(name, opts)
+    opts = opts or {}
+
+    local parentFrame = (opts.parent and opts.parent.frame) or opts.parent or UIParent
+    local f = CreateFrame("Frame", name, parentFrame)
+    if opts.setAllPoints then
+        f:SetAllPoints(parentFrame)
+    else
+        f:SetSize(opts.width or 160, opts.height or 120)
+        f:SetPoint(opts.point or "CENTER", opts.relativeTo or parentFrame, opts.relativePoint or "CENTER", opts.x or 0, opts.y or 0)
+    end
+    f:EnableMouse(false)
+    f:SetClampedToScreen(true)
+
+    ---@type FloatingCombatText
+    local selfObj = FrameElement.New(self, "FloatingCombatText", f, opts.parent and opts.parent.frame and opts.parent or nil)
+
+    -- Config
+    selfObj.maxActive      = math.max(1, tonumber(opts.maxActive or 24))
+    selfObj.duration       = tonumber(opts.duration or 2.10)           -- seconds
+    selfObj.fadeStart      = clamp01(opts.fadeStart or 0.55)
+    selfObj.scrollDistance = tonumber(opts.scrollDistance or 72)       -- pixels
+    selfObj.direction      = (opts.direction == "DOWN") and "DOWN" or "UP"
+    selfObj.jitterX        = tonumber(opts.jitterX or 8)
+    selfObj.jitterY        = tonumber(opts.jitterY or selfObj.jitterX)
+    selfObj.spawnRadiusMin = tonumber(opts.spawnRadiusMin or 32)        -- px
+    selfObj.spawnRadiusMax = tonumber(opts.spawnRadiusMax or 128)       -- px
+    selfObj.angleSpreadDeg = tonumber(opts.angleSpreadDeg or 60)       -- degrees
+    selfObj.baseScale      = tonumber(opts.baseScale or 1.5)
+    selfObj.popScale       = tonumber(opts.popScale or 1.0)
+    selfObj.critScale      = tonumber(opts.critScale or 1.0)
+    selfObj.fontTemplate   = opts.fontTemplate or "GameFontHighlightLarge"
+    selfObj.onlyWhenUIHidden = (opts.onlyWhenUIHidden == true)
+
+    -- Pools
+    selfObj._pool   = selfObj._pool or {}
+    selfObj._active = selfObj._active or {}
+    selfObj._originX = tonumber(opts.originX or 0)
+    selfObj._originY = tonumber(opts.originY or 0)
+
+    -- WorldFrame parenting extras: scale sync + optional hide when UI shown
+    if parentFrame == WorldFrame then
+        f:SetFrameStrata("DIALOG")
+        f:SetToplevel(true)
+        f:SetIgnoreParentScale(true)
+
+        local function SyncScale()
+            local s = (UIParent and UIParent.GetScale and UIParent:GetScale()) or 1
+            f:SetScale(s)
+        end
+
+        local function UpdateMouseForUIVisibility()
+            if not selfObj.onlyWhenUIHidden then return end
+            local uiShown = (UIParent and UIParent.IsShown and UIParent:IsShown()) or false
+            f:EnableMouse(not uiShown)
+            if uiShown then selfObj:Hide() else selfObj:Show() end
+        end
+
+        -- Initial apply
+        SyncScale()
+        UpdateMouseForUIVisibility()
+
+        -- React to UIParent show/hide
+        if UIParent and UIParent.HookScript then
+            UIParent:HookScript("OnShow", function() SyncScale(); UpdateMouseForUIVisibility() end)
+            UIParent:HookScript("OnHide", function() SyncScale(); UpdateMouseForUIVisibility() end)
+        end
+
+        -- Persist scale on resolution/scale changes
+        selfObj._persistScaleProxy = selfObj._persistScaleProxy or CreateFrame("Frame")
+        selfObj._persistScaleProxy:RegisterEvent("UI_SCALE_CHANGED")
+        selfObj._persistScaleProxy:RegisterEvent("DISPLAY_SIZE_CHANGED")
+        selfObj._persistScaleProxy:SetScript("OnEvent", SyncScale)
+    end
+
+    f:SetScript("OnUpdate", function(_, dt) selfObj:_OnUpdate(dt or 0.016) end)
+    return selfObj
 end
 
 -- Acquire/release pooled entry
@@ -113,7 +192,7 @@ local function acquire(self)
         fadeStart = 0.6,
         isCrit = false,
         baseScale = 1.0,
-        popPeak   = 1.25,
+        popPeak   = 1.0,
         dirMult   = 1.0,
     }
 end
@@ -153,8 +232,8 @@ function FloatingCombatText:_OnUpdate(dt)
                 e.frame:SetAlpha(1)
             end
 
-            -- Pop/crit scaling near start
-            local scale = popScaleAt(e.t, e.baseScale, e.popPeak)
+            -- Constant scale (no pop) so entry only translates smoothly
+            local scale = e.baseScale or 1
             e.frame:SetScale(scale)
 
             i = i + 1
@@ -162,86 +241,7 @@ function FloatingCombatText:_OnUpdate(dt)
     end
 end
 
----@param name string
----@param opts table|nil
----@return FloatingCombatText
-function FloatingCombatText:New(name, opts)
-    opts = opts or {}
 
-    local parentFrame = (opts.parent and opts.parent.frame) or opts.parent or UIParent
-    local f = CreateFrame("Frame", name, parentFrame)
-    if opts.setAllPoints then
-        f:SetAllPoints(parentFrame)
-    else
-        f:SetSize(opts.width or 160, opts.height or 120)
-        f:SetPoint(opts.point or "CENTER", opts.relativeTo or parentFrame, opts.relativePoint or "CENTER", opts.x or 0, opts.y or 0)
-    end
-    f:EnableMouse(false)
-    f:SetClampedToScreen(true)
-
-    ---@type FloatingCombatText
-    local selfObj = FrameElement.New(self, "FloatingCombatText", f, opts.parent and opts.parent.frame and opts.parent or nil)
-
-    -- Config
-    selfObj.maxActive      = math.max(1, tonumber(opts.maxActive or 24))
-    selfObj.duration       = tonumber(opts.duration or 2.10)           -- seconds
-    selfObj.fadeStart      = clamp01(opts.fadeStart or 0.55)
-    selfObj.scrollDistance = tonumber(opts.scrollDistance or 72)       -- pixels
-    selfObj.direction      = (opts.direction == "DOWN") and "DOWN" or "UP"
-    selfObj.jitterX        = tonumber(opts.jitterX or 8)
-    selfObj.jitterY        = tonumber(opts.jitterY or selfObj.jitterX)
-    selfObj.spawnRadiusMin = tonumber(opts.spawnRadiusMin or 32)        -- px
-    selfObj.spawnRadiusMax = tonumber(opts.spawnRadiusMax or 128)       -- px
-    selfObj.angleSpreadDeg = tonumber(opts.angleSpreadDeg or 60)       -- degrees
-    selfObj.baseScale      = tonumber(opts.baseScale or 1.0)
-    selfObj.popScale       = tonumber(opts.popScale or 1.18)           -- normal peak
-    selfObj.critScale      = tonumber(opts.critScale or 1.35)          -- crit peak
-    selfObj.fontTemplate   = opts.fontTemplate or "GameFontHighlightLarge"
-    selfObj.onlyWhenUIHidden = (opts.onlyWhenUIHidden == true)
-
-    selfObj._pool   = {}
-    selfObj._active = {}
-    selfObj._originX = tonumber(opts.originX or 0)
-    selfObj._originY = tonumber(opts.originY or 0)
-
-    -- WorldFrame parenting extras: scale sync + optional hide when UI shown
-    if parentFrame == WorldFrame then
-        f:SetFrameStrata("DIALOG")
-        f:SetToplevel(true)
-        f:SetIgnoreParentScale(true)
-
-        local function SyncScale()
-            local s = (UIParent and UIParent.GetScale and UIParent:GetScale()) or 1
-            f:SetScale(s)
-        end
-
-        local function UpdateMouseForUIVisibility()
-            if not selfObj.onlyWhenUIHidden then return end
-            local uiShown = (UIParent and UIParent.IsShown and UIParent:IsShown()) or false
-            f:EnableMouse(not uiShown)
-            if uiShown then selfObj:Hide() else selfObj:Show() end
-        end
-
-        -- Initial apply
-        SyncScale()
-        UpdateMouseForUIVisibility()
-
-        -- React to UIParent show/hide
-        if UIParent and UIParent.HookScript then
-            UIParent:HookScript("OnShow", function() SyncScale(); UpdateMouseForUIVisibility() end)
-            UIParent:HookScript("OnHide", function() SyncScale(); UpdateMouseForUIVisibility() end)
-        end
-
-        -- Persist scale on resolution/scale changes
-        selfObj._persistScaleProxy = selfObj._persistScaleProxy or CreateFrame("Frame")
-        selfObj._persistScaleProxy:RegisterEvent("UI_SCALE_CHANGED")
-        selfObj._persistScaleProxy:RegisterEvent("DISPLAY_SIZE_CHANGED")
-        selfObj._persistScaleProxy:SetScript("OnEvent", SyncScale)
-    end
-
-    f:SetScript("OnUpdate", function(_, dt) selfObj:_OnUpdate(dt or 0.016) end)
-    return selfObj
-end
 
 --- Add a floating text entry.
 --- @param text string|number
@@ -333,9 +333,9 @@ function FloatingCombatText:AddText(text, opts)
 
     e.driftX     = 0
     e.height     = tonumber(opts.distance or self.scrollDistance)
-    e.baseScale  = self.baseScale
+    e.baseScale  = (opts.scale and tonumber(opts.scale) or self.baseScale) or 1
     e.isCrit     = (opts.isCrit == true)
-    e.popPeak    = e.isCrit and self.critScale or self.popScale
+    e.popPeak    = 1
 
     e.frame:SetAlpha(1)
     e.frame:SetScale(1)
@@ -352,25 +352,11 @@ function FloatingCombatText:AddText(text, opts)
     table.insert(self._active, e)
 end
 
---- Convenience: number with variant preset and sign.
---- @param amount number
---- @param kind "damage"|"heal"|"xp"|nil
---- @param opts table|nil  (forwarded to AddText)
+
+
 function FloatingCombatText:AddNumber(amount, kind, opts)
-    local txt
-    if kind == "damage" then
-        txt = string.format("-%s", tostring(amount))
-        opts = opts or {}; opts.variant = opts.variant or "damage"
-    elseif kind == "heal" then
-        txt = string.format("+%s", tostring(amount))
-        opts = opts or {}; opts.variant = opts.variant or "heal"
-    else
-        txt = tostring(amount)
-        if kind then
-            opts = opts or {}; opts.variant = opts.variant or kind
-        end
-    end
-    self:AddText(txt, opts or {})
+    local txt, finalOpts = formatNumberText(kind, amount, opts)
+    self:AddText(txt, finalOpts)
 end
 
 function FloatingCombatText:Clear()

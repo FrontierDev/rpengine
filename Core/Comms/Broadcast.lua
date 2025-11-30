@@ -48,12 +48,10 @@ end
 
 
 -- local helpers
--- Percent-escape to keep ";" safe in descriptions
+-- Rulesets are sent as semicolon-delimited arrays and are chunked/reassembled by CommsManager
+-- No escaping needed - the system handles raw data correctly
 local function _esc(s)
-    if s == nil then return "" end
-    s = tostring(s)
-    s = s:gsub("%%", "%%25"):gsub(";", "%%3B"):gsub("\n", "%%0A")
-    return s
+    return tostring(s or "")
 end
 
 local function _toUnitId(x)
@@ -112,34 +110,7 @@ end
 
 
 --- Build a flat payload for the ruleset (name ; count ; k1 ; v1 ; k2 ; v2 ; ...)
-local function BuildRulesetPayload(rs)
-    local payload = {}
-    payload[#payload+1] = rs.name or "UnnamedRuleset"
-
-    -- count and k/v pairs (values serialized as strings; arrays become "{a,b,c}")
-    local kv = {}
-    local count = 0
-    for k, v in pairs(rs.rules or {}) do
-        count = count + 1
-        kv[#kv+1] = tostring(k)
-        if type(v) == "table" then
-            -- treat as array of scalars; join with commas and wrap in braces
-            local parts = {}
-            for i, vv in ipairs(v) do parts[i] = tostring(vv) end
-            kv[#kv+1] = "{" .. table.concat(parts, ",") .. "}"
-        elseif type(v) == "boolean" then
-            kv[#kv+1] = v and "true" or "false"
-        else
-            kv[#kv+1] = tostring(v)
-        end
-    end
-
-    payload[#payload+1] = tostring(count)
-    for i = 1, #kv do payload[#payload+1] = kv[i] end
-    return payload
-end
-
---- Broadcast my active ruleset to all members of the Supergroup.
+--- Stream ruleset to supergroup members (metadata first, then individual rules)
 function Broadcast:SendActiveRulesetToSupergroup()
     local RulesetDB      = RPE.Profile and RPE.Profile.RulesetDB
     local ActiveSupergrp = RPE.Core and RPE.Core.ActiveSupergroup
@@ -154,29 +125,420 @@ function Broadcast:SendActiveRulesetToSupergroup()
         return
     end
 
-    local payload = BuildRulesetPayload(rs)
+    self:_StreamRuleset(rs)
+end
 
-    -- 1) Send once to my party/raid if applicable.
-    if IsInRaid() then
-        Comms:Send("RULESET_PUSH", payload, "RAID")
-    elseif IsInGroup() then
-        Comms:Send("RULESET_PUSH", payload, "PARTY")
-    else
-        -- solo: nothing to send on group channel
+-- Stream a single ruleset to supergroup (sends metadata, then rules)
+function Broadcast:_StreamRuleset(rs)
+    if not rs or not rs.name then
+        RPE.Debug:Error("[Broadcast] Invalid ruleset to stream")
+        return
     end
 
-    -- 2) Whisper to any Supergroup members not covered by party/raid.
+    local ActiveSupergrp = RPE.Core and RPE.Core.ActiveSupergroup
+    local channels = {}
+    
+    -- Determine channels to send on
+    if IsInRaid() then
+        channels[#channels+1] = { type = "RAID" }
+    elseif IsInGroup() then
+        channels[#channels+1] = { type = "PARTY" }
+    end
+    
+    -- Add supergroup members via whisper
     if ActiveSupergrp and ActiveSupergrp.GetMembers then
         local myKey = toKey(GetFullName("player"))
         for _, memberKey in ipairs(ActiveSupergrp:GetMembers()) do
             if memberKey ~= myKey and not IsInMyBlizzardGroup(memberKey) then
-                -- WHISPER targets are case-insensitive on modern clients; we have lowercased keys here.
-                Comms:Send("RULESET_PUSH", payload, "WHISPER", memberKey)
+                channels[#channels+1] = { type = "WHISPER", target = memberKey }
             end
         end
     end
 
-    RPE.Debug:Print(string.format("[Broadcast] Sent active ruleset '%s' to Supergroup.", rs.name))
+    if #channels == 0 then return end
+
+    -- Send metadata first
+    local metaPayload = {
+        rs.name,
+    }
+    
+    for _, ch in ipairs(channels) do
+        if ch.type == "WHISPER" then
+            Comms:Send("RULESET_META", metaPayload, ch.type, ch.target)
+        else
+            Comms:Send("RULESET_META", metaPayload, ch.type)
+        end
+    end
+
+    -- Stream each rule as individual key-value pair
+    for ruleKey, ruleValue in pairs(rs.rules or {}) do
+        -- Serialize the value (might be string, number, boolean, or table)
+        local valueStr
+        if type(ruleValue) == "string" then
+            valueStr = string.format("%q", ruleValue)  -- properly quoted string
+        elseif type(ruleValue) == "number" or type(ruleValue) == "boolean" then
+            valueStr = tostring(ruleValue)
+        elseif type(ruleValue) == "table" then
+            -- For table values, use _ser to serialize them
+            valueStr = self:_ser(ruleValue)
+        else
+            valueStr = "nil"
+        end
+        
+        -- Escape the serialized value for safe transmission
+        valueStr = _esc(valueStr)
+        
+        local rulePayload = { rs.name, ruleKey, valueStr }
+        for _, ch in ipairs(channels) do
+            if ch.type == "WHISPER" then
+                Comms:Send("RULESET_RULE", rulePayload, ch.type, ch.target)
+            else
+                Comms:Send("RULESET_RULE", rulePayload, ch.type)
+            end
+        end
+    end
+
+    -- Send completion signal
+    local completePayload = { rs.name }
+    for _, ch in ipairs(channels) do
+        if ch.type == "WHISPER" then
+            Comms:Send("RULESET_COMPLETE", completePayload, ch.type, ch.target)
+        else
+            Comms:Send("RULESET_COMPLETE", completePayload, ch.type)
+        end
+    end
+
+    -- Count rules (use pairs iteration to handle sparse tables)
+    local ruleCount = 0
+    for _ in pairs(rs.rules or {}) do ruleCount = ruleCount + 1 end
+    RPE.Debug:Print(string.format("[Broadcast] Streamed ruleset '%s' (%d rules)", rs.name, ruleCount))
+end
+
+--- Stream dataset objects to supergroup members (one object at a time)
+function Broadcast:SendActiveDatasetToSupergroup()
+    local DatasetDB      = RPE.Profile and RPE.Profile.DatasetDB
+    local ActiveSupergrp = RPE.Core and RPE.Core.ActiveSupergroup
+    if not DatasetDB then
+        RPE.Debug:Error("[Broadcast] DatasetDB missing; cannot send datasets.")
+        return
+    end
+
+    local names = DatasetDB.GetActiveNamesForCurrentCharacter()
+    if not names or #names == 0 then
+        RPE.Debug:Internal("[Broadcast] No active datasets for this character.")
+        return
+    end
+
+    -- Default datasets that don't need to be sent (built-in)
+    local DEFAULT_DATASETS = { "DefaultClassic", "Default5e", "DefaultWarcraft" }
+    local function isDefault(name)
+        for _, dname in ipairs(DEFAULT_DATASETS) do
+            if name == dname then return true end
+        end
+        return false
+    end
+
+    local sentNames = {}
+    
+    -- Stream each active dataset
+    for _, name in ipairs(names) do
+        if not isDefault(name) then
+            local ds = DatasetDB.GetByName(name)
+            if ds then
+                self:_StreamDataset(ds)
+                sentNames[#sentNames+1] = name
+            end
+        end
+    end
+
+    if #sentNames == 0 then
+        RPE.Debug:Internal("[Broadcast] Only default/inactive datasets active; nothing to send.")
+        return
+    end
+
+    RPE.Debug:Print(string.format("[Broadcast] Streaming %d custom datasets to Supergroup: %s", #sentNames, table.concat(sentNames, ", ")))
+end
+
+-- Stream a single dataset to supergroup (sends metadata, then objects)
+function Broadcast:_StreamDataset(ds)
+    if not ds or not ds.name then
+        RPE.Debug:Error("[Broadcast] Invalid dataset to stream")
+        return
+    end
+
+    -- Debug: log what's in the dataset before streaming
+    RPE.Debug:Internal(string.format("[Broadcast] Dataset '%s' before stream: items=%d, spells=%d, auras=%d, npcs=%d", 
+        ds.name, 
+        (ds.items and #(ds.items or {})) or 0,
+        (ds.spells and #(ds.spells or {})) or 0,
+        (ds.auras and #(ds.auras or {})) or 0,
+        (ds.npcs and #(ds.npcs or {})) or 0
+    ))
+    
+    -- Debug: also show actual keys
+    if ds.items then
+        local itemKeys = {}
+        for k in pairs(ds.items) do itemKeys[#itemKeys+1] = k end
+        RPE.Debug:Internal(string.format("[Broadcast] Dataset items: %s", table.concat(itemKeys, ", ")))
+    end
+
+    local ActiveSupergrp = RPE.Core and RPE.Core.ActiveSupergroup
+    local channels = {}
+    
+    -- Determine channels to send on
+    if IsInRaid() then
+        channels[#channels+1] = { type = "RAID" }
+    elseif IsInGroup() then
+        channels[#channels+1] = { type = "PARTY" }
+    end
+    
+    -- Add supergroup members via whisper
+    if ActiveSupergrp and ActiveSupergrp.GetMembers then
+        local myKey = toKey(GetFullName("player"))
+        for _, memberKey in ipairs(ActiveSupergrp:GetMembers()) do
+            if memberKey ~= myKey and not IsInMyBlizzardGroup(memberKey) then
+                channels[#channels+1] = { type = "WHISPER", target = memberKey }
+            end
+        end
+    end
+
+    if #channels == 0 then return end
+
+    -- Send metadata first (including autoActivate flag)
+    local metaPayload = {
+        ds.name,
+        tostring(ds.guid or ""),
+        tostring(ds.version or 1),
+        ds.author or "",
+        ds.notes or "",
+        "1",  -- autoActivate: 1=true (activate when received), 0=false (just save, don't activate)
+    }
+    
+    for _, ch in ipairs(channels) do
+        if ch.type == "WHISPER" then
+            Comms:Send("DATASET_META", metaPayload, ch.type, ch.target)
+        else
+            Comms:Send("DATASET_META", metaPayload, ch.type)
+        end
+    end
+
+    -- Stream items
+    for itemId, itemDef in pairs(ds.items or {}) do
+        RPE.Debug:Internal(string.format("[Broadcast] Item %s: type=%s, has_icon=%s", itemId, type(itemDef), 
+            (type(itemDef) == "table" and (itemDef.icon or itemDef.iconId)) or "N/A"))
+        
+        -- Ensure item has an icon field (check both 'icon' and 'iconId', normalize to 'icon')
+        local itemToSend = itemDef or {}
+        if type(itemToSend) == "table" then
+            itemToSend = {}
+            for k, v in pairs(itemDef) do itemToSend[k] = v end
+            -- Normalize icon field: use 'icon' if present, otherwise try 'iconId', otherwise default
+            if not itemToSend.icon then
+                itemToSend.icon = itemToSend.iconId or 134400
+            end
+            -- Remove iconId if it exists to avoid duplication
+            itemToSend.iconId = nil
+        end
+        
+        local serialized = self:_ser(itemToSend)
+        RPE.Debug:Internal(string.format("[Broadcast] Item %s serialized (%d bytes): %s", itemId, #serialized, serialized:sub(1, 150)))
+        -- Format: datasetName|itemId|rawSerializedObject (no escaping needed - object is last field)
+        local msg = ds.name .. "|" .. itemId .. "|" .. serialized
+        for _, ch in ipairs(channels) do
+            if ch.type == "WHISPER" then
+                Comms:Send("DATASET_ITEM", msg, ch.type, ch.target)
+            else
+                Comms:Send("DATASET_ITEM", msg, ch.type)
+            end
+        end
+    end
+
+    -- Stream spells
+    for spellId, spellDef in pairs(ds.spells or {}) do
+        -- Ensure spell has an icon field (default to 132222 if missing)
+        local spellToSend = spellDef or {}
+        if type(spellToSend) == "table" then
+            spellToSend = {}
+            for k, v in pairs(spellDef) do spellToSend[k] = v end
+            if not spellToSend.icon then
+                spellToSend.icon = 132222  -- Default spell icon
+            end
+        end
+        -- Format: datasetName|spellId|rawSerializedObject (no escaping needed - object is last field)
+        local msg = ds.name .. "|" .. spellId .. "|" .. self:_ser(spellToSend)
+        for _, ch in ipairs(channels) do
+            if ch.type == "WHISPER" then
+                Comms:Send("DATASET_SPELL", msg, ch.type, ch.target)
+            else
+                Comms:Send("DATASET_SPELL", msg, ch.type)
+            end
+        end
+    end
+
+    -- Stream auras
+    for auraId, auraDef in pairs(ds.auras or {}) do
+        -- Ensure aura has an icon field (default to 132223 if missing)
+        local auraToSend = auraDef or {}
+        if type(auraToSend) == "table" then
+            auraToSend = {}
+            for k, v in pairs(auraDef) do auraToSend[k] = v end
+            if not auraToSend.icon then
+                auraToSend.icon = 132223  -- Default aura icon
+            end
+        end
+        -- Format: datasetName|auraId|rawSerializedObject (no escaping needed - object is last field)
+        local msg = ds.name .. "|" .. auraId .. "|" .. self:_ser(auraToSend)
+        for _, ch in ipairs(channels) do
+            if ch.type == "WHISPER" then
+                Comms:Send("DATASET_AURA", msg, ch.type, ch.target)
+            else
+                Comms:Send("DATASET_AURA", msg, ch.type)
+            end
+        end
+    end
+
+    -- Stream NPCs
+    for npcId, npcDef in pairs(ds.npcs or {}) do
+        local npcToSend = npcDef or {}
+        if type(npcToSend) == "table" then
+            npcToSend = {}
+            for k, v in pairs(npcDef) do npcToSend[k] = v end
+        end
+        -- Format: datasetName|npcId|rawSerializedObject (no escaping needed - object is last field)
+        local msg = ds.name .. "|" .. npcId .. "|" .. self:_ser(npcToSend)
+        for _, ch in ipairs(channels) do
+            if ch.type == "WHISPER" then
+                Comms:Send("DATASET_NPC", msg, ch.type, ch.target)
+            else
+                Comms:Send("DATASET_NPC", msg, ch.type)
+            end
+        end
+    end
+
+    -- Stream extra categories (stats, interactions, recipes, achievements, etc.)
+    for categoryName, categoryItems in pairs(ds.extra or {}) do
+        if type(categoryItems) == "table" then
+            local messageType = "DATASET_" .. categoryName:upper()
+            for itemId, itemDef in pairs(categoryItems) do
+                local itemToSend = itemDef or {}
+                if type(itemToSend) == "table" then
+                    itemToSend = {}
+                    for k, v in pairs(itemDef) do itemToSend[k] = v end
+                end
+                -- Format: datasetName|itemId|rawSerializedObject (no escaping needed - object is last field)
+                local msg = ds.name .. "|" .. itemId .. "|" .. self:_ser(itemToSend)
+                for _, ch in ipairs(channels) do
+                    if ch.type == "WHISPER" then
+                        Comms:Send(messageType, msg, ch.type, ch.target)
+                    else
+                        Comms:Send(messageType, msg, ch.type)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Send completion signal
+    local completePayload = { ds.name }
+    for _, ch in ipairs(channels) do
+        if ch.type == "WHISPER" then
+            Comms:Send("DATASET_COMPLETE", completePayload, ch.type, ch.target)
+        else
+            Comms:Send("DATASET_COMPLETE", completePayload, ch.type)
+        end
+    end
+
+    local counts = ds:Counts()
+    local extraCounts = {}
+    for categoryName, categoryItems in pairs(ds.extra or {}) do
+        if type(categoryItems) == "table" then
+            local count = 0
+            for _ in pairs(categoryItems) do count = count + 1 end
+            if count > 0 then
+                table.insert(extraCounts, string.format("%s=%d", categoryName, count))
+            end
+        end
+    end
+    local extraStr = (#extraCounts > 0) and (", " .. table.concat(extraCounts, ", ")) or ""
+    RPE.Debug:Print(string.format("[Broadcast] Streamed dataset '%s' (%d items, %d spells, %d auras, %d npcs%s)",
+        ds.name, counts.items, counts.spells, counts.auras, counts.npcs, extraStr))
+end
+
+-- Simple table serializer for small objects (with escaping for safe transmission)
+-- Simple table serializer for small objects (NO internal escaping - escaping happens at transmission)
+function Broadcast:_ser(tbl)
+    if type(tbl) ~= "table" then return tostring(tbl) end
+    local parts = {}
+    
+    -- First, check if this looks like an array (has numeric indices)
+    local maxIndex = 0
+    local hasNumericKeys = false
+    for k in pairs(tbl) do
+        if type(k) == "number" then
+            hasNumericKeys = true
+            if k > maxIndex then maxIndex = k end
+        end
+    end
+    
+    -- If it looks like an array, serialize it as an array
+    if hasNumericKeys and maxIndex > 0 then
+        for i = 1, maxIndex do
+            local v = tbl[i]
+            local valueStr
+            if type(v) == "string" then
+                valueStr = string.format("%q", v)
+            elseif type(v) == "number" or type(v) == "boolean" then
+                valueStr = tostring(v)
+            elseif type(v) == "table" then
+                valueStr = self:_ser(v)
+            else
+                valueStr = "nil"
+            end
+            parts[#parts+1] = valueStr
+        end
+        -- Array: {val1,val2,...}
+        return "{" .. table.concat(parts, ",") .. "}"
+    end
+    
+    -- Otherwise serialize as a table with key=value pairs
+    -- Collect all keys and sort them for consistent ordering
+    local keys = {}
+    for k in pairs(tbl) do
+        if type(k) ~= "number" then  -- Skip numeric keys in dict mode
+            table.insert(keys, k)
+        end
+    end
+    table.sort(keys, function(a, b)
+        return tostring(a) < tostring(b)
+    end)
+    
+    -- Serialize in sorted order
+    for _, k in ipairs(keys) do
+        local v = tbl[k]
+        -- Determine if key needs quoting (valid Lua identifier: starts with letter/underscore, contains only alphanumeric/underscore)
+        local keyStr
+        if type(k) == "string" and k:match("^[a-zA-Z_][a-zA-Z0-9_]*$") then
+            keyStr = k  -- Valid identifier, use as-is
+        else
+            keyStr = string.format("[%q]", tostring(k))  -- Invalid identifier, use bracket notation with quoted key
+        end
+        
+        -- Serialize value
+        local valueStr
+        if type(v) == "string" then
+            valueStr = string.format("%q", v)
+        elseif type(v) == "number" or type(v) == "boolean" then
+            valueStr = tostring(v)
+        elseif type(v) == "table" then
+            valueStr = self:_ser(v)
+        else
+            valueStr = "nil"
+        end
+        
+        parts[#parts+1] = keyStr .. "=" .. valueStr
+    end
+    -- Return raw Lua table string (no escaping needed for pipe-delimited messages)
+    return "{" .. table.concat(parts, ",") .. "}"
 end
 
 function Broadcast:StartEvent(ev)

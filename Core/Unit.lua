@@ -164,10 +164,13 @@ function Unit:ApplyDamage(amount)
 
     if(self.id == RPE.Core.ActiveEvent:GetLocalPlayerUnitId()) then
         RPE.Core.Resources:Set("HEALTH", self.hp)
+        RPE.Core.CombatText.Screen:AddNumber(amount, "damage", { isCrit = false, direction = "DOWN" })
     end
 
     local ev = RPE.Core.ActiveEvent
     if ev and ev.MarkAttacked then ev:MarkAttacked(self.id) end
+
+    
 
     return self.hp, self:IsDead()
 end
@@ -183,6 +186,11 @@ function Unit:Heal(amount)
 
     local ev = RPE.Core.ActiveEvent
     if ev and ev.MarkProtected then ev:MarkProtected(self.id) end
+
+    if(self.id == RPE.Core.ActiveEvent:GetLocalPlayerUnitId()) then
+        RPE.Core.Resources:Set("HEALTH", self.hp)
+        RPE.Core.CombatText.Screen:AddNumber(amount, "heal", { isCrit = false, direction = "DOWN" })
+    end
 
     return self.hp
 end

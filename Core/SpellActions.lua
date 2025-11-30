@@ -143,13 +143,15 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
                 RPE.Debug:Internal(("  [%d] target=%s amount=%d crit=%s threat=%s"):
                     format(i, tostring(e.target), e.amount, tostring(e.crit), tostring(e.threat)))
 
-                -- Optional floating combat text
-                if RPE.Core.CombatText and RPE.Core.CombatText.Screen then
-                    RPE.Core.CombatText.Screen:AddText(e.amount, {
-                        variant = "damageDealt",
-                        isCrit = e.crit,
-                        direction = "UP"
-                    })
+                -- Show floating combat text for damage *dealt* by the controlled player (upwards).
+                -- This is distinct from damage *received* (Unit will display that on the target when it's the local player).
+                local controlledUnitId = GetMyUnitId and GetMyUnitId() or nil
+                if controlledUnitId and tonumber(cast and cast.caster) == tonumber(controlledUnitId) and tonumber(e.target) ~= tonumber(controlledUnitId) then
+                    if RPE.Core.CombatText and RPE.Core.CombatText.Screen and RPE.Core.CombatText.Screen.AddNumber then
+                        pcall(function()
+                            RPE.Core.CombatText.Screen:AddNumber(e.amount, "damageDealt", { isCrit = e.crit, direction = "UP" })
+                        end)
+                    end
                 end
 
                 -- Correct event emission
@@ -220,9 +222,18 @@ Actions:Register("HEAL", function(ctx, cast, targets, args)
             RPE.Debug:Internal(("HEAL entries to send: %d"):format(#entries))
             for i,e in ipairs(entries) do
                 RPE.Debug:Internal(("  [%d] target=%s amount=%d crit=%s"):format(i, tostring(e.target), e.amount, tostring(e.crit)))
-                RPE.Core.CombatText.Screen:AddText("+"..e.amount, { variant = "heal", isCrit = e.crit })
+                -- Show floating combat text for healing *dealt* by the controlled player (upwards).
+                local controlledUnitId = GetMyUnitId and GetMyUnitId() or nil
+                if controlledUnitId and tonumber(cast and cast.caster) == tonumber(controlledUnitId) and tonumber(e.target) ~= tonumber(controlledUnitId) then
+                    if RPE.Core.CombatText and RPE.Core.CombatText.Screen and RPE.Core.CombatText.Screen.AddNumber then
+                        pcall(function()
+                            RPE.Core.CombatText.Screen:AddNumber(e.amount, "heal", { isCrit = e.crit, direction = "UP" })
+                        end)
+                    end
+                end
             end
         end
+
         Broadcast:Heal(cast and cast.caster, entries)
     end
 end)

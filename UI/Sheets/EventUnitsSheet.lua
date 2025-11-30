@@ -386,11 +386,7 @@ function EventUnitsSheet:Refresh()
             local r, g, b = RPE_UI.Colors.Get(teamColorKey)
             local colorHex = string.format("|cff%02x%02x%02x", r * 255, g * 255, b * 255)
 
-            local name = u.name or u.key or ""
-            if not u.isNPC and name:find("-") then
-                name = name:match("^[^-]+") or name
-                name = name:sub(1,1):upper() .. name:sub(2):lower()
-            end
+            local name = (RPE.Common and RPE.Common:FormatUnitName(u)) or (u.name or u.key or "")
 
             if u.raidMarker and markerIcons[u.raidMarker] then
                 name = markerIcons[u.raidMarker] .. " " .. name

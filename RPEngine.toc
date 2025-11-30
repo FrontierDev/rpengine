@@ -126,6 +126,7 @@ UI/Prefabs/InteractionOptions.lua
 
 ## Widgets
 UI/Windows/Clipboard.lua
+UI/Widgets/LoadingWidget.lua
 UI/Widgets/TooltipWidget.lua
 UI/Widgets/EventWidget.lua
 UI/Widgets/ActionBarWidget.lua

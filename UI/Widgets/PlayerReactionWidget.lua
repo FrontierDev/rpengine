@@ -419,25 +419,32 @@ function PlayerReactionWidget:ShowReactions(reactions)
         elseif reactions.hitSystem == "complex" then
             -- Complex: show defense options for each threshold stat sent by spell
             local thresholdStats = reactions.thresholdStats or {}
+            local Stats = RPE and RPE.Stats
             
             for _, statId in ipairs(thresholdStats) do
-                -- Get icon from stat definition if available
-                local icon = 132093  -- Default icon
-                local Stats = RPE and RPE.Stats
-                if Stats and Stats.Get then
-                    local stat = Stats:Get(statId)
-                    if stat and stat.icon then
-                        icon = stat.icon
+                -- Validate stat exists before adding defense option
+                if not (Stats and Stats.Get and Stats:Get(statId)) then
+                    if RPE and RPE.Debug and RPE.Debug.Warning then
+                        RPE.Debug:Internal(("PlayerReactionWidget - Threshold stat '%s' not found, skipping"):format(tostring(statId)))
                     end
+                else
+                    -- Get icon from stat definition if available
+                    local icon = 132093  -- Default icon
+                    if Stats and Stats.Get then
+                        local stat = Stats:Get(statId)
+                        if stat and stat.icon then
+                            icon = stat.icon
+                        end
+                    end
+                    
+                    table.insert(defenseOptions, {
+                        icon = icon,
+                        defenseType = "complex",
+                        label = statId,  -- Use the stat ID as label
+                        statId = statId,
+                        handler = function() self:_handleComplexDefense(reactions, statId) end,
+                    })
                 end
-                
-                table.insert(defenseOptions, {
-                    icon = icon,
-                    defenseType = "complex",
-                    label = statId,  -- Use the stat ID as label
-                    statId = statId,
-                    handler = function() self:_handleComplexDefense(reactions, statId) end,
-                })
             end
         end
         
@@ -633,6 +640,21 @@ function PlayerReactionWidget:_handleSimpleDefense(reaction)
     local lhs = roll + defenceStat
     local hitResult = false
 
+    -- Display outcome
+    local attackerName = "Attacker"
+    if reaction and reaction.caster then
+        local attacker = RPE.Common and RPE.Common:FindUnitById(reaction.caster)
+        if attacker then
+            attackerName = (RPE.Common and RPE.Common:FormatUnitName(attacker)) or ("Unit " .. tostring(reaction.caster))
+        end
+    end
+    local defendSuccess = lhs >= (reaction.attackRoll or 0)
+    local outcomeText = defendSuccess and "defend" or "failed to defend"
+    local Debug = RPE and RPE.Debug
+    if Debug and Debug.Dice then
+        Debug:Dice(("You %s against %s. (%d vs %d)"):format(outcomeText, attackerName, lhs, reaction.attackRoll or 0))
+    end
+
     local PlayerReaction = RPE.Core and RPE.Core.PlayerReaction
     if PlayerReaction and PlayerReaction.Complete then
         PlayerReaction:Complete(hitResult, roll, lhs, 0)
@@ -645,6 +667,21 @@ function PlayerReactionWidget:_handleComplexDefense(reaction, statId)
     local lhs = roll + defenseStat
     local hitResult = false
 
+    -- Display outcome
+    local attackerName = "Attacker"
+    if reaction and reaction.caster then
+        local attacker = RPE.Common and RPE.Common:FindUnitById(reaction.caster)
+        if attacker then
+            attackerName = (RPE.Common and RPE.Common:FormatUnitName(attacker)) or ("Unit " .. tostring(reaction.caster))
+        end
+    end
+    local defendSuccess = lhs >= (reaction.attackRoll or 0)
+    local outcomeText = defendSuccess and "defend" or "failed to defend"
+    local Debug = RPE and RPE.Debug
+    if Debug and Debug.Dice then
+        Debug:Dice(("You %s against %s. (%d vs %d)"):format(outcomeText, attackerName, lhs, reaction.attackRoll or 0))
+    end
+
     local PlayerReaction = RPE.Core and RPE.Core.PlayerReaction
     if PlayerReaction and PlayerReaction.Complete then
         PlayerReaction:Complete(hitResult, roll, lhs, 0)
@@ -655,6 +692,19 @@ function PlayerReactionWidget:_handlePassDefense(reaction)
     local hitResult = false
     local roll = 0
     local lhs = 0
+
+    -- Display outcome
+    local attackerName = "Attacker"
+    if reaction and reaction.caster then
+        local attacker = RPE.Common and RPE.Common:FindUnitById(reaction.caster)
+        if attacker then
+            attackerName = (RPE.Common and RPE.Common:FormatUnitName(attacker)) or ("Unit " .. tostring(reaction.caster))
+        end
+    end
+    local Debug = RPE and RPE.Debug
+    if Debug and Debug.Dice then
+        Debug:Dice(("You passed against %s (no defense attempted)."):format(attackerName))
+    end
 
     local PlayerReaction = RPE.Core and RPE.Core.PlayerReaction
     if PlayerReaction and PlayerReaction.Complete then

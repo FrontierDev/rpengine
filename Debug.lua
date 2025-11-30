@@ -81,3 +81,19 @@ function Debug:Internal(message)
         chatBox:PushDebugMessage(message, "Internal")
     end
 end
+
+function Debug:Dice(message)
+    if not message or not debug then return end
+    local icons = (RPE and RPE.Common and RPE.Common.InlineIcons) or {}
+    local diceIcon = icons.Reaction
+    print(diceIcon .. " |cFF808080" .. message .. "|r")
+    
+    -- Push to ChatBoxWidget if available (as both chat message and debug message)
+    local chatBox = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
+    if chatBox then
+        -- Push as a chat message with "DICE" channel type (like NPC messages)
+        chatBox:PushDiceMessage(message)
+        -- Also push to debug tab
+        chatBox:PushDebugMessage(message, "Dice")
+    end
+end

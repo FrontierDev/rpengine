@@ -280,13 +280,23 @@ function ProfileDB.InitializeUI()
         -- onlyWhenUIHidden = false, -- uncomment if you want it visible all the time
     })
 
+
     RPE.Core.CombatText = RPE.Core.CombatText or {}
-    RPE.Core.CombatText.Screen =
-    RPE_UI.Prefabs.FloatingCombatText:New("RPE_FCT_Player", {
+    local fct = RPE_UI.Prefabs.FloatingCombatText:New("RPE_FCT_Player", {
         parent       = WorldFrame,
         setAllPoints = true,
         direction    = "UP",
     })
+    -- Attach methods directly for compatibility
+    -- Compatibility: use AddNumber for floating combat text
+    fct.ShowDamageReceived = function(inst, amount, isCrit)
+        inst:AddNumber(amount, "damage", { isCrit = isCrit })
+    end
+    
+    fct.ShowHealReceived = function(inst, amount, isCrit)
+        inst:AddNumber(amount, "heal", { isCrit = isCrit })
+    end
+    RPE.Core.CombatText.Screen = fct
 
     -- Create the action bar widget and hide it.
     local ABW = RPE.Core.Windows.ActionBarWidget or RPE_UI.Windows.ActionBarWidget.New({

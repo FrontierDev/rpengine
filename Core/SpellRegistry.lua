@@ -204,6 +204,18 @@ function SpellRegistry:RefreshFromDatasetNames(datasetNames)
     for _ in pairs(newMap) do count = count + 1 end
 
     self._spells = newMap
+
+    -- Auto-learn spells marked as alwaysKnown
+    local Profile = _G.RPE and _G.RPE.Profile
+    local charProfile = Profile and Profile.Active and Profile.Active()
+    if charProfile then
+        for id, spell in pairs(newMap) do
+            if spell.alwaysKnown then
+                charProfile:LearnSpell(id)
+            end
+        end
+    end
+
     _emitRefreshed(self, count)
     return count
 end

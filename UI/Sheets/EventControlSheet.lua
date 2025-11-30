@@ -23,6 +23,7 @@ local InventorySlot = RPE_UI.Prefabs.InventorySlot
 ---@field slots InventorySlot[]
 ---@field startButton TextButton
 ---@field pushButton TextButton
+---@field pushDatasetButton TextButton
 ---@field tickButton TextButton
 local EventControlSheet = {}
 _G.RPE_UI.Windows.EventControlSheet = EventControlSheet
@@ -112,11 +113,22 @@ function EventControlSheet:DrawButtons()
         text    = "Sync Ruleset",
         noBorder = false,
         onClick = function()
-            self.startButton:SetText("Start Event (ok)")
             RPE.Core.Comms.Broadcast:SendActiveRulesetToSupergroup()
         end,
     })
     self.buttonRow:Add(self.pushButton)
+
+    self.pushDatasetButton = TextButton:New("RPE_ECS_PushDataset", {
+        parent  = self.buttonRow,
+        width   = 100,
+        height  = 32,
+        text    = "Sync Dataset",
+        noBorder = false,
+        onClick = function()
+            RPE.Core.Comms.Broadcast:SendActiveDatasetToSupergroup()
+        end,
+    })
+    self.buttonRow:Add(self.pushDatasetButton)
 
     self.startButton = TextButton:New("RPE_ECS_Start_End", {
         parent  = self.buttonRow,

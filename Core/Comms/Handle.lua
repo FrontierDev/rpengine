@@ -13,10 +13,55 @@ local Handle       = RPE.Core.Comms.Handle or {}
 RPE.Core.Comms.Handle = Handle
 
 -- Helpers --
+-- Simple unescape for fields that come from array payloads using ; delimiter
 local function _unesc(s)
     if not s then return "" end
-    s = s:gsub("%%0A", "\n"):gsub("%%3B", ";"):gsub("%%25", "%%")
+    -- Unescape characters that were escaped for ; delimiter safety
+    s = s:gsub("%%0A", "\n")  -- Newline
+    s = s:gsub("%%59", ";")  -- Semicolon
+    s = s:gsub("%%", "%")  -- Percent (last!)
     return s
+end
+
+-- URL decode: unescape percent-encoded data (%HH sequences)
+local function _urldecode(s)
+    if not s then return s end
+    return s:gsub("%%([0-9A-Fa-f][0-9A-Fa-f])", function(hex)
+        return string.char(tonumber(hex, 16))
+    end)
+end
+
+-- Split string on multi-character delimiter
+local function _split(str, delim)
+    if not str or str == "" then return {} end
+    local result = {}
+    local start = 1
+    while true do
+        local pos = string.find(str, delim, start, true)  -- true = literal match
+        if not pos then
+            table.insert(result, str:sub(start))
+            break
+        end
+        table.insert(result, str:sub(start, pos - 1))
+        start = pos + #delim
+    end
+    return result
+end
+
+-- Simple deserializer for small objects
+local function _deserialize(str)
+    if not str or str == "" then return {} end
+    local chunk, err = loadstring("return " .. str)
+    if not chunk then
+        RPE.Debug:Error("[Handle] Failed to deserialize object: " .. tostring(err))
+        return nil
+    end
+    local ok, result = pcall(chunk)
+    if not ok then
+        RPE.Debug:Error("[Handle] Failed to evaluate object")
+        return nil
+    end
+    return result
 end
 
 local function _mgr()
@@ -24,39 +69,102 @@ local function _mgr()
     return ev._auraManager
 end
 
--- Receive a ruleset push: name ; count ; k1 ; v1 ; k2 ; v2 ; ...
-Comms:RegisterHandler("RULESET_PUSH", function(data, sender)
-    local RulesetDB       = RPE.Profile and RPE.Profile.RulesetDB
-    local RulesetProfile  = RPE.Profile and RPE.Profile.RulesetProfile
-    if not (RulesetDB and RulesetProfile) then
-        RPE.Debug:Error("[Handle] RulesetDB/Profile missing; cannot apply incoming ruleset.")
+-- Track in-progress rulesets per sender (name -> { rules = {} })
+local _inProgressRulesets = {}
+
+-- Receive ruleset metadata (first message in stream)
+Comms:RegisterHandler("RULESET_META", function(data, sender)
+    -- CRITICAL: Never process messages from ourselves - prevent self-corruption
+    -- Extract character name from sender (format: "Name-Realm" or just "Name")
+    local senderName = sender:match("^([^-]+)") or sender
+    local myName = UnitName("player")
+    if senderName == myName then
+        RPE.Debug:Internal(string.format("[Handle] Ignoring RULESET_META from self (%s)", sender))
+        return
+    end
+
+    local RulesetDB = RPE.Profile and RPE.Profile.RulesetDB
+    if not RulesetDB then
+        RPE.Debug:Error("[Handle] RulesetDB missing; cannot receive ruleset.")
         return
     end
 
     local args = { strsplit(";", data) }
     local name = args[1]
-    local n    = tonumber(args[2] or "0") or 0
-
     if not name or name == "" then
-        RPE.Debug:Error("[Handle] RULESET_PUSH missing ruleset name.")
+        RPE.Debug:Error("[Handle] RULESET_META missing ruleset name")
         return
     end
 
-    -- Rebuild rules table
-    local rules = {}
-    local idx = 3
-    for i = 1, n do
-        local k = args[idx];      idx = idx + 1
-        local v = args[idx];      idx = idx + 1
-        if k and k ~= "" then
-            rules[k] = v -- keep as string (ActiveRules will coerce/parse)
-        end
+    -- Initialize in-progress ruleset
+    _inProgressRulesets[sender] = { name = name, rules = {} }
+    RPE.Debug:Internal(string.format("[Handle] Starting ruleset stream for '%s' from %s", name, sender))
+end)
+
+-- Receive individual rule (key-value pair)
+Comms:RegisterHandler("RULESET_RULE", function(data, sender)
+    -- Ignore if no in-progress ruleset from this sender
+    local inProgress = _inProgressRulesets[sender]
+    if not inProgress then
+        RPE.Debug:Internal(string.format("[Handle] Received RULESET_RULE with no matching RULESET_META from %s", sender))
+        return
+    end
+
+    local args = { strsplit(";", data) }
+    local rulesetName = args[1]
+    local ruleKey = args[2]
+    local ruleValue = args[3]  -- already escaped
+
+    if not ruleKey or ruleValue == nil then
+        RPE.Debug:Error("[Handle] RULESET_RULE missing key or value")
+        return
+    end
+
+    -- Unescape the value
+    local unescapedValue = _unesc(ruleValue)
+    
+    -- Deserialize the value (might be string, number, boolean, or table)
+    local chunk, err = loadstring("return " .. unescapedValue)
+    if not chunk then
+        RPE.Debug:Error(string.format("[Handle] Failed to deserialize rule value: %s", tostring(err)))
+        return
+    end
+    
+    local ok, value = pcall(chunk)
+    if not ok then
+        RPE.Debug:Error(string.format("[Handle] Failed to evaluate rule value for key '%s'", ruleKey))
+        return
+    end
+
+    -- Store in in-progress ruleset
+    inProgress.rules[ruleKey] = value
+end)
+
+-- Receive ruleset completion signal
+Comms:RegisterHandler("RULESET_COMPLETE", function(data, sender)
+    local inProgress = _inProgressRulesets[sender]
+    if not inProgress then
+        RPE.Debug:Internal(string.format("[Handle] Received RULESET_COMPLETE with no matching RULESET_META from %s", sender))
+        return
+    end
+
+    local RulesetDB = RPE.Profile and RPE.Profile.RulesetDB
+    if not RulesetDB then
+        RPE.Debug:Error("[Handle] RulesetDB missing; cannot save ruleset.")
+        _inProgressRulesets[sender] = nil
+        return
+    end
+
+    local name = inProgress.name
+    if not name or name == "" then
+        RPE.Debug:Error("[Handle] RULESET_COMPLETE invalid ruleset name")
+        _inProgressRulesets[sender] = nil
+        return
     end
 
     -- Upsert ruleset locally
-    local rs = RulesetDB.GetOrCreateByName(name, { rules = rules })
-    -- Overwrite rules (so updates replace prior)
-    rs.rules = rules
+    local rs = RulesetDB.GetOrCreateByName(name, { rules = inProgress.rules })
+    rs.rules = inProgress.rules
     rs.updatedAt = time() or rs.updatedAt
     RulesetDB.Save(rs)
 
@@ -68,10 +176,442 @@ Comms:RegisterHandler("RULESET_PUSH", function(data, sender)
         RPE.ActiveRules:SetRuleset(rs)
     end
 
-    RPE.Debug:Print(string.format("[Handle] Applied incoming ruleset '%s' from %s and set it active.", name, sender))
+    -- Apply dataset requirements from the ruleset
+    if RPE.Profile and RPE.Profile.DatasetDB then
+        local DatasetDB = RPE.Profile.DatasetDB
+        local required = rs:GetRule("dataset_require")
+        local exclusive = rs:GetRule("dataset_exclusive")
+        
+        -- dataset_require should be a comma-separated string or a table
+        local requiredList = {}
+        if type(required) == "string" and required ~= "" then
+            -- Parse comma-separated list: "DS1,DS2,DS3"
+            for dsName in required:gmatch("[^,]+") do
+                dsName = dsName:match("^%s*(.-)%s*$")  -- trim whitespace
+                if dsName ~= "" then
+                    table.insert(requiredList, dsName)
+                end
+            end
+        elseif type(required) == "table" then
+            requiredList = required
+        end
+        
+        if #requiredList > 0 then
+            -- Activate required datasets
+            if exclusive and tonumber(exclusive) == 1 then
+                -- Exclusive mode: ONLY required datasets are active
+                DatasetDB.SetActiveNamesForCurrentCharacter(requiredList)
+                RPE.Debug:Print(string.format("Activated %d required datasets (exclusive mode).", #requiredList))
+            else
+                -- Non-exclusive mode: ensure required datasets are active, keep others
+                local current = DatasetDB.GetActiveNamesForCurrentCharacter()
+                local active = current or {}
+                
+                -- Add required datasets to active list
+                local activeSet = {}
+                for _, dsName in ipairs(active) do
+                    activeSet[dsName] = true
+                end
+                
+                for _, dsName in ipairs(requiredList) do
+                    if not activeSet[dsName] then
+                        table.insert(active, dsName)
+                        activeSet[dsName] = true
+                    end
+                end
+                
+                DatasetDB.SetActiveNamesForCurrentCharacter(active)
+                RPE.Debug:Internal(string.format("[Handle] Ensured %d required datasets are active", #requiredList))
+            end
+            
+            -- Rebuild registries from all active datasets
+            if RPE.Core then
+                local function _refreshRegistry(reg, method)
+                    if reg and type(reg[method]) == "function" then
+                        pcall(function() reg[method](reg) end)
+                    end
+                end
+                _refreshRegistry(RPE.Core.ItemRegistry, "RefreshFromActiveDatasets")
+                _refreshRegistry(RPE.Core.SpellRegistry, "RefreshFromActiveDatasets")
+                _refreshRegistry(RPE.Core.AuraRegistry, "RefreshFromActiveDatasets")
+                _refreshRegistry(RPE.Core.NPCRegistry, "RefreshFromActiveDatasets")
+                _refreshRegistry(RPE.Core.RecipeRegistry, "RefreshFromActiveDatasets")
+                _refreshRegistry(RPE.Core.InteractionRegistry, "RefreshFromActiveDatasets")
+                _refreshRegistry(RPE.Core.StatRegistry, "RefreshFromActiveDatasets")
+            end
+        end
+    end
+
+    -- Cleanup
+    _inProgressRulesets[sender] = nil
+
+    local ruleCount = 0
+    for _ in pairs(inProgress.rules) do ruleCount = ruleCount + 1 end
+    RPE.Debug:Print(string.format("Applied Ruleset '%s' from %s (%d rules).", name, sender, ruleCount))
+end)
+
+-- Receive dataset push: count ; dataset_export1 ; dataset_export2 ; ...
+-- Receive streaming dataset: metadata, then objects, then complete signal
+-- Track in-progress datasets per sender
+local _inProgressDatasets = {}
+
+Comms:RegisterHandler("DATASET_META", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] DATASET_META FULL DATA:\n%s", data))
+    -- CRITICAL: Never process messages from ourselves - prevent self-corruption
+    -- Extract character name from sender (format: "Name-Realm" or just "Name")
+    local senderName = sender:match("^([^-]+)") or sender
+    local myName = UnitName("player")
+    if senderName == myName then
+        RPE.Debug:Internal(string.format("[Handle] Ignoring DATASET_META from self (%s)", sender))
+        return
+    end
+    
+    local DatasetDB = RPE.Profile and RPE.Profile.DatasetDB
+    local Dataset = RPE.Profile and RPE.Profile.Dataset
+    
+    if not (DatasetDB and Dataset) then
+        RPE.Debug:Error("[Handle] DatasetDB/Dataset missing; cannot receive datasets.")
+        return
+    end
+
+    local args = { strsplit(";", data) }
+    local name = args[1]
+    local guid = args[2]
+    local version = tonumber(args[3]) or 1
+    local author = args[4]
+    local notes = args[5]
+    local autoActivate = (args[6] == "1")  -- Default to true if not specified
+    
+    if not name or name == "" then
+        RPE.Debug:Error("[Handle] DATASET_META missing name")
+        return
+    end
+    
+    -- Create or update dataset
+    local ds = DatasetDB.GetByName(name) or Dataset:New(name)
+    ds.guid = guid ~= "" and guid or ds.guid
+    ds.version = version
+    ds.author = author ~= "" and author or nil
+    ds.notes = notes ~= "" and notes or nil
+    
+    -- Clear existing data for fresh import
+    ds.items = {}
+    ds.spells = {}
+    ds.auras = {}
+    ds.npcs = {}
+    ds.extra = {}  -- Initialize extra categories for streaming
+    
+    -- Track this dataset as in-progress with autoActivate flag
+    if not _inProgressDatasets[sender] then _inProgressDatasets[sender] = {} end
+    _inProgressDatasets[sender][name] = { ds = ds, autoActivate = autoActivate }
+    
+    RPE.Debug:Internal(string.format("[Handle] Creating dataset '%s' from %s (autoActivate=%s)", name, sender, tostring(autoActivate)))
+end)
+
+Comms:RegisterHandler("DATASET_ITEM", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] DATASET_ITEM FULL DATA (length %d):\n%s", #data, data))
+    -- CRITICAL: Never process messages from ourselves - prevent self-corruption
+    local senderName = sender:match("^([^-]+)") or sender
+    local myName = UnitName("player")
+    if senderName == myName then
+        RPE.Debug:Internal(string.format("[Handle] Ignoring DATASET_ITEM from self (%s)", sender))
+        return
+    end
+    
+    -- Format: datasetName|itemId|rawSerializedObject
+    local firstPipe = data:find("|", 1, true)
+    if not firstPipe then return end
+    
+    local name = data:sub(1, firstPipe - 1)
+    local remainder = data:sub(firstPipe + 1)
+    local secondPipe = remainder:find("|", 1, true)
+    if not secondPipe then return end
+    
+    local itemId = remainder:sub(1, secondPipe - 1)
+    local defStr = remainder:sub(secondPipe + 1)
+    
+    if not _inProgressDatasets[sender] or not _inProgressDatasets[sender][name] then
+        RPE.Debug:Error(string.format("[Handle] DATASET_ITEM for unknown dataset '%s' from %s", name, sender))
+        return
+    end
+    
+    local tracking = _inProgressDatasets[sender][name]
+    local ds = tracking.ds or tracking
+    RPE.Debug:Internal(string.format("[Handle] Item %s raw string (first 150 chars): %s", itemId, (defStr or ""):sub(1, 150)))
+    RPE.Debug:Internal(string.format("[Handle] Item %s FULL STRING TO DESERIALIZE:\n%s", itemId, defStr))
+    local def = _deserialize(defStr)
+    
+    -- Always add the item, even if def is nil (empty item definition)
+    ds.items[itemId] = def or {}
+    if def then
+        RPE.Debug:Internal(string.format("[Handle] Added item %s to dataset '%s': name=%s, icon=%s, type=%s", itemId, name, def.name or "N/A", def.icon or "missing", type(def)))
+    else
+        RPE.Debug:Internal(string.format("[Handle] Added item %s to dataset '%s' (def=nil)", itemId, name))
+    end
+end)
+
+Comms:RegisterHandler("DATASET_SPELL", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] DATASET_SPELL FULL DATA (length %d):\n%s", #data, data))
+    -- CRITICAL: Never process messages from ourselves - prevent self-corruption
+    local senderName = sender:match("^([^-]+)") or sender
+    local myName = UnitName("player")
+    if senderName == myName then
+        RPE.Debug:Internal(string.format("[Handle] Ignoring DATASET_SPELL from self (%s)", sender))
+        return
+    end
+    
+    -- Format: datasetName|spellId|rawSerializedObject
+    RPE.Debug:Internal(string.format("[Handle] DATASET_SPELL raw data length: %d, first 300 chars: %s", #data, data:sub(1, 300)))
+    local firstPipe = data:find("|", 1, true)
+    if not firstPipe then 
+        RPE.Debug:Error(string.format("[Handle] DATASET_SPELL has no first pipe delimiter"))
+        return 
+    end
+    
+    local name = data:sub(1, firstPipe - 1)
+    local remainder = data:sub(firstPipe + 1)
+    local secondPipe = remainder:find("|", 1, true)
+    if not secondPipe then 
+        RPE.Debug:Error(string.format("[Handle] DATASET_SPELL has no second pipe delimiter (name=%s)", name))
+        return 
+    end
+    
+    local spellId = remainder:sub(1, secondPipe - 1)
+    local defStr = remainder:sub(secondPipe + 1)
+    
+    RPE.Debug:Internal(string.format("[Handle] DATASET_SPELL parsed: name=%s, id=%s, defStr length=%d, last 100 chars: %s", name, spellId, #defStr, defStr:sub(-100)))
+    
+    if not _inProgressDatasets[sender] or not _inProgressDatasets[sender][name] then
+        RPE.Debug:Error(string.format("[Handle] DATASET_SPELL for unknown dataset '%s' from %s", name, sender))
+        return
+    end
+    
+    local tracking = _inProgressDatasets[sender][name]
+    local ds = tracking.ds or tracking
+    RPE.Debug:Internal(string.format("[Handle] Spell %s raw string (first 150 chars): %s", spellId, (defStr or ""):sub(1, 150)))
+    RPE.Debug:Internal(string.format("[Handle] Spell %s FULL STRING TO DESERIALIZE:\n%s", spellId, defStr))
+    local def = _deserialize(defStr)
+    
+    -- Always add the spell, even if def is nil (empty spell definition)
+    ds.spells[spellId] = def or {}
+    RPE.Debug:Internal(string.format("[Handle] Added spell %s to dataset '%s' (def type: %s)", spellId, name, type(def)))
+end)
+
+Comms:RegisterHandler("DATASET_AURA", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] DATASET_AURA FULL DATA (length %d):\n%s", #data, data))
+    -- CRITICAL: Never process messages from ourselves - prevent self-corruption
+    local senderName = sender:match("^([^-]+)") or sender
+    local myName = UnitName("player")
+    if senderName == myName then
+        RPE.Debug:Internal(string.format("[Handle] Ignoring DATASET_AURA from self (%s)", sender))
+        return
+    end
+    
+    -- Format: datasetName|auraId|rawSerializedObject
+    local firstPipe = data:find("|", 1, true)
+    if not firstPipe then return end
+    
+    local name = data:sub(1, firstPipe - 1)
+    local remainder = data:sub(firstPipe + 1)
+    local secondPipe = remainder:find("|", 1, true)
+    if not secondPipe then return end
+    
+    local auraId = remainder:sub(1, secondPipe - 1)
+    local defStr = remainder:sub(secondPipe + 1)
+    
+    if not _inProgressDatasets[sender] or not _inProgressDatasets[sender][name] then
+        RPE.Debug:Error(string.format("[Handle] DATASET_AURA for unknown dataset '%s' from %s", name, sender))
+        return
+    end
+    
+    local tracking = _inProgressDatasets[sender][name]
+    local ds = tracking.ds or tracking
+    RPE.Debug:Internal(string.format("[Handle] Aura %s raw string (first 150 chars): %s", auraId, (defStr or ""):sub(1, 150)))
+    RPE.Debug:Internal(string.format("[Handle] Aura %s FULL STRING TO DESERIALIZE:\n%s", auraId, defStr))
+    local def = _deserialize(defStr)
+    
+    -- Always add the aura, even if def is nil (empty aura definition)
+    ds.auras[auraId] = def or {}
+    RPE.Debug:Internal(string.format("[Handle] Added aura %s to dataset '%s' (def type: %s)", auraId, name, type(def)))
+end)
+
+Comms:RegisterHandler("DATASET_NPC", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] DATASET_NPC FULL DATA (length %d):\n%s", #data, data))
+    -- CRITICAL: Never process messages from ourselves - prevent self-corruption
+    local senderName = sender:match("^([^-]+)") or sender
+    local myName = UnitName("player")
+    if senderName == myName then
+        RPE.Debug:Internal(string.format("[Handle] Ignoring DATASET_NPC from self (%s)", sender))
+        return
+    end
+    
+    -- Format: datasetName|npcId|rawSerializedObject
+    local firstPipe = data:find("|", 1, true)
+    if not firstPipe then return end
+    
+    local name = data:sub(1, firstPipe - 1)
+    local remainder = data:sub(firstPipe + 1)
+    local secondPipe = remainder:find("|", 1, true)
+    if not secondPipe then return end
+    
+    local npcId = remainder:sub(1, secondPipe - 1)
+    local defStr = remainder:sub(secondPipe + 1)
+    
+    if not _inProgressDatasets[sender] or not _inProgressDatasets[sender][name] then
+        RPE.Debug:Error(string.format("[Handle] DATASET_NPC for unknown dataset '%s' from %s", name, sender))
+        return
+    end
+    
+    local tracking = _inProgressDatasets[sender][name]
+    local ds = tracking.ds or tracking
+    RPE.Debug:Internal(string.format("[Handle] NPC %s raw string (first 150 chars): %s", npcId, (defStr or ""):sub(1, 150)))
+    RPE.Debug:Internal(string.format("[Handle] NPC %s FULL STRING TO DESERIALIZE:\n%s", npcId, defStr))
+    local def = _deserialize(defStr)
+    
+    -- Always add the NPC, even if def is nil (empty NPC definition)
+    ds.npcs[npcId] = def or {}
+    RPE.Debug:Internal(string.format("[Handle] Added NPC %s to dataset '%s' (def type: %s)", npcId, name, type(def)))
+end)
+
+-- Generic handler for DATASET_XXX extra category messages
+-- Matches DATASET_STATS, DATASET_INTERACTIONS, DATASET_RECIPES, etc.
+local function _registerExtraCategoryHandler(categoryName)
+    local messageType = "DATASET_" .. categoryName:upper()
+    Comms:RegisterHandler(messageType, function(data, sender)
+        -- CRITICAL: Never process messages from ourselves - prevent self-corruption
+        local senderName = sender:match("^([^-]+)") or sender
+        local myName = UnitName("player")
+        if senderName == myName then
+            RPE.Debug:Internal(string.format("[Handle] Ignoring %s from self (%s)", messageType, sender))
+            return
+        end
+        
+        -- Format: datasetName|itemId|rawSerializedObject
+        local firstPipe = data:find("|", 1, true)
+        if not firstPipe then return end
+        
+        local name = data:sub(1, firstPipe - 1)
+        local remainder = data:sub(firstPipe + 1)
+        local secondPipe = remainder:find("|", 1, true)
+        if not secondPipe then return end
+        
+        local itemId = remainder:sub(1, secondPipe - 1)
+        local defStr = remainder:sub(secondPipe + 1)
+        
+        if not _inProgressDatasets[sender] or not _inProgressDatasets[sender][name] then
+            RPE.Debug:Error(string.format("[Handle] %s for unknown dataset '%s' from %s", messageType, name, sender))
+            return
+        end
+        
+        local tracking = _inProgressDatasets[sender][name]
+        local ds = tracking.ds or tracking
+        RPE.Debug:Internal(string.format("[Handle] %s %s raw string (first 150 chars): %s", categoryName, itemId, (defStr or ""):sub(1, 150)))
+        RPE.Debug:Internal(string.format("[Handle] %s %s FULL STRING TO DESERIALIZE:\n%s", categoryName, itemId, defStr))
+        local def = _deserialize(defStr)
+        
+        -- Ensure the extra table exists
+        ds.extra = ds.extra or {}
+        -- Ensure the category exists within extra
+        ds.extra[categoryName] = ds.extra[categoryName] or {}
+        
+        -- Add the item to the extra category
+        ds.extra[categoryName][itemId] = def or {}
+        RPE.Debug:Internal(string.format("[Handle] Added %s %s to dataset '%s' (def type: %s)", categoryName, itemId, name, type(def)))
+    end)
+end
+
+-- Pre-register handlers for common extra categories
+_registerExtraCategoryHandler("stats")
+_registerExtraCategoryHandler("interactions")
+_registerExtraCategoryHandler("recipes")
+_registerExtraCategoryHandler("achievements")
+
+Comms:RegisterHandler("DATASET_COMPLETE", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] DATASET_COMPLETE FULL DATA:\n%s", data))
+    -- CRITICAL: Never process messages from ourselves - prevent self-corruption
+    local senderName = sender:match("^([^-]+)") or sender
+    local myName = UnitName("player")
+    if senderName == myName then
+        RPE.Debug:Internal(string.format("[Handle] Ignoring DATASET_COMPLETE from self (%s)", sender))
+        return
+    end
+    
+    local DatasetDB = RPE.Profile and RPE.Profile.DatasetDB
+    
+    if not DatasetDB then
+        RPE.Debug:Error("[Handle] DatasetDB missing; cannot finalize datasets.")
+        return
+    end
+    
+    local args = { strsplit(";", data) }
+    local name = args[1]
+    
+    if not _inProgressDatasets[sender] or not _inProgressDatasets[sender][name] then
+        RPE.Debug:Error(string.format("[Handle] DATASET_COMPLETE for unknown dataset '%s' from %s", name, sender))
+        return
+    end
+    
+    local tracking = _inProgressDatasets[sender][name]
+    local ds = tracking.ds or tracking
+    
+    -- Save to DB (but don't activate by default)
+    DatasetDB.Save(ds)
+    
+    -- Check if the current ruleset requires this dataset
+    local shouldActivate = false
+    if RPE.ActiveRules then
+        local required = RPE.ActiveRules:GetRequiredDatasets()
+        if required then
+            for _, reqName in ipairs(required) do
+                if reqName == name then
+                    shouldActivate = true
+                    break
+                end
+            end
+        end
+    end
+    
+    -- Only activate if required by current ruleset
+    if shouldActivate then
+        DatasetDB.SetActiveNamesForCurrentCharacter({ name })
+        
+        -- Rebuild registries from all active datasets when activated
+        if RPE.Core then
+            local function _refreshRegistry(reg, method)
+                if reg and type(reg[method]) == "function" then
+                    pcall(function() reg[method](reg) end)
+                end
+            end
+            _refreshRegistry(RPE.Core.ItemRegistry, "RefreshFromActiveDatasets")
+            _refreshRegistry(RPE.Core.SpellRegistry, "RefreshFromActiveDatasets")
+            _refreshRegistry(RPE.Core.AuraRegistry, "RefreshFromActiveDatasets")
+            _refreshRegistry(RPE.Core.NPCRegistry, "RefreshFromActiveDatasets")
+            _refreshRegistry(RPE.Core.RecipeRegistry, "RefreshFromActiveDatasets")
+            _refreshRegistry(RPE.Core.InteractionRegistry, "RefreshFromActiveDatasets")
+            _refreshRegistry(RPE.Core.StatRegistry, "RefreshFromActiveDatasets")
+        end
+    end
+    
+    local counts = ds:Counts()
+    RPE.Debug:Print(string.format("[Handle] Completed dataset '%s' from %s (%d items, %d spells, %d auras, %d npcs)%s", 
+        name, sender, counts.items, counts.spells, counts.auras, counts.npcs,
+        shouldActivate and " [activated by ruleset]" or " [saved, not activated]"))
+    
+    -- Debug: log first item if exists
+    if ds.items then
+        local firstId = next(ds.items)
+        if firstId then
+            local firstItem = ds.items[firstId]
+            RPE.Debug:Internal(string.format("[Handle] First item in dataset: id=%s, has_icon=%s", firstId, (type(firstItem) == "table" and firstItem.icon) or "N/A"))
+        end
+    end
+    
+    -- Clean up
+    _inProgressDatasets[sender][name] = nil
 end)
 
 Comms:RegisterHandler("START_EVENT", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] START_EVENT FULL DATA (length %d):\n%s", #data, data))
     local args = { strsplit(";", data) }
     local id   = args[1]
     local name = args[2]
@@ -172,6 +712,7 @@ end)
 
 -- Receive an advance (either start of a new turn or a new tick)
 Comms:RegisterHandler("ADVANCE", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] ADVANCE FULL DATA:\n%s", data))
     local UnitClass = RPE.Core.Unit
     local args = { strsplit(";", data) }
     local id   = args[1]
@@ -312,6 +853,7 @@ end)
 
 
 Comms:RegisterHandler("END_EVENT", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] END_EVENT FULL DATA:\n%s", data))
 
     local ev = RPE.Core.ActiveEvent
     if not ev then
@@ -324,6 +866,7 @@ end)
 
 -- APPLY
 Comms:RegisterHandler("AURA_APPLY", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] AURA_APPLY FULL DATA:\n%s", data))
     if sender == UnitName("player") then return end
     local args = { strsplit(";", data) }
     local sId, tId = tonumber(args[1]) or 0, tonumber(args[2]) or 0
@@ -351,6 +894,7 @@ end)
 
 -- REMOVE: tId ; auraId ; fromSourceId
 Comms:RegisterHandler("AURA_REMOVE", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] AURA_REMOVE FULL DATA:\n%s", data))
     if sender == UnitName("player") then return end
     local args = { strsplit(";", data) }
     local tId  = tonumber(args[1]) or 0
@@ -371,6 +915,7 @@ end)
 
 -- DISPEL: tId ; typesCSV ; max ; helpful01
 Comms:RegisterHandler("AURA_DISPEL", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] AURA_DISPEL FULL DATA:\n%s", data))
     if sender == UnitName("player") then return end
     local args = { strsplit(";", data) }
     local tId  = tonumber(args[1]) or 0
@@ -395,6 +940,7 @@ end)
 -- === Scaffold: remote stat modifications (currently rejected) ===============
 -- STATMOD: tId ; auraId ; instanceId ; op ; statId ; value
 Comms:RegisterHandler("AURA_STATMOD", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] AURA_STATMOD FULL DATA:\n%s", data))
     -- Disabled by default: we don't accept remote stat writes yet.
     if RPE and RPE.Debug and RPE.Debug.Print then
         RPE.Debug:Print("[Handle] Ignored AURA_STATMOD from " .. tostring(sender) .. " (remote stat mods disabled).")
@@ -402,6 +948,7 @@ Comms:RegisterHandler("AURA_STATMOD", function(data, sender)
 end)
 
 Comms:RegisterHandler("DAMAGE", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] DAMAGE FULL DATA:\n%s", data))
     -- Do NOT early-return on self: SpellActions no longer applies locally.
     local args = { strsplit(";", data) }
     local i    = 1
@@ -433,6 +980,14 @@ Comms:RegisterHandler("DAMAGE", function(data, sender)
                 local getMyId = RPE.Core.GetLocalPlayerUnitId
                 local myId    = getMyId and getMyId() or nil
                 
+                if myId and tId == myId then
+                    -- Player took damage, show debug message
+                    local Debug = RPE and RPE.Debug
+                    if Debug and Debug.Print then
+                        Debug:Print(("You take %d %s damage."):format(amount, school))
+                    end
+                end
+                
                 if myId and sId == myId then
                     -- target:SetAttackedLast(true)
                 end
@@ -450,6 +1005,7 @@ Comms:RegisterHandler("DAMAGE", function(data, sender)
 end)
 
 Comms:RegisterHandler("HEAL", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] HEAL FULL DATA:\n%s", data))
     -- Do NOT early-return on self: SpellActions no longer applies locally.
     local args = { strsplit(";", data) }
     local i    = 1
@@ -498,6 +1054,7 @@ end)
 
 -- HEALTH: tId ; hp ; hpMax
 Comms:RegisterHandler("HEALTH", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] HEALTH FULL DATA:\n%s", data))
     local args = { strsplit(";", data) }
     local tId   = tonumber(args[1]) or 0
     local hp    = tonumber(args[2]) or 0
@@ -514,15 +1071,6 @@ Comms:RegisterHandler("HEALTH", function(data, sender)
     hpMax = Common:Clamp(hpMax, 1, hpMax)
     unit.hpMax = hpMax
     unit.hp    = hp
-
-    -- Debug
-    local debug = false
-    if debug and  RPE.Debug and RPE.Debug.Print then
-        RPE.Debug:Print(("%s%s → %d/%d")
-            :format(Common.InlineIcons.Health,
-                    unit.name or ("#" .. tId),
-                    unit.hp, unit.hpMax))
-    end
 
     -- UI refresh
     local myId = ev.GetLocalPlayerUnitId and ev:GetLocalPlayerUnitId()
@@ -539,6 +1087,7 @@ end)
 
 -- UNIT_HEALTH: tId ; hp ; hpMax (for any unit, including NPCs)
 Comms:RegisterHandler("UNIT_HEALTH", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] UNIT_HEALTH FULL DATA:\n%s", data))
     local args = { strsplit(";", data) }
     local tId   = tonumber(args[1]) or 0
     local hp    = tonumber(args[2]) or 0
@@ -555,15 +1104,6 @@ Comms:RegisterHandler("UNIT_HEALTH", function(data, sender)
     hpMax = Common:Clamp(hpMax, 1, hpMax)
     unit.hpMax = hpMax
     unit.hp    = hp
-
-    -- Debug
-    local debug = true
-    if debug and RPE.Debug and RPE.Debug.Print then
-        RPE.Debug:Print(("%s%s → %d/%d")
-            :format(Common.InlineIcons.Health,
-                    unit.name or ("#" .. tId),
-                    unit.hp, unit.hpMax))
-    end
 
     -- UI refresh - refresh EventWidget's portrait row if unit is in current tick
     if RPE.Core.Windows and RPE.Core.Windows.EventWidget then
@@ -599,7 +1139,7 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
     local auraEffectsJSON = args[i] or ""; i = i + 1
 
     if sId == 0 or tId == 0 or spellId == "" or spellName == "" then
-        RPE.Debug:Warning("[Handle] ATTACK_SPELL missing required fields")
+        RPE.Debug:Error("[Handle] ATTACK_SPELL missing required fields")
         return
     end
 
@@ -649,7 +1189,7 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
     -- Get active event and find attacker
     local ev = RPE.Core.ActiveEvent
     if not (ev and ev.units) then
-        RPE.Debug:Warning("[Handle] ATTACK_SPELL but no ActiveEvent")
+        RPE.Debug:Error("[Handle] ATTACK_SPELL but no ActiveEvent")
         return
     end
 
@@ -662,7 +1202,7 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
     end
 
     if not attacker then
-        RPE.Debug:Warning("[Handle] ATTACK_SPELL attacker not found: " .. tostring(sId))
+        RPE.Debug:Error("[Handle] ATTACK_SPELL attacker not found: " .. tostring(sId))
         return
     end
 
@@ -730,6 +1270,26 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
                 if target then
                     -- Apply total damage from all schools combined
                     target:ApplyDamage(totalDamage)
+                    
+                    -- Print damage breakdown message
+                    local damageMessage = "You take "
+                    local damageList = {}
+                    for school, amount in pairs(damageBySchool) do
+                        if tonumber(amount) and tonumber(amount) > 0 then
+                            table.insert(damageList, string.format("%d %s", math.floor(tonumber(amount)), school))
+                        end
+                    end
+                    if #damageList > 0 then
+                        damageMessage = damageMessage .. table.concat(damageList, ", ") .. " damage."
+                    else
+                        damageMessage = damageMessage .. totalDamage .. " damage."
+                    end
+                    
+                    local Debug = RPE and RPE.Debug
+                    if Debug and Debug.Print then
+                        Debug:Print(damageMessage)
+                    end
+                    
                     if RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget then
                         RPE.Core.Windows.PlayerUnitWidget:Refresh()
                     end
@@ -805,7 +1365,7 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
         
         PlayerReaction:Start(hitSystem, spell or { name = spellName, id = spellId }, dummyAction, sId, tId, onAttackComplete, attackDetails)
     else
-        RPE.Debug:Warning("[Handle] PlayerReaction module not available")
+        RPE.Debug:Error("[Handle] PlayerReaction module not available")
     end
 end)
 

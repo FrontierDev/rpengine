@@ -870,7 +870,31 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
         
         -- Base spell damage
         if act.key == "DAMAGE" and act.args then
-            local amt = tonumber(act.args.amount) or 0
+            local amt = 0
+            if type(act.args.amount) == "string" then
+                -- Evaluate formula using the caster's profile
+                local Formula = RPE.Core and RPE.Core.Formula
+                if Formula and Formula.Roll then
+                    amt = tonumber(Formula:Roll(act.args.amount, cast.profile)) or 0
+                else
+                    amt = tonumber(act.args.amount) or 0
+                end
+            else
+                amt = tonumber(act.args.amount) or 0
+            end
+            
+            -- Add per-rank scaling if applicable
+            if type(act.args.perRank) == "string" and act.args.perRank ~= "" then
+                local rank = (cast and cast.def and tonumber(cast.def.rank)) or 1
+                if rank > 1 then
+                    local Formula = RPE.Core and RPE.Core.Formula
+                    if Formula and Formula.Roll then
+                        local perRankAmt = tonumber(Formula:Roll(act.args.perRank, cast.profile)) or 0
+                        amt = amt + (perRankAmt * (rank - 1))
+                    end
+                end
+            end
+            
             local school = (act.args.school) or "Physical"
             amt = math.max(0, math.floor(amt))
             if amt > 0 then
@@ -919,7 +943,19 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
                                 
                                 -- Add damage from this on-hit effect
                                 if trigger.action.key == "DAMAGE" and trigger.action.args then
-                                    local amt = tonumber(trigger.action.args.amount) or 0
+                                    local amt = 0
+                                    if type(trigger.action.args.amount) == "string" then
+                                        -- Evaluate formula using the caster's profile
+                                        local Formula = RPE.Core and RPE.Core.Formula
+                                        if Formula and Formula.Roll then
+                                            amt = tonumber(Formula:Roll(trigger.action.args.amount, cast.profile)) or 0
+                                        else
+                                            amt = tonumber(trigger.action.args.amount) or 0
+                                        end
+                                    else
+                                        amt = tonumber(trigger.action.args.amount) or 0
+                                    end
+                                    
                                     local school = (trigger.action.args.school) or "Physical"
                                     amt = math.max(0, math.floor(amt))
                                     if amt > 0 then

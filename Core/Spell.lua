@@ -65,6 +65,7 @@ RPE.Core = RPE.Core or {}
 ---@field tags table|nil
 ---@field data table|nil
 ---@field npcOnly boolean|nil
+---@field alwaysKnown boolean|nil
 ---@field rank number
 ---@field maxRanks number|nil    
 ---@field unlockLevel number|nil    
@@ -215,6 +216,7 @@ function Spell:New(id, name, opts)
         tags        = type(opts.tags) == "table" and deepcopy(opts.tags) or nil,
         data        = type(opts.data) == "table" and deepcopy(opts.data) or {},
         npcOnly     = not not opts.npcOnly,
+        alwaysKnown = not not opts.alwaysKnown,
         rank        = tonumber(opts.rank) or 1,
         maxRanks     = tonumber(opts.maxRanks) or 1,
         unlockLevel  = tonumber(opts.unlockLevel) or 1,
@@ -733,6 +735,7 @@ function Spell:Serialize()
         tags        = self.tags and deepcopy(self.tags) or nil,
         data        = self.data and deepcopy(self.data) or nil,
         npcOnly     = not not self.npcOnly,
+        alwaysKnown = not not self.alwaysKnown,
         maxRanks     = self.maxRanks,
         unlockLevel  = self.unlockLevel,
         rankInterval = self.rankInterval,
@@ -753,6 +756,7 @@ function Spell.FromTable(t)
         tags        = t.tags,
         data        = t.data,
         npcOnly     = t.npcOnly,
+        alwaysKnown = t.alwaysKnown,
         maxRanks    = t.maxRanks,
         unlockLevel = t.unlockLevel,
         rankInterval= t.rankInterval,

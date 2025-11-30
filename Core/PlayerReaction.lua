@@ -57,6 +57,42 @@ function PlayerReaction:Start(hitSystem, spell, action, caster, target, onComple
         return
     end
 
+    -- Validate that required stats exist in the active dataset
+    local Stats = RPE and RPE.Stats
+    if hitSystem == "simple" and Stats and Stats.Get then
+        -- Simple system requires DEFENCE stat
+        if not Stats:Get("DEFENCE") then
+            if RPE and RPE.Debug and RPE.Debug.Warning then
+                RPE.Debug:Warning("PlayerReaction:Start - DEFENCE stat not found in active dataset")
+            end
+            return
+        end
+    elseif hitSystem == "complex" and Stats and Stats.Get then
+        -- Complex system requires at least ONE valid threshold stat
+        local thresholdStats = attackDetails and attackDetails.thresholdStats or {}
+        local hasValidStat = false
+        for _, statId in ipairs(thresholdStats) do
+            if Stats:Get(statId) then
+                hasValidStat = true
+                break
+            end
+        end
+        if not hasValidStat then
+            if RPE and RPE.Debug and RPE.Debug.Warning then
+                RPE.Debug:Warning("PlayerReaction:Start - No valid threshold stats found in active dataset")
+            end
+            return
+        end
+    elseif hitSystem == "ac" and Stats and Stats.Get then
+        -- AC system requires AC stat
+        if not Stats:Get("AC") then
+            if RPE and RPE.Debug and RPE.Debug.Warning then
+                RPE.Debug:Warning("PlayerReaction:Start - AC stat not found in active dataset")
+            end
+            return
+        end
+    end
+
     local reaction = {
         hitSystem = hitSystem,
         spell = spell,
