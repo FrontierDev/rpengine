@@ -1,0 +1,55 @@
+{
+    "Lua.runtime.version": "Lua 5.1",
+    "Lua.runtime.builtin": {
+        "basic": "disable",
+        "debug": "disable",
+        "io": "disable",
+        "math": "disable",
+        "os": "disable",
+        "package": "disable",
+        "string": "disable",
+        "table": "disable",
+        "utf8": "disable"
+    },
+    "Lua.workspace.library": [
+        "~\\.vscode\\extensions\\ketho.wow-api-0.21.0\\Annotations\\Core"
+    ],
+    "Lua.diagnostics.globals": [
+        "UISpecialFrames",
+        "SlashCmdList",
+        "DEFAULT_CHAT_FRAME",
+        "UIDropDownMenu_Initialize",
+        "ToggleDropDownMenu",
+        "UIDropDownMenu_AddButton",
+        "UIDropDownMenu_CreateInfo",
+        "ObjectiveTrackerFrame",
+        "UIFrameFlash",
+        "LowHealthFrame",
+        "UIDropDownMenu_AddSeparator",
+        "WorldFrame",
+        "UIErrorsFrame",
+        "ChatTypeInfo",
+        "CHAT_MSG_WHISPER",
+        "ChatEdit_OnEnterPressed",
+        "ChatEdit_ChooseBoxForSend",
+        "ChatEdit_ParseText",
+        "ChatEdit_SendText",
+        "ChatEdit_DeactivateChat",
+        "SOUNDKIT",
+        "DYNAMIC",
+        "StaticPopupDialogs",
+        "StaticPopup_OnClick",
+        "StaticPopup_Show",
+        "UIDropDownMenu_SetWidth",
+        "UIDropDownMenu_SetText",
+        "ChatFrame1EditBox",
+        "GameTooltip_Hide",
+        "CONTINUE",
+        "CloseDropDownMenus",
+        "NO"
+    ],
+    "Lua.diagnostics.disable": [
+        "assign-type-mismatch"
+    ],
+    "Lua.type.weakUnionCheck": true
+}

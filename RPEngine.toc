@@ -1,0 +1,177 @@
+## Interface: 110200
+## Title: RPEngine
+## Notes: Fully-integrated 5e-based roll system and associated RP event tools.
+## Version: 0.0.0
+## Author: Ortellus @ Argent Dawn (Discord: ortellus)
+## SavedVariables: RPEngineProfilesDB, RPEngineRulesetDB, RPEngineDatasetDB
+
+## Initialisation and Common Files
+Init.lua
+Core.lua
+Common.lua
+Commands.lua
+Debug.lua
+
+Data/IconData.lua
+Data/ModelData.lua
+Data/DefaultClassic.lua
+Data/Default5e.lua
+Data/DefaultWarcraft.lua
+
+Core/Comms/CommsManager.lua
+Core/Comms/Broadcast.lua
+Core/Comms/Handle.lua
+Core/Comms/Request.lua
+
+Core/Item.lua
+Core/ItemRegistry.lua
+Core/ItemLevel.lua
+Core/StatRegistry.lua
+
+## Profile: Dataset
+Profile/Dataset.lua
+Profile/DatasetDB.lua
+
+## Profile: Ruleset
+Profile/ActiveRules.lua
+Profile/RulesetProfile.lua
+Profile/RulesetDB.lua
+
+## Profile: Character
+Profile/CharacterStats.lua
+Profile/CharacterProfile.lua
+Profile/ProfileDB.lua
+
+## Core
+Core/Formula.lua
+Core/Unit.lua
+Core/Resources.lua
+Core/Cooldowns.lua
+Core/ItemUse.lua
+Core/SpellRequirements.lua
+Core/SpellActions.lua
+Core/Targeters.lua
+Core/Spell.lua
+Core/SpellRegistry.lua
+Core/SpellCast.lua
+Core/AuraRegistry.lua
+Core/Aura.lua
+Core/AuraEvents.lua
+Core/AuraTriggers.lua
+Core/AuraManager.lua
+Core/NPCRegistry.lua
+
+Core/Crafting/Recipe.lua
+Core/Crafting/RecipeRegistry.lua
+Core/Crafting/Crafting.lua
+
+Core/Interaction/Interaction.lua
+Core/Interaction/InteractionRegistry.lua
+Core/Interaction/InteractionManager.lua
+Core/Interaction/InteractionExecutor.lua
+
+Core/Event/Supergroup.lua
+Core/Event/Event.lua
+Core/PlayerReaction.lua
+
+## UI Files
+UI/UI_Common.lua
+UI/FrameElement.lua
+UI/Colors.lua
+
+## UI Color Palettes
+UI/Palettes/Default.lua
+UI/Palettes/WarmAmber.lua
+UI/Palettes/Alliance.lua
+UI/Palettes/Horde.lua
+
+UI/Schema/SpellActionSchemas.lua
+
+UI/Elements/Panel.lua
+UI/Elements/Text.lua
+UI/Elements/Window.lua
+UI/Elements/HorizontalBorder.lua
+UI/Elements/HorizontalLayoutGroup.lua
+UI/Elements/VerticalLayoutGroup.lua
+UI/Elements/TextButton.lua
+UI/Elements/IconButton.lua
+UI/Elements/Table.lua
+UI/Elements/Input.lua
+UI/Elements/Checkbox.lua
+UI/Elements/Slider.lua
+UI/Elements/Dropdown.lua
+UI/Elements/EditorTable.lua
+UI/Elements/InputArea.lua
+
+UI/Prefabs/MinimapButton.lua
+UI/Prefabs/AbilityScoreIcon.lua
+UI/Prefabs/StatEntry.lua
+UI/Prefabs/HoverStatEntry.lua
+UI/Prefabs/CharacterPortrait.lua
+UI/Prefabs/EquipmentSlot.lua
+UI/Prefabs/InventorySlot.lua
+UI/Prefabs/SpellbookSlot.lua
+UI/Prefabs/ProgressBar.lua
+UI/Prefabs/PowerBalance.lua
+UI/Prefabs/UnitPortrait.lua
+UI/Prefabs/ActionBarSlot.lua
+UI/Prefabs/FloatingCombatText.lua
+UI/Prefabs/Popup.lua
+UI/Prefabs/SpellGroups.lua
+UI/Prefabs/AuraSlot.lua
+UI/Prefabs/ModelEditPrefab.lua
+UI/Prefabs/NPCSpellbookPrefab.lua
+UI/Prefabs/ShopItem.lua
+UI/Prefabs/InteractionOptions.lua
+
+## Widgets
+UI/Windows/Clipboard.lua
+UI/Widgets/TooltipWidget.lua
+UI/Widgets/EventWidget.lua
+UI/Widgets/ActionBarWidget.lua
+UI/Widgets/ChatBoxWidget.lua
+UI/Widgets/SpeechBubbleWidget.lua
+UI/Widgets/TargetWindow.lua
+UI/Widgets/AuraStripWidget.lua
+UI/Widgets/PlayerUnitWidget.lua
+UI/Widgets/CastBarWidget.lua
+UI/Widgets/UnitFrameWidget.lua
+UI/Widgets/InteractionWidget.lua
+UI/Widgets/PlayerReactionWidget.lua
+
+## Sheets
+UI/Sheets/DatasetOverviewSheet.lua
+UI/Sheets/EditorWizardSheet.lua
+UI/Sheets/StatisticSheet.lua
+UI/Sheets/StatEditorSheet.lua
+UI/Sheets/CharacterSheet.lua
+UI/Sheets/EquipmentSheet.lua
+UI/Sheets/InventorySheet.lua
+UI/Sheets/EventControlSheet.lua
+UI/Sheets/EventUnitsSheet.lua
+UI/Sheets/EventSettingsSheet.lua
+UI/Sheets/ItemEditorSheet.lua
+UI/Sheets/SpellEditorSheet.lua
+UI/Sheets/AuraEditorSheet.lua
+UI/Sheets/NPCEditorSheet.lua
+UI/Sheets/ProfessionSheet.lua
+UI/Sheets/RecipeEditorSheet.lua
+UI/Sheets/SpellbookSheet.lua
+UI/Sheets/InteractionEditorSheet.lua
+
+## Windows
+## UI/Windows/IntroWindow.lua
+UI/Windows/IconFinderWindow.lua
+UI/Windows/ModelFinderWindow.lua
+UI/Windows/DatasetWindow.lua
+UI/Windows/MainWindow.lua
+UI/Windows/EventWindow.lua
+UI/Windows/Ruleset.lua
+UI/Windows/AddNPCWindow.lua
+UI/Windows/ChanterSenderWindow.lua
+UI/Windows/ChanterReceiverWindow.lua
+UI/Windows/TrainerWindow.lua
+UI/Windows/ShopWindow.lua
+
+## Test
+Test/TestStats.lua
