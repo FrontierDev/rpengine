@@ -5,10 +5,11 @@ Welcome to RPEngine's documentation. This guide covers installation, usage, and 
 
 .. toctree::
    :maxdepth: 2
-   :caption: Getting Started
+   :caption: About RPEngine
 
-   guides/installation
-   guides/quickstart
+   guides/introduction
+   guides/profiles
+   guides/secondary_features
 
 .. toctree::
    :maxdepth: 2
@@ -17,37 +18,18 @@ Welcome to RPEngine's documentation. This guide covers installation, usage, and 
    guides/customisation
    guides/character_setup
    guides/combat
+   guides/crafting
+   guides/economy
 
 .. toctree::
    :maxdepth: 2
    :caption: DM Guide
 
-   guides/profiles
    guides/rulesets
    guides/datasets
-   guides/stats
-   guides/ui
-   guides/datasets/item_editor
-   guides/datasets/spell_editor
-   guides/event-control/settings
-   guides/event-control/unit_list
-   guides/event-control/unit_control
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Developer Guide
-
-   dev/architecture
-   dev/api
-   dev/extending
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Reference
-
-   reference/saved_variables
-   reference/rules
-   reference/glossary
+   guides/event-settings
+   guides/event-units
+   guides/event-control
 
 Indices and tables
 ==================

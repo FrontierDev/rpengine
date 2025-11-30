@@ -1,4 +1,4 @@
-Item Editor
+Datasets
 ===========
 
 The Item Editor allows DMs to author and manage items used by the ruleset and NPCs.
