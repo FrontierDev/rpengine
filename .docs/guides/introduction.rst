@@ -1,77 +1,51 @@
-Quick Start Guide
-=================
+Introduction
+============
 
-5-Minute Setup
---------------
+RPEngine (RPE) is a next-generation roleplay event system addon for World of Warcraft. It replaces manual bookkeeping and spreadsheet workflow with an integrated, flexible toolkit for both players and Dungeon Masters. RPEngine builds on experience from earlier addons (such as RPToolkit) and focuses on extensibility, clarity, and campaign-friendly features.
 
-1. **Log in with your character**
-   
-   RPEngine automatically creates a profile for each character on login.
-
-2. **Open the Character Sheet**
-   
-   - Press ``Shift+C`` or use the minimap button
-   - View your character's stats and attributes
-
-3. **Create or Load a Ruleset**
-   
-   - Open the Ruleset window from the UI menu
-   - Select a ruleset or create a new one
-   - Rulesets define how stats are calculated
-
-4. **Manage Datasets**
-   
-   - Datasets contain stat definitions and templates
-   - Multiple datasets can be active simultaneously
-   - Use the Dataset panel to enable/disable them
-
-Basic Workflow
---------------
-
-**For Roleplayers:**
-
-1. Create a character profile with your stats
-2. Choose or create a ruleset (D&D 5e, Warcraft, etc.)
-3. Equip items to add stat bonuses
-4. Use the character sheet to track your abilities
-
-**For Dungeon Masters:**
-
-1. Create custom rulesets for your campaign
-2. Define stat formulas and mechanics
-3. Lock required datasets to enforce consistency
-4. Use the NPC registry to manage NPCs
-
-Common Tasks
-------------
-
-Changing Your Character's Stats
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-1. Open the Character Sheet (``Shift+C``)
-2. Click "Edit Sheet"
-3. Modify stat values and click "Save"
-
-Adding Equipment
-~~~~~~~~~~~~~~~~
-
-1. Go to the Equipment tab
-2. Click on a slot to search for items
-3. Select an item to equip
-4. Stats automatically update
-
-Creating a Custom Ruleset
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-1. Open the Ruleset window
-2. Click "New Ruleset"
-3. Add rules like: ``max_health = 10 * $stat.STA$``
-4. Click "Save"
-5. Set as active to use it
-
-Next Steps
+Highlights
 ----------
 
-- Read the :doc:`profiles` guide for advanced profile management
-- Learn about :doc:`rulesets` to create custom game mechanics
-- Explore :doc:`datasets` for creating stat templates
+- Character profiles and detailed statistics, with configurable spells, passives, buffs, and debuffs
+- Turn-based event handling and a full NPC registry for tactical encounters
+- Professions, crafting, vendor systems, and a dynamic item economy
+- Cross-party DM events and support for large RP-PvP encounters
+- An extensible ruleset system to customise mechanics and UI behaviour
+- Dataset synchronization for shared spells, items, and NPC data between players
+- A "chanter" system to mirror local chat (/s, /y, /e) for party-wide roleplay coordination
+
+Why use RPEngine?
+-----------------
+
+RPEngine removes repetitive DM workload by automating common tasks: roll resolution, damage/healing calculations, resource tracking, and stat application. It uses in-game models to present NPCs and provides flexible controls for turn order and grouping. Whether you run small sessions or large campaigns, RPEngine lets you focus on story and roleplay rather than numbers.
+
+Crafting & Economy
+------------------
+
+The crafting system is inspired by classic WoW: gather reagents, learn recipes, and craft items. Recipes can accept optional reagents for customization, and item prices may vary by vendor and location to reflect a simple in-game economy.
+
+Rulesets & Data
+---------------
+
+Rulesets are Lua tables that expose knobs and expressions the engine reads to determine game behaviour (formulas, limits, dataset requirements). Datasets (under `Data/`) contain items, spells, and NPC templates. Together they let guilds tailor the engine to their preferred mechanics without changing core code.
+
+Getting started (quick)
+-----------------------
+
+1. Install and enable the addon, then log in with your character.
+2. Complet the character setup wizard.
+3. Open the Character Sheet (``/rpe sheet``) to view your profile.
+
+Extending RPEngine
+-------------------
+
+RPEngine is built to be extended: the codebase has no external runtime dependencies and is organised so authors can add datasets, rulesets, and integrations. The developer docs describe core APIs (see :doc:`dev/api`).
+
+Where to go next
+-----------------
+
+- :doc:`profiles` — character profile management
+- :doc:`rulesets` — create and edit rulesets
+- :doc:`datasets` — author datasets (items, spells, NPCs)
+
+If you'd like, I can also add a short screenshots/galleries section or example ruleset file to this page.
