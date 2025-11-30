@@ -218,8 +218,6 @@ function ChanterSenderWindow:BuildUI(opts)
         end,
     })
 
-
-
     self.sendBtn = Button:New("RPE_ChanterSender_Send", {
         parent = footer,
         width  = BUTTON_W, height = BUTTON_H,
@@ -256,6 +254,8 @@ function ChanterSenderWindow:BuildUI(opts)
     if Common and Common.RegisterWindow then
         Common:RegisterWindow(self)
     end
+
+    self:Show()
 end
 
 -- Lifecycle ------------------------------------------------------------------
@@ -264,6 +264,7 @@ function ChanterSenderWindow.New(opts)
     self:BuildUI(opts or {})
     return self
 end
+
 function ChanterSenderWindow:Show() if self.root then self.root:Show() end end
 function ChanterSenderWindow:Hide() if self.root then self.root:Hide() end end
 

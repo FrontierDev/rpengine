@@ -41,14 +41,16 @@ SlashCmdList["RPE"] = function(msg)
 
     elseif arg == "stat" then
         local statId = rest:match("^(%S+)")
-        if not statId then
-            return
+        if statId then
+            statId = statId:upper()
+            local val = RPE.Stats:GetValue(statId)
+            if not val then
+                RPE.Debug:Warning(string.format("Stat %s not found.", statId))
+                return
+            end
+            RPE.Debug:Print(string.format("Stat %s: %d", statId, val))
         end
-        statId = statId:upper()
 
-        local val = RPE.Stats:GetValue(statId)
-        if val ~= 0 then
-        end
 
     elseif arg == "sginvite" then
         local fullName = rest:match("^(%S+)")
@@ -67,9 +69,6 @@ SlashCmdList["RPE"] = function(msg)
         -- Ask them (if they are a leader) to publish their roster.
         RPE.Core.Comms:Send("SG_REQUEST_ROSTER", { UnitName("player") }, "WHISPER", fullName)
 
-    elseif arg == "push" then
-        RPE.Core.Comms.Broadcast:SendActiveRulesetToSupergroup()
-
     elseif arg == "chant" then
         -- Show/toggle the Chanter sender window
         local win = RPE_UI.Common:GetWindow("ChanterSenderWindow")
@@ -78,32 +77,36 @@ SlashCmdList["RPE"] = function(msg)
             local C = _G.RPE_UI and _G.RPE_UI.Windows and _G.RPE_UI.Windows.ChanterSenderWindow
             if C and C.New then
                 win = C.New({})
+                win:Show()
             end
         end
+
         if not win then
             RPE.Debug:Error("Chanter window not found.")
             return
         end
+
         RPE_UI.Common:Toggle(win)
 
     elseif arg == "leader" then
         -- Print the result of RPE.Core.IsLeader()
         local fn = RPE and RPE.Core and RPE.Core.IsLeader
-        if not fn then
-            return
-        end
+        if not fn then return end
+
         local ok, result = pcall(fn)
-        if ok then
+        if not result then
+            RPE.Debug:Print("You are not the leader of a supergroup.")
         else
+            RPE.Debug:Print("You are the leader of a supergroup.")
         end
 
     elseif arg == "clipboard" then
         local Clipboard = RPE_UI and RPE_UI.Windows and RPE_UI.Windows.Clipboard
-        if Clipboard then
-            Clipboard:Show()
-        else
+            if Clipboard then
+                Clipboard:Show()
+            else
         end
-
     else
+
     end
 end
