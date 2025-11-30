@@ -21,8 +21,3 @@ sphinx:
 formats:
   - pdf
   - epub
-
-# Repository settings
-repository:
-  url: https://github.com/FrontierDev/rpengine
-  type: git
