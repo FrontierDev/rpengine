@@ -19,12 +19,14 @@ Use the in-game Dataset editor (found in the DM tools) to create and test items.
 Interactions Editor
 -------
 **1. Basic**
+
 - `Target` - either the exact ID of an NPC, the tag underneath their name, or their creature type:
-    - Exact ID: *e.g.* `541739`. This can be obtained using the command `/rpe npcinfo` while targeting the NPC.
-    - Tag: *e.g.* `Blacksmithing Supplies`. This is the tag shown under the NPC's name in the game UI. It will apply the interaction to all NPCs with this tag.
-    - Creature type: *e.g* `type:humanoid`. This will apply the interaction to all NPCs of this type.
+    - **Exact ID**: *e.g.* `541739`. This can be obtained using the command `/rpe npcinfo` while targeting the NPC.
+    - **Tag**: *e.g.* `Blacksmithing Supplies`. This is the tag shown under the NPC's name in the game UI. It will apply the interaction to all NPCs with this tag.
+    - **Creature type**: *e.g* `type:humanoid`. This will apply the interaction to all NPCs of this type.
 
 **2. Options**
+
 Each interaction can have one or more *options*. Each option defines a button or action the player can take when interacting with the target.
 
 - `label`: The text shown on the button (e.g. "Shop", "Salvage").
