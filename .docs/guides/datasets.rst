@@ -28,16 +28,18 @@ Interactions Editor
 Each interaction can have one or more *options*. Each option defines a button or action the player can take when interacting with the target.
 
 - `label`: The text shown on the button (e.g. "Shop", "Salvage").
+
 - `action`: The type of action to perform. Supported actions include:
-    - `DIALOGUE`: Opens a dialogue window (customizable by addon authors).
     - `SHOP`: Opens a shop window for the player to buy/sell items.
     - `TRAIN`: Opens a trainer window for skills, spells, or professions.
-    - `AUCTION`: Opens an auction house interface.
+    - `[NYI] AUCTION`: Opens an auction house interface.
     - `SKIN`: Attempts to skin the target (usually a beast).
     - `SALVAGE`: Attempts to salvage materials from the target (usually a dead humanoid).
     - `RAISE`: Attempts to raise the target from the dead.
+
 - `requiresDead`: If set (e.g. `1`), the target must be dead for this option to appear.
-- `args`: (Advanced) A table of extra arguments for the action. Common keys:
+
+- `args`: A table of extra arguments for the action. Common keys:
     - `mapID`: Restrict the option to specific map IDs (list or single value).
     - `type`, `flags`, `tags`, `maxLevel`, `maxStock`, `maxRarity`, etc.: Used for filtering, gating, or customizing the action.
     - `output`: For actions like `SALVAGE` or `SKIN`, defines the items and quantities produced. Example:
@@ -49,8 +51,8 @@ Each interaction can have one or more *options*. Each option defines a button or
           { itemId = "cloth_scrap", qty = "1d2", chance = 0.25 },
         }
 
-        - `itemId`: The item to give (must match an item in the dataset).
-        - `qty`: Quantity, can be a number or dice string (e.g. `"1d3"`).
-        - `chance`: Probability (1.0 = always, 0.25 = 25% chance).
+    - `itemId`: The item to give (must match an item in the dataset).
+    - `qty`: Quantity, can be a number or dice string (e.g. `"1d3"`).
+    - `chance`: Probability (1.0 = always, 0.25 = 25% chance).
 
 
