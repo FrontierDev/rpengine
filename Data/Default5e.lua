@@ -209,7 +209,7 @@ local STATS_5E = {
         pct  = 0,
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\healed_last.png",
         itemTooltipFormat = "$value$ AC",
-        itemTooltipColor = {0, 1, 0},
+        itemTooltipColor = {1, 1, 1},
         itemTooltipPriority = 99,
         sourceDataset = "Default5e",
     },
@@ -414,6 +414,59 @@ local STATS_5E = {
     },
 }
 
+
+local ITEMS_5E = {
+    -- Weapon: Longsword
+    longsword_5e = {
+        id = "longsword_5e",
+        name = "Longsword",
+        category = "EQUIPMENT",
+        icon = 135324, -- INV_Sword_27
+        stackable = false,
+        maxStack = 1,
+        basePriceU = 19.5,
+        vendorSellable = true,
+        description = "A versatile blade favored by knights and adventurers.",
+        rarity = "common",
+        tags = { "melee", "sword", "weapon" },
+        data = {
+            slot = "weapon",
+            swingCost = "Action",
+            hand = "One Hand",
+            weaponType = "Sword",
+            minDamage = 1,
+            maxDamage = 10,
+            damageSchool = "Physical"
+        },
+    },
+    -- Chest: Chainmail Armor
+    chainmail_armor_5e = {
+        id = "chainmail_armor_5e",
+        name = "Chainmail Armor",
+        category = "EQUIPMENT",
+        icon = 132624, -- INV_Chest_Chain_05
+        stackable = false,
+        maxStack = 1,
+        basePriceU = 17.75,
+        vendorSellable = true,
+        description = "Sturdy armor offering solid protection.",
+        rarity = "common",
+        tags = { "armor", "heavy", "chest" },
+        data = {
+            slot = "chest",
+            armorType = "Heavy",
+            stat_AC = 6,
+        },
+    },
+}
+
+local function MergeTables(t1, t2)
+    local result = {}
+    if t1 then for k, v in pairs(t1) do result[k] = v end end
+    if t2 then for k, v in pairs(t2) do result[k] = v end end
+    return result
+end
+
 RPE.Data.Default5e = {
     name = "Default5e",
     version = 1,
@@ -422,12 +475,13 @@ RPE.Data.Default5e = {
     guid = "Default5e-system",
     createdAt = 0,
     updatedAt = 0,
-    items = {},
+    items = MergeTables(ITEMS_5E, RPE.Data.Default.REAGENTS_COMMON),
     spells = {},
     auras = {},
     npcs = {},
     extra = {
         stats = STATS_5E,
+        interactions = RPE.Data.Default.INTERACTIONS_COMMON,
     },
 }
 

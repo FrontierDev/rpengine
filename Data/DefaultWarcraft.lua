@@ -327,7 +327,50 @@ RPE.Data.DefaultWarcraft = {
     guid = "DefaultWarcraft-system",
     createdAt = 0,
     updatedAt = 0,
-    items = {},
+    items = {
+        -- Weapon: Orcish Axe
+        orcish_axe_warcraft = {
+            id = "orcish_axe_warcraft",
+            name = "Orcish Axe",
+            category = "EQUIPMENT",
+            icon = 132402, -- INV_Axe_09
+            stackable = false,
+            maxStack = 1,
+            description = "A brutal axe favored by orc warriors.",
+            rarity = "common",
+            data = {
+                slot = "mainhand",
+                stat_MELEE_AP = 3,
+            },
+        },
+        -- Chest: Plate Armor
+        plate_armor_warcraft = {
+            id = "plate_armor_warcraft",
+            name = "Plate Armor",
+            category = "EQUIPMENT",
+            icon = 132637, -- INV_Chest_Plate01
+            stackable = false,
+            maxStack = 1,
+            description = "Heavy plate armor for maximum protection.",
+            rarity = "rare",
+            data = {
+                slot = "chest",
+                stat_ARMOR = 8,
+            },
+        },
+        -- Crafting Material: Elemental Essence
+        elemental_essence_warcraft = {
+            id = "elemental_essence_warcraft",
+            name = "Elemental Essence",
+            category = "MATERIAL",
+            icon = 237007, -- INV_Elemental_EternalWater
+            stackable = true,
+            maxStack = 10,
+            description = "A swirling essence used in powerful enchantments.",
+            rarity = "uncommon",
+            data = {},
+        },
+    },
     spells = {},
     auras = {},
     npcs = {},

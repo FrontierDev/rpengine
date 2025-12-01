@@ -46,7 +46,12 @@
         "GameTooltip_Hide",
         "CONTINUE",
         "CloseDropDownMenus",
-        "NO"
+        "NO",
+        "MANA",
+        "STR",
+        "INT",
+        "HISTORY",
+        "ITEMS"
     ],
     "Lua.diagnostics.disable": [
         "assign-type-mismatch"

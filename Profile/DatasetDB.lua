@@ -492,14 +492,18 @@ local function _ensureDefaultDatasets()
             -- Preserve any player-specific modifications by merging
             local existing = db.datasets[defaultName]
             if existing then
-                -- Update the stats in the default dataset from the source
-                if sourceData.extra and sourceData.extra.stats then
-                    existing.extra = existing.extra or {}
-                    existing.extra.stats = sourceData.extra.stats
-                end
-                -- Update other core fields (in case they change in addon updates)
+                -- Update all core fields from the source (not just stats)
+                if sourceData.items then existing.items = sourceData.items end
+                if sourceData.spells then existing.spells = sourceData.spells end
+                if sourceData.auras then existing.auras = sourceData.auras end
+                if sourceData.npcs then existing.npcs = sourceData.npcs end
+                if sourceData.extra then existing.extra = sourceData.extra end
                 existing.version = sourceData.version or existing.version
                 existing.notes = sourceData.notes or existing.notes
+                existing.author = sourceData.author or existing.author
+                existing.guid = sourceData.guid or existing.guid
+                existing.createdAt = sourceData.createdAt or existing.createdAt
+                existing.updatedAt = sourceData.updatedAt or existing.updatedAt
             else
                 -- First time: create from source
                 db.datasets[defaultName] = sourceData
