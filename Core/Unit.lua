@@ -12,6 +12,8 @@ RPE.Core = RPE.Core or {}
 ---@field name string
 ---@field isNPC boolean
 ---@field addedBy string|nil
+---@field summonType string|nil           -- "None", "Pet", "Minion", "Totem", or "Guardian"
+---@field summonedBy integer|nil          -- Unit ID of the summoner (if any)
 ---@field raidMarker integer|nil
 ---@field threat table<integer, number>
 ---@field stats table
@@ -76,6 +78,8 @@ function Unit.New(id, data)
     self.team    = tonumber(data.team) or 1
     self.isNPC   = data.isNPC and true or false
     self.addedBy = data.addedBy
+    self.summonType = data.summonType or "None"
+    self.summonedBy = tonumber(data.summonedBy)
     local rm = tonumber(data.raidMarker)
     self.raidMarker = (rm and rm > 0) and rm or nil
     self.threat = Unit._CoerceThreatTable(data.threat)
@@ -157,25 +161,35 @@ function Unit:SetHP(hp)
     self.hp = math.max(0, math.min(hp, self.hpMax or 1))
 end
 
-function Unit:ApplyDamage(amount)
+function Unit:ApplyDamage(amount, isCrit)
+    isCrit = isCrit or false
     amount = math.max(0, math.floor(tonumber(amount) or 0))
+    local wasDead = self:IsDead()
     self:SetHP((self.hp or 0) - amount)
-    RPE.Debug:Internal(("%s lost %s hitpoints (current: %s, dead: %s)"):format(self.name, amount, self.hp, tostring(self:IsDead())))
+    local isDead = self:IsDead()
+    RPE.Debug:Internal((string.format("%s lost %s hitpoints (current: %s, dead: %s)", self.name, amount, self.hp, tostring(isDead))))
 
     if(self.id == RPE.Core.ActiveEvent:GetLocalPlayerUnitId()) then
         RPE.Core.Resources:Set("HEALTH", self.hp)
-        RPE.Core.CombatText.Screen:AddNumber(amount, "damage", { isCrit = false, direction = "DOWN" })
+        RPE.Core.CombatText.Screen:AddNumber(amount, "damage", { isCrit = isCrit, direction = "DOWN" })
     end
 
     local ev = RPE.Core.ActiveEvent
     if ev and ev.MarkAttacked then ev:MarkAttacked(self.id) end
 
-    
+    -- Emit ON_DEATH trigger when unit reaches 0 HP
+    if not wasDead and isDead then
+        local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
+        if AuraTriggers and AuraTriggers.Emit then
+            AuraTriggers:Emit("ON_DEATH", ev or {}, self.id, self.id, { damageAmount = amount })
+        end
+    end
 
-    return self.hp, self:IsDead()
+    return self.hp, isDead
 end
 
-function Unit:Heal(amount)
+function Unit:Heal(amount, isCrit)
+    isCrit = isCrit or false
     amount = math.max(0, math.floor(tonumber(amount) or 0))
     self:SetHP((self.hp or 0) + amount)
     RPE.Debug:Internal(("%s gained %s hitpoints (current: %s, dead: %s)"):format(self.name, amount, self.hp, tostring(self:IsDead())))
@@ -189,7 +203,7 @@ function Unit:Heal(amount)
 
     if(self.id == RPE.Core.ActiveEvent:GetLocalPlayerUnitId()) then
         RPE.Core.Resources:Set("HEALTH", self.hp)
-        RPE.Core.CombatText.Screen:AddNumber(amount, "heal", { isCrit = false, direction = "DOWN" })
+        RPE.Core.CombatText.Screen:AddNumber(amount, "heal", { isCrit = isCrit, direction = "DOWN" })
     end
 
     return self.hp
@@ -448,7 +462,26 @@ end
 
 function Unit:GetTooltip(opts)
     -- Build a tooltip spec the renderer can consume.
-    local unitName = self.name
+    local Common = RPE and RPE.Common
+    local unitName = Common and Common.FormatUnitName and Common:FormatUnitName(self) or self.name
+    local summonerLine = nil
+    
+    -- For summoned pets/totems, prepare summoner info on separate line
+    if self.isNPC and self.summonedBy then
+        if Common and Common.FindUnitById then
+            local summoner = Common:FindUnitById(self.summonedBy)
+            if summoner and summoner.name then
+                local summonerType = self.summonType or "Pet"
+                if summonerType == "None" then summonerType = "Pet" end
+                local formattedSummonerName = Common.FormatUnitName and Common:FormatUnitName(summoner) or summoner.name
+                summonerLine = formattedSummonerName .. "'s " .. summonerType
+            elseif RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal(("[Unit:GetTooltip] Summoner %d not found"):format(self.summonedBy))
+            end
+        elseif RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(("[Unit:GetTooltip] Common or FindUnitById not available"))
+        end
+    end
     
     -- Prepend raid marker icon to name if unit has one
     if self.raidMarker and self.raidMarker >= 1 and self.raidMarker <= 8 then
@@ -468,6 +501,16 @@ function Unit:GetTooltip(opts)
         r2 = 0.7, g2 = 0.7, b2 = 0.7,
         wrap = false
     })
+    
+    -- Add summoner info on second line if applicable
+    if summonerLine then
+        local r, g, b, a = RPE_UI.Colors.Get("textMuted")
+        table.insert(lines, {
+            left = summonerLine,
+            r = r, g = g, b = b,
+            wrap = false
+        })
+    end
 
     if self.team then
         local ev = RPE.Core and RPE.Core.ActiveEvent
@@ -505,7 +548,7 @@ end
 Unit.SyncFields = {
     "id","key","name","team","isNPC","hp","hpMax","initiative",
     "raidMarker","unitType","unitSize","active","hidden","flying",
-    "displayId","fileDataId","cam","rot","z" 
+    "displayId","fileDataId","cam","rot","z","summonType","summonedBy"
 }
 -- Percent-escape for CSV key=value lists (safe against ; , = % \n)
 local function _escCSV(s)
@@ -547,6 +590,8 @@ function Unit:ToSyncState()
         cam        = tonumber(self.cam),
         rot        = tonumber(self.rot),
         z          = tonumber(self.z),
+        summonType = self.summonType or nil,
+        summonedBy = tonumber(self.summonedBy) or nil,
     }
 end
 
@@ -609,8 +654,10 @@ function Unit.KVDecode(str)
         if rk then
             local k = _unescCSV(rk)
             local v = _unescCSV(rv)
-            if k == "team" or k == "hp" or k == "hpMax" or k == "initiative" or k == "raidMarker" or k == "id" then
+            if k == "team" or k == "hp" or k == "hpMax" or k == "initiative" or k == "raidMarker" or k == "id" or k == "displayId" or k == "fileDataId" then
                 out[k] = tonumber(v) or 0
+            elseif k == "cam" or k == "rot" or k == "z" then
+                out[k] = tonumber(v) or nil
             elseif k == "isNPC" or k == "active" or k == "hidden" or k == "flying" then
                 out[k] = (v == "1" or v == "true")
             else
@@ -673,6 +720,10 @@ function Unit.ApplyKV(u, kv)
     if kv.cam        ~= nil then u.cam        = tonumber(kv.cam) end
     if kv.rot        ~= nil then u.rot        = tonumber(kv.rot) end
     if kv.z          ~= nil then u.z          = tonumber(kv.z) end
+
+    -- Summon data
+    if kv.summonType  ~= nil then u.summonType  = kv.summonType end
+    if kv.summonedBy  ~= nil then u.summonedBy  = tonumber(kv.summonedBy) end
 
     -- Stats
     if type(kv.stats) == "table" then

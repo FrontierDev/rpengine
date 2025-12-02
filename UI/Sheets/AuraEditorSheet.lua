@@ -231,8 +231,8 @@ local function _buildAuraSchema(entryId, auraData, isEdit)
                         type = "editor_table",
                         mode = "rows",
                         columns = {
-                            { id = "event",   header = "Event",   type = "select", choices = { "ON_HIT", "ON_CRIT", "ON_CAST", "ON_KILL", "ON_TURN_START" } },
-                            { id = "key",     header = "Action",  type = "select", choices = { "DAMAGE", "HEAL", "APPLY_AURA" } },
+                            { id = "event",   header = "Event",   type = "select", choices = { "ON_HIT", "ON_HIT_TAKEN", "ON_CRIT", "ON_CRIT_TAKEN", "ON_CAST_RESOLVE", "ON_KILL", "ON_DEATH" } },
+                            { id = "key",     header = "Action",  type = "select", choices = { "DAMAGE", "HEAL", "APPLY_AURA", "GAIN_RESOURCE" } },
                             { id = "amount",  header = "Amount",  type = "input" },
                             { id = "auraId",  header = "Aura ID", type = "input" },
                             { id = "ref",     header = "Target",  type = "select", choices = { "TARGET", "SOURCE", "BOTH" } },
@@ -323,6 +323,13 @@ local function _saveAuraValues(ds, targetId, v, isEdit, oldId)
                     elseif row.key == "APPLY_AURA" then
                         if row.auraId then 
                             action.args.auraId = row.auraId 
+                        end
+                    elseif row.key == "GAIN_RESOURCE" then
+                        if row.auraId then 
+                            action.args.resourceId = row.auraId 
+                        end
+                        if row.amount then 
+                            action.args.amount = row.amount 
                         end
                     end
 

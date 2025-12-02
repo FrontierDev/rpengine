@@ -117,11 +117,36 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
         local amt = rollAmount()
         if amt > 0 then
             local isCrit = false
-            if args.critChance then
-                local mult = math.max(1, tonumber(args.critMult or 2))
-                if math.random() < tonumber(args.critChance) then
+            
+            -- Determine if crits are allowed:
+            -- - Direct spell damage: check cast.def.canCrit flag (defaults to true)
+            -- - Aura tick damage: check dot_crits ruleset (defaults to false)
+            local allowCrit = false
+            if cast.def then
+                -- Direct spell damage: canCrit defaults to true
+                allowCrit = (cast.def.canCrit ~= false)
+            else
+                -- Aura tick damage: check dot_crits ruleset
+                allowCrit = (RPE.ActiveRules and RPE.ActiveRules:Get("dot_crits") == 1) or false
+            end
+            
+            if allowCrit and args._critThreshold then
+                -- Use the roll stored by CheckHit to determine crit
+                local roll = args._rolls and args._rolls[tgt]
+                if RPE and RPE.Debug and RPE.Debug.Print then
+                    RPE.Debug:Print(("  Crit lookup: tgt=%s, roll=%s, threshold=%.1f → %s"):format(
+                        tostring(tgt), tostring(roll), args._critThreshold,
+                        (roll and roll >= args._critThreshold) and "CRIT" or "normal"
+                    ))
+                end
+                if roll and roll >= args._critThreshold then
                     isCrit = true
+                    local mult = math.max(1, args._critMult or 2)
+                    local origAmt = amt
                     amt = math.floor(amt * mult)
+                    if RPE and RPE.Debug and RPE.Debug.Print then
+                        RPE.Debug:Print(("  Crit multiplier applied: %d × %.1f = %d"):format(origAmt, mult, amt))
+                    end
                 end
             end
 
@@ -161,6 +186,9 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
                     isCrit = e.crit,
                     school = e.school,
                 })
+                
+                -- NOTE: ON_CRIT is emitted by Handle.lua when the DAMAGE message is received
+                -- to ensure it fires once per attack (not duplicated for local player)
             end
         end
         
@@ -201,11 +229,44 @@ Actions:Register("HEAL", function(ctx, cast, targets, args)
         local amt = rollAmount()
         if amt > 0 then
             local isCrit = false
-            if args.critChance then
-                local mult = math.max(1, tonumber(args.critMult or 2))
-                if math.random() < tonumber(args.critChance) then
-                    isCrit = true
-                    amt = math.floor(amt * mult)
+            
+            -- Determine if crits are allowed:
+            -- - Direct spell healing: check cast.def.canCrit flag (defaults to true)
+            -- - Aura tick healing: check dot_crits ruleset (defaults to false)
+            local allowCrit = false
+            if cast.def then
+                -- Direct spell healing: canCrit defaults to true
+                allowCrit = (cast.def.canCrit ~= false)
+            else
+                -- Aura tick healing: check dot_crits ruleset
+                allowCrit = (RPE.ActiveRules and RPE.ActiveRules:Get("dot_crits") == 1) or false
+            end
+            
+            if allowCrit then
+                local critMult = 2
+                if args and args.critMult then
+                    critMult = math.max(1, tonumber(args.critMult) or 2)
+                elseif args and args._critMult then
+                    critMult = args._critMult
+                end
+                
+                if args._critThreshold then
+                    -- Use the roll stored by CheckHit to determine crit
+                    local roll = args._rolls and args._rolls[tgt]
+                    if RPE and RPE.Debug and RPE.Debug.Print then
+                        RPE.Debug:Print(("  Crit lookup: tgt=%s, roll=%s, threshold=%.1f → %s"):format(
+                            tostring(tgt), tostring(roll), args._critThreshold,
+                            (roll and roll >= args._critThreshold) and "CRIT" or "normal"
+                        ))
+                    end
+                    if roll and roll >= args._critThreshold then
+                        isCrit = true
+                        local origAmt = amt
+                        amt = math.floor(amt * critMult)
+                        if RPE and RPE.Debug and RPE.Debug.Print then
+                            RPE.Debug:Print(("  Crit multiplier applied: %d × %.1f = %d"):format(origAmt, critMult, amt))
+                        end
+                    end
                 end
             end
 
@@ -372,6 +433,73 @@ Actions:Register("REDUCE_COOLDOWN", function(ctx, cast, targets, args)
     if not def then return end
 
     CD:Reduce(cast.caster, def, amount, turn)
+end)
+
+
+-- SUMMON: summon an NPC to the caster's team
+-- args:
+--   npcId = "npc-12345" -- NPC registry ID to summon
+Actions:Register("SUMMON", function(ctx, cast, targets, args)
+    local ev = ctx and ctx.event
+    if not (ev and ev.units) then return end
+    
+    local npcId = args.npcId
+    if not npcId or npcId == "" then
+        RPE.Debug:Error("[SpellActions:SUMMON] Missing npcId")
+        return
+    end
+    
+    local casterUnitId = tonumber(cast and cast.caster)
+    if not casterUnitId or casterUnitId <= 0 then return end
+    
+    -- Get the caster's unit to retrieve their team
+    local casterUnit = RPE.Common:FindUnitById(casterUnitId)
+    local casterTeam = (casterUnit and tonumber(casterUnit.team)) or 1
+    
+    -- Get the NPC registry to find the NPC definition
+    local NPCRegistry = RPE.Core and RPE.Core.NPCRegistry
+    if not (NPCRegistry and NPCRegistry.Get) then
+        RPE.Debug:Error("[SpellActions:SUMMON] NPCRegistry not available")
+        return
+    end
+    
+    local npcDef = NPCRegistry:Get(npcId)
+    if not npcDef then
+        -- Log available NPCs for debugging
+        if RPE.Debug and RPE.Debug.Internal then
+            local availableNPCs = {}
+            for id, def in NPCRegistry:Pairs() do
+                table.insert(availableNPCs, id)
+            end
+            RPE.Debug:Internal(("[SpellActions:SUMMON] Available NPCs: %s"):format(table.concat(availableNPCs, ", ")))
+        end
+        RPE.Debug:Error(("[SpellActions:SUMMON] NPC not found: %s"):format(npcId))
+        return
+    end
+    
+    -- Build unit seed from the registry prototype
+    local seed = NPCRegistry:BuildUnitSeed(npcId, {
+        team = casterTeam,
+        active = true,
+        hidden = false,
+        flying = false,
+    })
+    seed.summonedBy = casterUnitId
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(("[SpellActions:SUMMON] Broadcasting summon for %s by unit %d on team %d"):format(
+            npcId, casterUnitId, casterTeam))
+    end
+    
+    -- Broadcast to supergroup leader so they can add it and include in next ADVANCE
+    -- Don't add it locally - only the leader should add it
+    if Broadcast and Broadcast.Summon then
+        Broadcast:Summon(npcId, casterUnitId, casterTeam)
+    else
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal("[SpellActions:SUMMON] ERROR: Broadcast or Broadcast.Summon not available")
+        end
+    end
 end)
 
 return Actions

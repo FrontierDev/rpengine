@@ -63,6 +63,7 @@ local STATS_WARCRAFT = {
         pct     = 0,
         icon    = "Interface\\Addons\\RPEngine\\UI\\Textures\\action.png",
         tooltip = "Your current rage. Used to perform powerful warrior abilities.",
+        itemTooltipColor = {1.00, 0.00, 0.00},
         recovery = { ruleKey = "rage_regen", default = 0 },
         sourceDataset = "DefaultWarcraft",
     },
@@ -76,7 +77,22 @@ local STATS_WARCRAFT = {
         pct     = 0,
         icon    = "Interface\\Addons\\RPEngine\\UI\\Textures\\action.png",
         tooltip = "Your current energy. Used to perform rogue abilities.",
+        itemTooltipColor = {1.00, 1.00, 0.00},
         recovery = { ruleKey = "energy_regen", default = 10 },
+        sourceDataset = "DefaultWarcraft",
+    },
+    FOCUS = {
+        name    = "Focus",
+        category = "RESOURCE",
+        base    = 100,
+        min     = 0,
+        max     = 100,
+        visible = 1,
+        pct     = 0,
+        icon    = "Interface\\Addons\\RPEngine\\UI\\Textures\\action.png",
+        tooltip = "Your current focus. Used to perform hunter abilities.",
+        itemTooltipColor = {1.00, 0.50, 0.25},
+        recovery = { ruleKey = "focus_regen", default = 5 },
         sourceDataset = "DefaultWarcraft",
     },
     -- --- Primary stats ---
@@ -213,6 +229,10 @@ local STATS_WARCRAFT = {
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\spell.png",
         pct  = 1,
         sourceDataset = "DefaultWarcraft",
+        mitigation = {
+            normal = "$value$*0.5",                           -- Block reduces normal damage by 50%
+            critical = "$value$*0"                            -- Block doesn't affect critical hits
+        },
     },
     FROST_RESIST = {
         name = "Frost",
@@ -223,6 +243,10 @@ local STATS_WARCRAFT = {
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\spell.png",
         pct  = 1,
         sourceDataset = "DefaultWarcraft",
+        mitigation = {
+            normal = "$value$*0.5",                           -- Block reduces normal damage by 50%
+            critical = "$value$*0"                            -- Block doesn't affect critical hits
+        },
     },
     NATURE_RESIST = {
         name = "Nature",
@@ -233,6 +257,10 @@ local STATS_WARCRAFT = {
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\spell.png",
         pct  = 1,
         sourceDataset = "DefaultWarcraft",
+        mitigation = {
+            normal = "$value$*0.5",                          -- Block reduces normal damage by 50%
+            critical = "$value$*0"                            -- Block doesn't affect critical hits
+        },
     },
     ARCANE_RESIST = {
         name = "Arcane",
@@ -243,6 +271,10 @@ local STATS_WARCRAFT = {
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\spell.png",
         pct  = 1,
         sourceDataset = "DefaultWarcraft",
+        mitigation = {
+            normal = "$value$*0.5",     -- Block reduces normal damage by 50%
+            critical = "$value$*0"                            -- Block doesn't affect critical hits
+        },
     },
     SHADOW_RESIST = {
         name = "Shadow",
@@ -253,6 +285,10 @@ local STATS_WARCRAFT = {
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\spell.png",
         pct  = 1,
         sourceDataset = "DefaultWarcraft",
+        mitigation = {
+            normal = "$value$*0.5",     -- Block reduces normal damage by 50%
+            critical = "$value$*0"                            -- Block doesn't affect critical hits
+        },
     },
     HOLY_RESIST = {
         name = "Holy",
@@ -263,6 +299,10 @@ local STATS_WARCRAFT = {
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\spell.png",
         pct  = 1,
         sourceDataset = "DefaultWarcraft",
+        mitigation = {
+            normal = "$value$*0.5",     -- Block reduces normal damage by 50%
+            critical = "$value$*0"                            -- Block doesn't affect critical hits
+        },
     },
     -- --- Defense ---
     ARMOR = {
@@ -290,6 +330,10 @@ local STATS_WARCRAFT = {
         itemTooltipPriority = 99,
         pct  = 1,
         sourceDataset = "DefaultWarcraft",
+        mitigation = {
+            normal = "$value$*0",     -- Block reduces normal damage by 50%
+            critical = "$value$*0"                            -- Block doesn't affect critical hits
+        },
     },
     PARRY = {
         name = "Parry Chance",
@@ -303,6 +347,10 @@ local STATS_WARCRAFT = {
         itemTooltipPriority = 99,
         pct  = 1,
         sourceDataset = "DefaultWarcraft",
+        mitigation = {
+            normal = "$value$*0",     -- Block reduces normal damage by 50%
+            critical = "$value$*0"    -- Block doesn't affect critical hits
+        },
     },
     BLOCK = {
         name = "Block Chance",
@@ -316,6 +364,10 @@ local STATS_WARCRAFT = {
         itemTooltipPriority = 99,
         pct  = 1,
         sourceDataset = "DefaultWarcraft",
+        mitigation = {
+            normal = "$value$*0",     -- Block reduces normal damage by 50%
+            critical = "$value$*0"                           -- Block doesn't affect critical hits
+        },
     },
 }
 

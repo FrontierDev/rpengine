@@ -66,6 +66,7 @@ RPE.Core = RPE.Core or {}
 ---@field data table|nil
 ---@field npcOnly boolean|nil
 ---@field alwaysKnown boolean|nil
+---@field canCrit boolean|nil
 ---@field rank number
 ---@field maxRanks number|nil    
 ---@field unlockLevel number|nil    
@@ -217,6 +218,7 @@ function Spell:New(id, name, opts)
         data        = type(opts.data) == "table" and deepcopy(opts.data) or {},
         npcOnly     = not not opts.npcOnly,
         alwaysKnown = not not opts.alwaysKnown,
+        canCrit     = opts.canCrit ~= false,  -- defaults to true (allow crits)
         rank        = tonumber(opts.rank) or 1,
         maxRanks     = tonumber(opts.maxRanks) or 1,
         unlockLevel  = tonumber(opts.unlockLevel) or 1,
@@ -619,17 +621,25 @@ function Spell:GetTooltip(rank)
     end
 
     -- Costs (first cost left) | Cooldown (right)
+    -- Only show costs for resources the player "uses"
     local firstCost, restCosts = nil, {}
     if self.costs and #self.costs > 0 then
+        local Resources = RPE.Core and RPE.Core.Resources
+        local usedResources = Resources and Resources:GetUsedResources(profile) or {}
+        
         for i, c in ipairs(self.costs) do
-            local amt = _evaluateCost(self, c, profile)
-            local res = c.resource or ""
-            local text = string.format("%s %s", tostring(amt), tostring(res))
+            local resId = string.upper(c.resource or "")
+            -- Only include this cost if the resource is in the 'use' list
+            if usedResources[resId] then
+                local amt = _evaluateCost(self, c, profile)
+                local res = c.resource or ""
+                local text = string.format("%s %s", tostring(amt), string.lower(tostring(res)))
 
-            if i == 1 then
-                firstCost = text
-            else
-                table.insert(restCosts, text)
+                if i == 1 then
+                    firstCost = text
+                else
+                    table.insert(restCosts, text)
+                end
             end
         end
     end
@@ -736,6 +746,7 @@ function Spell:Serialize()
         data        = self.data and deepcopy(self.data) or nil,
         npcOnly     = not not self.npcOnly,
         alwaysKnown = not not self.alwaysKnown,
+        canCrit     = self.canCrit,
         maxRanks     = self.maxRanks,
         unlockLevel  = self.unlockLevel,
         rankInterval = self.rankInterval,
@@ -757,6 +768,7 @@ function Spell.FromTable(t)
         data        = t.data,
         npcOnly     = t.npcOnly,
         alwaysKnown = t.alwaysKnown,
+        canCrit     = t.canCrit,
         maxRanks    = t.maxRanks,
         unlockLevel = t.unlockLevel,
         rankInterval= t.rankInterval,

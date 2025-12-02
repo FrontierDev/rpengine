@@ -208,6 +208,16 @@ local function runActions(ctx, cast, actions)
 
         if applyTargets and #applyTargets > 0 then
             RPE.Debug:Internal(("Running action '%s' on %d target(s)"):format(act.key, #applyTargets))
+            -- Copy cached crit values into args so handler can access them
+            if act._critThreshold ~= nil then
+                act.args._critThreshold = act._critThreshold
+            end
+            if act._critMult ~= nil then
+                act.args._critMult = act._critMult
+            end
+            if act._rolls ~= nil then
+                act.args._rolls = act._rolls
+            end
             Actions:Run(act.key, ctx, cast, applyTargets, act.args)
         end
     end
@@ -650,26 +660,160 @@ local function _getHitSystem()
     return "complex"  -- default
 end
 
+-- Get crit chance from action override or ruleset
+-- Parse dice specification (e.g., "1d20", "2d6", "1d100") and return max value
+local function _parseDiceMax(rollSpec)
+    if type(rollSpec) ~= "string" then return 1 end
+    -- Match pattern like "1d20" or "2d8" (count and sides)
+    local count, sides = rollSpec:match("(%d+)[dD](%d+)")
+    if count and sides then
+        return tonumber(count) * tonumber(sides)
+    end
+    return 1  -- Default fallback
+end
+
+local function _getCritParams(act, ctx, cast, casterUnit, rollSpec)
+    -- Crit threshold based on dice maximum value minus crit modifier from spell action
+    -- E.g., 1d20 (max 20) with 5% crit modifier = threshold is 19 (or 95% of the roll must be made)
+    
+    local diceMax = _parseDiceMax(rollSpec) or 1
+    
+    -- Helper to get stat from either unit (for NPCs) or RPE.Stats (for players)
+    local function getStat(statId)
+        -- For NPCs, use unit stats
+        if casterUnit and casterUnit.isNPC and casterUnit.stats then
+            return tonumber(casterUnit.stats[statId] or 0) or 0
+        end
+        -- For players, use RPE.Stats
+        return tonumber(RPE.Stats:GetValue(statId) or 0) or 0
+    end
+    
+    -- Get crit modifier from spell action args, with fallback to SPELL_CRIT stat
+    local spellCrit = 0
+    
+    -- First, check action args for crit modifier
+    if act and act.args and act.args.critModifier then
+        if type(act.args.critModifier) == "string" then
+            local id = act.args.critModifier:match("^%$stat%.([%w_]+)%$$")
+            if id then
+                spellCrit = getStat(id)
+            else
+                spellCrit = tonumber(act.args.critModifier) or 0
+            end
+        else
+            spellCrit = tonumber(act.args.critModifier) or 0
+        end
+    end
+    
+    -- If no action override, fall back to SPELL_CRIT stat
+    if spellCrit == 0 then
+        spellCrit = getStat("SPELL_CRIT")
+    end
+    
+    -- Calculate crit threshold: max - (spellCrit as percentage of max)
+    -- E.g., max=20, spellCrit=5 → threshold = 20 - 1 = 19 (top 5%)
+    local critThreshold = diceMax - (diceMax * spellCrit / 100)
+    
+    if RPE and RPE.Debug and RPE.Debug.Print then
+        local source = "stat:SPELL_CRIT"
+        if act and act.args and act.args.critModifier then
+            source = "action:critModifier"
+        end
+        RPE.Debug:Internal(("[SpellCast] Crit threshold: diceMax=%d, spellCrit=%.1f%% (from %s), threshold=%.1f"):format(diceMax, spellCrit, source, critThreshold))
+    end
+    
+    -- crit multiplier from stat (defaults to 2x)
+    local critMult = 2
+    if RPE and RPE.Debug and RPE.Debug.Print then
+        RPE.Debug:Internal(("[SpellCast] _getCritParams: act.key=%s, act.critMult=%s (action-level), caster.isNPC=%s"):format(
+            tostring(act and act.key), tostring(act and act.critMult), tostring(casterUnit and casterUnit.isNPC)))
+        if act and act.args then
+            RPE.Debug:Internal(("[SpellCast] act.args.critMult=%s (args-level)"):format(
+                tostring(act.args.critMult)))
+        end
+    end
+    
+    -- Helper function to resolve crit multiplier value
+    local function resolveCritMultValue(val)
+        if type(val) == "string" then
+            local id = val:match("^%$stat%.([%w_]+)%$$")
+            if id then
+                local statVal = getStat(id)
+                return (statVal and statVal > 0) and statVal or 2
+            else
+                local n = tonumber(val)
+                return (n and n > 0) and n or 2
+            end
+        else
+            local n = tonumber(val)
+            return (n and n > 0) and n or 2
+        end
+    end
+    
+    -- Check action-scoped critMult FIRST (this is where the schema puts it with scope="action")
+    if act and act.critMult then
+        critMult = resolveCritMultValue(act.critMult)
+        if RPE and RPE.Debug and RPE.Debug.Print then
+            RPE.Debug:Internal(("[SpellCast] Using action-level critMult: %s → %.1f"):format(tostring(act.critMult), critMult))
+        end
+    -- Then check args-scoped critMult for backwards compatibility
+    elseif act and act.args and act.args.critMult then
+        critMult = resolveCritMultValue(act.args.critMult)
+        if RPE and RPE.Debug and RPE.Debug.Print then
+            RPE.Debug:Internal(("[SpellCast] Using args-level critMult: %s → %.1f"):format(tostring(act.args.critMult), critMult))
+        end
+    else
+        -- Default: look for CRIT_MULTIPLIER stat, fallback to 2x
+        local statVal = getStat("CRIT_MULTIPLIER")
+        if statVal and statVal > 0 then
+            critMult = statVal
+            if RPE and RPE.Debug and RPE.Debug.Print then
+                RPE.Debug:Internal(("[SpellCast] Using CRIT_MULTIPLIER stat: %.1f"):format(critMult))
+            end
+        else
+            critMult = 2
+            if RPE and RPE.Debug and RPE.Debug.Print then
+                RPE.Debug:Internal(("[SpellCast] No crit multiplier found, using default: 2.0"):format())
+            end
+        end
+    end
+    
+    return critThreshold, critMult
+end
+
+---Determine if a roll is a critical strike
+---@param roll number
+---@param critThreshold number
+---@return boolean isCrit
+local function _checkCrit(roll, critThreshold)
+    return roll >= critThreshold
+end
+
 -- Check hit for NPC target (complex/simple/ac systems)
-local function _checkHitVsNPC(tgtUnit, casterUnit, hitSystem, rollSpec, baseThreshold, attMod, thresholdIds)
+local function _checkHitVsNPC(tgtUnit, casterUnit, hitSystem, rollSpec, baseThreshold, attMod, thresholdIds, critThreshold)
     local roll = RPE.Common:Roll(rollSpec)
     local lhs = roll + attMod
     local defThr = 0
     
+    -- Check for crit: roll >= critThreshold
+    local isCrit = _checkCrit(roll, critThreshold)
+    if RPE and RPE.Debug and RPE.Debug.Print then
+        RPE.Debug:Print(("  Crit check (NPC): roll=%d >= threshold=%.1f → %s"):format(roll, critThreshold, isCrit and "CRIT" or "normal"))
+    end
     if hitSystem == "simple" then
         -- Simple: always use DEFENCE stat
         if tgtUnit and tgtUnit.stats then
             defThr = tonumber(tgtUnit.stats.DEFENCE) or 0
         end
         local rhs = baseThreshold + defThr
-        return lhs >= rhs, roll, lhs, defThr  -- Return defThr for display, not rhs
+        return lhs >= rhs, roll, lhs, defThr, isCrit  -- Return isCrit
     elseif hitSystem == "ac" then
         -- AC: roll against AC value directly (no base threshold added)
         if tgtUnit and tgtUnit.stats then
             local ac = tonumber(tgtUnit.stats.AC) or 0
-            return lhs >= ac, roll, lhs, ac
+            return lhs >= ac, roll, lhs, ac, isCrit
         end
-        return lhs >= baseThreshold, roll, lhs, baseThreshold
+        return lhs >= baseThreshold, roll, lhs, baseThreshold, isCrit
     else
         -- Complex (default): use specified thresholds
         if #thresholdIds > 0 and tgtUnit and tgtUnit.stats then
@@ -683,19 +827,23 @@ local function _checkHitVsNPC(tgtUnit, casterUnit, hitSystem, rollSpec, baseThre
             end
         end
         local rhs = baseThreshold + defThr
-        return lhs >= rhs, roll, lhs, defThr  -- Return defThr for display, not rhs
+        return lhs >= rhs, roll, lhs, defThr, isCrit  -- Return isCrit
     end
 end
 
 -- Check hit for player target (complex/simple systems need player choice, ac is automatic)
-local function _checkHitVsPlayer(tgtUnit, casterUnit, hitSystem, rollSpec, baseThreshold, attMod, thresholdIds)
+local function _checkHitVsPlayer(tgtUnit, casterUnit, hitSystem, rollSpec, baseThreshold, attMod, thresholdIds, critThreshold)
     if hitSystem == "ac" then
         -- AC: automatic, no player choice needed
         local roll = RPE.Common:Roll(rollSpec)
         local ac = (tgtUnit and tgtUnit.stats and tonumber(tgtUnit.stats.AC)) or 0
         local lhs = roll + attMod
         local rhs = ac
-        return lhs >= rhs, roll, lhs, rhs
+        local isCrit = _checkCrit(roll, critThreshold)
+        if RPE and RPE.Debug and RPE.Debug.Print then
+            RPE.Debug:Print(("  Crit check (Player AC): roll=%d >= threshold=%.1f → %s"):format(roll, critThreshold, isCrit and "CRIT" or "normal"))
+        end
+        return lhs >= rhs, roll, lhs, rhs, isCrit
     else
         -- Complex/Simple: need player defence choice (NYI)
         RPE.Debug:NYI("Player defence choice for complex/simple hit systems")
@@ -718,7 +866,11 @@ local function _checkHitVsPlayer(tgtUnit, casterUnit, hitSystem, rollSpec, baseT
         
         local lhs = roll + attMod
         local rhs = baseThreshold + defThr
-        return lhs >= rhs, roll, lhs, rhs
+        local isCrit = roll >= critThreshold
+        if RPE and RPE.Debug and RPE.Debug.Print then
+            RPE.Debug:Print(("  Crit check (Player %s): roll=%d >= threshold=%.1f → %s"):format(hitSystem:upper(), roll, critThreshold, isCrit and "CRIT" or "normal"))
+        end
+        return lhs >= rhs, roll, lhs, rhs, isCrit
     end
 end
 
@@ -753,6 +905,25 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
     end
 
     if always == 1 or not requiresHit then
+        -- No hit check needed, but we still need rolls for crit purposes
+        -- Always generate rolls and store them
+        local rollSpec, baseThreshold, mode = _hitParams(act, ctx)
+        local casterUnit = RPE.Common:FindUnitById(cast.caster)
+        local critThreshold, critMult = _getCritParams(act, ctx, cast, casterUnit, rollSpec)
+        
+        act._critThreshold = critThreshold
+        act._critMult = critMult
+        act._rolls = {}
+        
+        for _, ref in ipairs(targets) do
+            local roll = RPE.Common:Roll(rollSpec)
+            act._rolls[ref] = roll
+            if RPE and RPE.Debug and RPE.Debug.Print then
+                RPE.Debug:Print(("  Generated roll for target %s: %d"):format(tostring(ref), roll))
+            end
+        end
+        
+        -- All hits (no hit check), crit check is handled separately
         return targets, {}
     end
 
@@ -763,11 +934,22 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
     -- attacker / caster
     local casterUnit = RPE.Common:FindUnitById(cast.caster)
 
+    -- Get crit parameters from action or ruleset
+    local critThreshold, critMult = _getCritParams(act, ctx, cast, casterUnit, rollSpec)
+    -- Store for use in action handlers if needed
+    act._critThreshold = critThreshold
+    act._critMult = critMult
+
     -- parse attacker modifier ID
     local attId = act.hitModifier and act.hitModifier:match("^%$stat%.([%w_]+)%$$")
     local attMod = 0
     if attId then
-        attMod = RPE.Stats:GetValue(attId) or 0
+        -- For NPCs, use unit stats; for players, use RPE.Stats
+        if casterUnit and casterUnit.isNPC and casterUnit.stats then
+            attMod = tonumber(casterUnit.stats[attId] or 0) or 0
+        else
+            attMod = RPE.Stats:GetValue(attId) or 0
+        end
         if RPE and RPE.Debug and RPE.Debug.Print then
             RPE.Debug:Internal(("[SpellCast] Hit modifier stat: " .. tostring(attId) .. " = " .. tostring(attMod)))
         end
@@ -802,6 +984,9 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
     end
 
     local singleRoll = (mode == "single_roll") and RPE.Common:Roll(rollSpec) or nil
+    
+    -- Initialize roll storage for this action
+    act._rolls = {}
 
     local hits, misses = {}, {}
     local playerTargets = {}  -- Track player targets for broadcasting attacks
@@ -813,14 +998,18 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
         -- Determine if target is NPC or player
         local isNPC = tgtUnit and tgtUnit.isNPC
         
-        local hitResult, roll, lhs, rhs
+        local hitResult, roll, lhs, rhs, isCrit
         if isNPC then
-            hitResult, roll, lhs, rhs = _checkHitVsNPC(tgtUnit, casterUnit, hitSystem, 
-                                                        singleRoll or rollSpec, baseThreshold, attMod, thresholdIds)
+            hitResult, roll, lhs, rhs, isCrit = _checkHitVsNPC(tgtUnit, casterUnit, hitSystem, 
+                                                        singleRoll or rollSpec, baseThreshold, attMod, thresholdIds, critThreshold)
         else
             -- For player targets, we need to broadcast the attack and let them defend
             roll = singleRoll or RPE.Common:Roll(rollSpec)
             lhs = roll + attMod
+            isCrit = _checkCrit(roll, critThreshold)
+            if RPE and RPE.Debug and RPE.Debug.Print then
+                RPE.Debug:Print(("  Crit check (Player target): roll=%d >= threshold=%.1f → %s"):format(roll, critThreshold, isCrit and "CRIT" or "normal"))
+            end
             
             -- Store player target info for broadcasting after the loop
             playerTargets[#playerTargets+1] = {
@@ -829,30 +1018,34 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
                 thresholdIds = thresholdIds,
                 roll = roll,
                 attackRoll = lhs,  -- Total roll + modifier
+                isCrit = isCrit,
             }
             -- Don't include player targets in hits/misses - they're handled via broadcast/reaction
             hitResult = false
             rhs = 0  -- Will be determined by player's choice
         end
+        
+        -- Store the roll for this target so handlers can access it
+        act._rolls[ref] = roll
 
         if hitResult then
             if RPE and RPE.Debug and RPE.Debug.Print then
                 if hitSystem == "ac" then
-                    RPE.Debug:Internal((' > Hit: %s (%d + %d vs %d) [%s]')
-                        :format(tostring(ref), roll or 0, attMod, rhs or 0, hitSystem))
+                    RPE.Debug:Print((' > Hit: %s (%d + %d vs %d) [%s]%s')
+                        :format(tostring(ref), roll or 0, attMod, rhs or 0, hitSystem, isCrit and " CRIT" or ""))
                 else
-                    RPE.Debug:Internal((' > Hit: %s (%d + %d vs %d + %d) [%s]')
-                        :format(tostring(ref), roll or 0, attMod, baseThreshold, rhs or 0, hitSystem))
+                    RPE.Debug:Print((' > Hit: %s (%d + %d vs %d + %d) [%s]%s')
+                        :format(tostring(ref), roll or 0, attMod, baseThreshold, rhs or 0, hitSystem, isCrit and " CRIT" or ""))
                 end
             end
             hits[#hits+1] = ref
         else
             if RPE and RPE.Debug and RPE.Debug.Print then
                 if hitSystem == "ac" then
-                    RPE.Debug:Internal((' > Miss: %s (%d + %d vs %d) [%s]')
+                    RPE.Debug:Print((' > Miss: %s (%d + %d vs %d) [%s]')
                         :format(tostring(ref), roll or 0, attMod, rhs or 0, hitSystem))
                 else
-                    RPE.Debug:Internal((' > Miss: %s (%d + %d vs %d + %d) [%s]')
+                    RPE.Debug:Print((' > Miss: %s (%d + %d vs %d + %d) [%s]')
                         :format(tostring(ref), roll or 0, attMod, baseThreshold, rhs or 0, hitSystem))
                 end
             end
@@ -928,6 +1121,7 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
                                     trigger.event or "?",
                                     trigger.action and "yes" or "no"))
                             end
+                            
                             if (trigger.event == "ON_HIT" or trigger.event == "ON_DAMAGE") and trigger.action then
                                 if RPE and RPE.Debug and RPE.Debug.Print then
                                     RPE.Debug:Internal(('[SpellCast] Found ON_HIT trigger: auraId=%s, action=%s'):format(
@@ -975,6 +1169,33 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
         
         for _, ptgt in ipairs(playerTargets) do
             if Broadcast and Broadcast.AttackSpell and ptgt.unit then
+                -- Apply crit multiplier to damage if this was a critical hit
+                local finalDamageBySchool = {}
+                for school, amount in pairs(damageBySchool) do
+                    if ptgt.isCrit then
+                        -- Apply the crit multiplier that was calculated in _getCritParams
+                        amount = math.floor(amount * critMult)
+                        if RPE and RPE.Debug and RPE.Debug.Print then
+                            RPE.Debug:Internal(('[SpellCast] Applying crit multiplier to NPC attack: damage×%.1f'):format(critMult))
+                        end
+                    end
+                    finalDamageBySchool[school] = amount
+                end
+                
+                -- Prepare aura effects with crit flag
+                local allEffects = {}
+                for _, effect in ipairs(auraEffects or {}) do
+                    table.insert(allEffects, effect)
+                end
+                
+                -- Add crit flag as metadata if this hit was critical
+                if ptgt.isCrit then
+                    table.insert(allEffects, {
+                        auraId = "CRIT_FLAG",
+                        actionKey = "METADATA",
+                        argsJSON = "isCrit=true",
+                    })
+                end
                 
                 Broadcast:AttackSpell(
                     cast.caster,
@@ -984,8 +1205,8 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
                     hitSystem,
                     ptgt.attackRoll,  -- Send total attack roll, not just modifier
                     ptgt.thresholdIds,
-                    damageBySchool,
-                    auraEffects
+                    finalDamageBySchool,
+                    allEffects
                 )
             end
         end

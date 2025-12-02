@@ -193,7 +193,10 @@ function MainWindow:ShowTab(key)
         page.root:Show()
     end
 
+    -- Refresh relevant pages when shown
     if key == "spells" and page.Refresh then
+        page:Refresh()
+    elseif key == "inventory" and page.Refresh then
         page:Refresh()
     end
 

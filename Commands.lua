@@ -15,6 +15,10 @@ SlashCmdList["RPE"] = function(msg)
         RPE_UI.Common:Toggle(main)
 
     elseif arg == "rules" then
+        if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then
+            RPE.Debug:Print("Only the supergroup leader can open the Ruleset window.")
+            return
+        end
         local Ruleset = RPE_UI.Common:GetWindow("Ruleset")
         if not Ruleset then
             RPE.Debug:Error("Ruleset window not found.")
@@ -23,6 +27,10 @@ SlashCmdList["RPE"] = function(msg)
         RPE_UI.Common:Toggle(Ruleset)
 
     elseif arg == "event" then
+        if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then
+            RPE.Debug:Print("Only the supergroup leader can open the Event window.")
+            return
+        end
         local Event = RPE_UI.Common:GetWindow("EventWindow")
         if not Event then
             RPE.Debug:Error("Event window not found.")

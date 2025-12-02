@@ -422,8 +422,13 @@ function PlayerReactionWidget:ShowReactions(reactions)
             local Stats = RPE and RPE.Stats
             
             for _, statId in ipairs(thresholdStats) do
+                -- Prevent DEFENCE and AC stats from being used in complex defense rolls
+                if statId == "DEFENCE" or statId == "AC" then
+                    if RPE and RPE.Debug and RPE.Debug.Internal then
+                        RPE.Debug:Internal(("PlayerReactionWidget - Threshold stat '%s' is a simple system stat, skipping"):format(tostring(statId)))
+                    end
                 -- Validate stat exists before adding defense option
-                if not (Stats and Stats.Get and Stats:Get(statId)) then
+                elseif not (Stats and Stats.Get and Stats:Get(statId)) then
                     if RPE and RPE.Debug and RPE.Debug.Warning then
                         RPE.Debug:Internal(("PlayerReactionWidget - Threshold stat '%s' not found, skipping"):format(tostring(statId)))
                     end
@@ -485,7 +490,7 @@ function PlayerReactionWidget:ShowReactions(reactions)
             
             -- Add tooltip
             btn.frame:HookScript("OnEnter", function(frame)
-                local spec = { title = "", lines = {} }
+                local spec = { title = "", lines = {}, width = 350 }  -- Wider tooltip for immersion mode
                 
                 -- Title: Action name
                 if defense.defenseType == "pass" then
@@ -517,14 +522,16 @@ function PlayerReactionWidget:ShowReactions(reactions)
                     end
                 end
                 
-                -- On Fail line: show damage on fail (separate row per damage type)
-                if reactions and reactions.predictedDamage then
+                -- On Fail line: show minimum damage roll (1)
+                -- Only show for non-pass defenses
+                if reactions and reactions.predictedDamage and defense.defenseType ~= "pass" then
+                    local failLabel = "1"  -- Minimum damage
                     -- Show full damage breakdown by school if available
                     if reactions.damageBySchool then
                         for school, amount in pairs(reactions.damageBySchool) do
                             if tonumber(amount) and tonumber(amount) > 0 then
                                 table.insert(spec.lines, {
-                                    left = "On Fail:",
+                                    left = failLabel,
                                     right = string.format("Takes %d %s damage", math.floor(tonumber(amount)), school),
                                     r = 1, g = 0.3, b = 0.3
                                 })
@@ -535,9 +542,153 @@ function PlayerReactionWidget:ShowReactions(reactions)
                         local damageAmount = reactions.predictedDamage or 0
                         local school = reactions.damageSchool or "Physical"
                         table.insert(spec.lines, {
-                            left = "On Fail:",
+                            left = failLabel,
                             right = string.format("Takes %d %s damage", damageAmount, school),
                             r = 1, g = 0.3, b = 0.3
+                        })
+                    end
+                end
+                
+                -- On Success line: show mitigated damage (if defending succeeds)
+                -- Calculate damage for THIS specific defense option
+                local successDamage = reactions.predictedDamage
+                local critSuccessDamage = nil  -- nil means don't show crit line
+                
+                if defense.defenseType == "pass" then
+                    -- Pass defense: player takes full damage
+                    successDamage = reactions.predictedDamage
+                elseif defense.statId and defense.defenseType ~= "pass" then
+                    -- Get mitigation from this specific defense stat
+                    local StatRegistry = RPE and RPE.Core and RPE.Core.StatRegistry
+                    local statDef = StatRegistry and StatRegistry:Get(defense.statId)
+                    
+                    if statDef and statDef.mitigation and statDef.mitigation.normal then
+                        -- Calculate normal success damage
+                        local mitigationExpr = statDef.mitigation.normal
+                        
+                        if mitigationExpr ~= 0 then
+                            if type(mitigationExpr) == "number" then
+                                successDamage = math.max(0, reactions.predictedDamage - mitigationExpr)
+                            elseif type(mitigationExpr) == "string" then
+                                local Formula = RPE and RPE.Core and RPE.Core.Formula
+                                if Formula and Formula.Roll then
+                                    local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB:GetOrCreateActive()
+                                    local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(reactions.predictedDamage))
+                                    local result = Formula:Roll(exprWithValue, profile)
+                                    if result and type(result) == "number" then
+                                        successDamage = math.max(0, result)
+                                    end
+                                end
+                            end
+                        end
+                        
+                        -- Calculate critical success damage (separate from normal)
+                        -- Check if this stat has a critical mitigation field defined
+                        if statDef.mitigation.critical ~= nil then
+                            local critMitigationExpr = statDef.mitigation.critical
+                            critSuccessDamage = reactions.predictedDamage
+                            if critMitigationExpr ~= 0 then
+                                if type(critMitigationExpr) == "number" then
+                                    critSuccessDamage = math.max(0, reactions.predictedDamage - critMitigationExpr)
+                                elseif type(critMitigationExpr) == "string" then
+                                    local Formula = RPE and RPE.Core and RPE.Core.Formula
+                                    if Formula and Formula.Roll then
+                                        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB:GetOrCreateActive()
+                                        local exprWithValue = critMitigationExpr:gsub("%$value%$", tostring(reactions.predictedDamage))
+                                        local result = Formula:Roll(exprWithValue, profile)
+                                        if result and type(result) == "number" then
+                                            critSuccessDamage = math.max(0, result)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                elseif defense.defenseType == "simple" then
+                    -- For simple defense, use DEFENCE stat's mitigation
+                    local StatRegistry = RPE and RPE.Core and RPE.Core.StatRegistry
+                    local defenceStat_def = StatRegistry and StatRegistry:Get("DEFENCE")
+                    
+                    
+                    if defenceStat_def and defenceStat_def.mitigation and defenceStat_def.mitigation.normal then
+                        -- Calculate normal success damage
+                        local mitigationExpr = defenceStat_def.mitigation.normal
+                        
+                        if mitigationExpr ~= 0 then
+                            if type(mitigationExpr) == "number" then
+                                successDamage = math.max(0, reactions.predictedDamage - mitigationExpr)
+                            elseif type(mitigationExpr) == "string" then
+                                local Formula = RPE and RPE.Core and RPE.Core.Formula
+                                if Formula and Formula.Roll then
+                                    local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB:GetOrCreateActive()
+                                    local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(reactions.predictedDamage))
+                                    local result = Formula:Roll(exprWithValue, profile)
+                                    if result and type(result) == "number" then
+                                        successDamage = math.max(0, result)
+                                    end
+                                end
+                            end
+                        end
+                        
+                        -- Calculate critical success damage (separate from normal)
+                        -- Check if DEFENCE stat has a critical mitigation field defined
+                        if defenceStat_def.mitigation.critical ~= nil then
+                            local critMitigationExpr = defenceStat_def.mitigation.critical
+                            critSuccessDamage = reactions.predictedDamage
+                            if critMitigationExpr ~= 0 then
+                                if type(critMitigationExpr) == "number" then
+                                    critSuccessDamage = math.max(0, reactions.predictedDamage - critMitigationExpr)
+                                elseif type(critMitigationExpr) == "string" then
+                                    local Formula = RPE and RPE.Core and RPE.Core.Formula
+                                    if Formula and Formula.Roll then
+                                        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB:GetOrCreateActive()
+                                        local exprWithValue = critMitigationExpr:gsub("%$value%$", tostring(reactions.predictedDamage))
+                                        local result = Formula:Roll(exprWithValue, profile)
+                                        if result and type(result) == "number" then
+                                            critSuccessDamage = math.max(0, result)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                if reactions and reactions.predictedDamage then
+                    local school = reactions.damageSchool or "Physical"
+                    
+                    -- Extract max die value from active rules (hit_roll) if available
+                    local maxDieValue = 20  -- Default to d20
+                    local ActiveRules = RPE and RPE.ActiveRules
+                    if ActiveRules and ActiveRules.Get then
+                        local hitRollRule = ActiveRules:Get("hit_roll")
+                        if hitRollRule then
+                            -- Try to extract die size from formulas like "1d100", "2d20", etc.
+                            local diceMatch = tostring(hitRollRule):match("d(%d+)")
+                            if diceMatch then
+                                maxDieValue = tonumber(diceMatch) or 20
+                            end
+                        end
+                    end
+                    
+                    -- For tooltip, show as dice roll range instead of descriptive label
+                    -- "1" for minimum, "2-XX" for middle range, "XX" for maximum
+                    local successLabel = (defense.defenseType == "pass") and "On Selected:" or ("2-" .. tostring(maxDieValue - 1))
+                    local critLabel = tostring(maxDieValue)  -- Maximum die value
+                    
+                    local labelColor = (defense.defenseType == "pass") and {r = 1, g = 0.3, b = 0.3} or {r = 0.3, g = 1, b = 0.3}
+                    table.insert(spec.lines, {
+                        left = successLabel,
+                        right = string.format("Takes %d %s damage", successDamage, school),
+                        r = labelColor.r, g = labelColor.g, b = labelColor.b
+                    })
+                    
+                    -- Show critical success only if it has different mitigation
+                    if critSuccessDamage ~= nil then
+                        table.insert(spec.lines, {
+                            left = critLabel,  -- Max die value
+                            right = string.format("Takes %d %s damage", critSuccessDamage, school),
+                            r = 0.2, g = 1, b = 0.5
                         })
                     end
                 end
@@ -638,8 +789,66 @@ function PlayerReactionWidget:_handleSimpleDefense(reaction)
     local defenceStat = RPE.Stats and RPE.Stats:GetValue("DEFENCE") or 0
     local roll = Common and Common:Roll("1d20") or math.random(1, 20)
     local lhs = roll + defenceStat
-    local hitResult = false
-
+    local defendSuccess = lhs >= (reaction.attackRoll or 0)
+    local finalDamage = reaction.predictedDamage  -- Default: full damage on defense failure
+    local outcomeText = "failed to defend"
+    
+    if defendSuccess then
+        -- Calculate final damage using DEFENCE stat's mitigation if available
+        finalDamage = reaction.predictedDamage
+        local StatRegistry = RPE and RPE.Core and RPE.Core.StatRegistry
+        local defenceStat_def = StatRegistry and StatRegistry:Get("DEFENCE")
+        
+        if RPE and RPE.Debug and RPE.Debug.Print then
+            RPE.Debug:Print(("[SimpleDefense DEBUG] defenceStat_def exists: %s"):format(tostring(defenceStat_def ~= nil)))
+            if defenceStat_def then
+                RPE.Debug:Print(("[SimpleDefense DEBUG] defenceStat_def.mitigation exists: %s"):format(tostring(defenceStat_def.mitigation ~= nil)))
+                if defenceStat_def.mitigation then
+                    RPE.Debug:Print(("[SimpleDefense DEBUG] mitigation.normal: %s"):format(tostring(defenceStat_def.mitigation.normal)))
+                    RPE.Debug:Print(("[SimpleDefense DEBUG] mitigation.critical: %s"):format(tostring(defenceStat_def.mitigation.critical)))
+                end
+            end
+        end
+        
+        if defenceStat_def and defenceStat_def.mitigation and defenceStat_def.mitigation.normal then
+            local mitigationExpr = defenceStat_def.mitigation.normal
+            if RPE and RPE.Debug and RPE.Debug.Print then
+                RPE.Debug:Print(("[SimpleDefense DEBUG] Processing mitigation, expr: %s, type: %s"):format(tostring(mitigationExpr), type(mitigationExpr)))
+            end
+            if mitigationExpr ~= 0 then
+                if type(mitigationExpr) == "number" then
+                    finalDamage = math.max(0, reaction.predictedDamage - mitigationExpr)
+                    if RPE and RPE.Debug and RPE.Debug.Print then
+                        RPE.Debug:Print(("[SimpleDefense DEBUG] Number mitigation: %d - %d = %d"):format(reaction.predictedDamage, mitigationExpr, finalDamage))
+                    end
+                elseif type(mitigationExpr) == "string" then
+                    local Formula = RPE and RPE.Core and RPE.Core.Formula
+                    if RPE and RPE.Debug and RPE.Debug.Print then
+                        RPE.Debug:Print(("[SimpleDefense DEBUG] String mitigation expr: %s"):format(mitigationExpr))
+                    end
+                    if Formula and Formula.Roll then
+                        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB:GetOrCreateActive()
+                        local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(reaction.predictedDamage))
+                        if RPE and RPE.Debug and RPE.Debug.Print then
+                            RPE.Debug:Print(("[SimpleDefense DEBUG] After value substitution: %s"):format(exprWithValue))
+                        end
+                        local result = Formula:Roll(exprWithValue, profile)
+                        if RPE and RPE.Debug and RPE.Debug.Print then
+                            RPE.Debug:Print(("[SimpleDefense DEBUG] Formula:Roll result: %s (type: %s)"):format(tostring(result), type(result)))
+                        end
+                        if result and type(result) == "number" then
+                            finalDamage = math.max(0, result)
+                            if RPE and RPE.Debug and RPE.Debug.Print then
+                                RPE.Debug:Print(("[SimpleDefense DEBUG] Final mitigated damage: %d"):format(finalDamage))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        outcomeText = finalDamage > 0 and "partially defend" or "fully defend"
+    end
+    
     -- Display outcome
     local attackerName = "Attacker"
     if reaction and reaction.caster then
@@ -648,8 +857,7 @@ function PlayerReactionWidget:_handleSimpleDefense(reaction)
             attackerName = (RPE.Common and RPE.Common:FormatUnitName(attacker)) or ("Unit " .. tostring(reaction.caster))
         end
     end
-    local defendSuccess = lhs >= (reaction.attackRoll or 0)
-    local outcomeText = defendSuccess and "defend" or "failed to defend"
+    
     local Debug = RPE and RPE.Debug
     if Debug and Debug.Dice then
         Debug:Dice(("You %s against %s. (%d vs %d)"):format(outcomeText, attackerName, lhs, reaction.attackRoll or 0))
@@ -657,7 +865,8 @@ function PlayerReactionWidget:_handleSimpleDefense(reaction)
 
     local PlayerReaction = RPE.Core and RPE.Core.PlayerReaction
     if PlayerReaction and PlayerReaction.Complete then
-        PlayerReaction:Complete(hitResult, roll, lhs, 0)
+        -- Pass defendSuccess and mitigated finalDamage
+        PlayerReaction:Complete(defendSuccess, roll, lhs, finalDamage)
     end
 end
 
@@ -676,7 +885,37 @@ function PlayerReactionWidget:_handleComplexDefense(reaction, statId)
         end
     end
     local defendSuccess = lhs >= (reaction.attackRoll or 0)
-    local outcomeText = defendSuccess and "defend" or "failed to defend"
+    local outcomeText = "failed to defend"
+    local finalDamage = reaction.predictedDamage  -- Default: full damage on defense failure
+    
+    if defendSuccess then
+        -- Calculate final damage for the SPECIFIC stat chosen (not the pre-calculated one)
+        finalDamage = reaction.predictedDamage
+        if statId then
+            local StatRegistry = RPE and RPE.Core and RPE.Core.StatRegistry
+            local statDef = StatRegistry and StatRegistry:Get(statId)
+            if statDef and statDef.mitigation and statDef.mitigation.normal then
+                local mitigationExpr = statDef.mitigation.normal
+                if mitigationExpr ~= 0 then
+                    if type(mitigationExpr) == "number" then
+                        finalDamage = math.max(0, reaction.predictedDamage - mitigationExpr)
+                    elseif type(mitigationExpr) == "string" then
+                        local Formula = RPE and RPE.Core and RPE.Core.Formula
+                        if Formula and Formula.Roll then
+                            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB:GetOrCreateActive()
+                            local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(reaction.predictedDamage))
+                            local result = Formula:Roll(exprWithValue, profile)
+                            if result and type(result) == "number" then
+                                finalDamage = math.max(0, result)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        outcomeText = finalDamage > 0 and "partially defend" or "fully defend"
+    end
+    
     local Debug = RPE and RPE.Debug
     if Debug and Debug.Dice then
         Debug:Dice(("You %s against %s. (%d vs %d)"):format(outcomeText, attackerName, lhs, reaction.attackRoll or 0))
@@ -684,14 +923,16 @@ function PlayerReactionWidget:_handleComplexDefense(reaction, statId)
 
     local PlayerReaction = RPE.Core and RPE.Core.PlayerReaction
     if PlayerReaction and PlayerReaction.Complete then
-        PlayerReaction:Complete(hitResult, roll, lhs, 0)
+        -- Pass defendSuccess (lhs >= attackRoll means defense succeeds) and mitigated finalDamage
+        PlayerReaction:Complete(defendSuccess, roll, lhs, finalDamage)
     end
 end
 
 function PlayerReactionWidget:_handlePassDefense(reaction)
-    local hitResult = false
+    local defendSuccess = false  -- Passing on a defense = no defense (take full damage)
     local roll = 0
     local lhs = 0
+    local finalDamage = reaction.predictedDamage  -- Pass defense means take full damage
 
     -- Display outcome
     local attackerName = "Attacker"
@@ -708,7 +949,8 @@ function PlayerReactionWidget:_handlePassDefense(reaction)
 
     local PlayerReaction = RPE.Core and RPE.Core.PlayerReaction
     if PlayerReaction and PlayerReaction.Complete then
-        PlayerReaction:Complete(hitResult, roll, lhs, 0)
+        -- Pass defendSuccess=true and finalDamage=0 (passed defense takes no damage)
+        PlayerReaction:Complete(defendSuccess, roll, lhs, finalDamage)
     end
 end
 

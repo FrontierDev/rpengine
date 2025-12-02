@@ -15,20 +15,72 @@ end
 
 -- === Public API ===
 
---- Initialize resource pool to 50% of max values (for testing recovery).
+--- Initialize resource pool to their base values from stat definitions.
 function Resources:Init()
     local profile = RPE.Profile.DB.GetOrCreateActive()
     if not profile then return end
 
     self.pool = {}
+    
+    -- First, try to initialize from profile.stats
+    local foundAny = false
     for id, stat in pairs(profile.stats or {}) do
         if stat.category == "RESOURCE" then
-            local maxVal = stat:GetMaxValue(profile)
-
-            if (id == "HEALTH") or (id == "MANA") then
-                self.pool[string.upper(id)] = maxVal
+            local baseVal = stat:GetValue(profile)  -- Gets the full computed value (base + mods)
+            self.pool[string.upper(id)] = baseVal
+            foundAny = true
+        end
+    end
+    
+    -- Ensure always-used resources are always in the pool (even if not in profile.stats)
+    -- HEALTH is always available; ACTION/BONUS_ACTION/REACTION only if allowed by rules
+    if not self.pool["HEALTH"] then
+        local stat = profile.stats and profile.stats["HEALTH"]
+        if stat then
+            self.pool["HEALTH"] = stat:GetValue(profile)
+        else
+            local StatRegistry = RPE.Core and RPE.Core.StatRegistry
+            local statDef = StatRegistry and StatRegistry:Get("HEALTH")
+            if statDef then
+                self.pool["HEALTH"] = statDef.base or 0
             else
-                self.pool[string.upper(id)] = 0
+                self.pool["HEALTH"] = 100  -- Default HP
+            end
+        end
+    end
+    
+    -- Check ActiveRules for ACTION, BONUS_ACTION, REACTION
+    local ActiveRules = RPE.ActiveRules
+    local actionLikeResources = { "ACTION", "BONUS_ACTION", "REACTION" }
+    for _, resId in ipairs(actionLikeResources) do
+        -- Only initialize if allowed by ruleset
+        local allowed = ActiveRules and ActiveRules:IsStatEnabled(resId, "RESOURCE")
+        if allowed and not self.pool[resId] then
+            local stat = profile.stats and profile.stats[resId]
+            if stat then
+                self.pool[resId] = stat:GetValue(profile)
+            else
+                local StatRegistry = RPE.Core and RPE.Core.StatRegistry
+                local statDef = StatRegistry and StatRegistry:Get(resId)
+                if statDef then
+                    self.pool[resId] = statDef.base or 0
+                else
+                    self.pool[resId] = 1  -- One action/bonus action/reaction per turn
+                end
+            end
+        end
+    end
+    
+    -- Fallback: if no resources found in profile.stats, initialize from StatRegistry definitions
+    if not foundAny then
+        local StatRegistry = RPE.Core and RPE.Core.StatRegistry
+        if StatRegistry then
+            local allStats = StatRegistry:All()
+            for id, statDef in pairs(allStats or {}) do
+                if statDef and statDef.category == "RESOURCE" then
+                    local baseVal = statDef.base or 0
+                    self.pool[string.upper(id)] = baseVal
+                end
             end
         end
     end
@@ -44,7 +96,23 @@ end
 function Resources:Get(resId)
     local profile = getProfile()
     local cur = self.pool[resId] or 0
-    local max = (profile.stats[resId] and profile.stats[resId]:GetMaxValue(profile)) or 0
+    
+    -- Try to get stat from profile first
+    local stat = profile and profile.stats and profile.stats[resId]
+    local max = (stat and stat:GetMaxValue(profile)) or 0
+    
+    -- If max is 0 (stat missing), try to get it from StatRegistry definition
+    if max == 0 then
+        local StatRegistry = RPE.Core and RPE.Core.StatRegistry
+        local statDef = StatRegistry and StatRegistry:Get(resId)
+        if statDef and statDef.max then
+            -- Get max value directly from definition
+            if type(statDef.max) == "number" then
+                max = statDef.max
+            end
+        end
+    end
+    
     return cur, max
 end
 
@@ -64,9 +132,13 @@ function Resources:Set(resId, value)
 
     if v ~= prev then
         self.pool[key] = v
-        if RPE and RPE.Core and RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget
-           and RPE.Core.Windows.PlayerUnitWidget.Refresh then
-            RPE.Core.Windows.PlayerUnitWidget:Refresh()
+        -- Refresh the PlayerUnitWidget if it exists (it's a singleton instance)
+        local PUW = RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget
+        if PUW and PUW.Refresh then
+            PUW:Refresh()
+            if RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal(("[Resources:Set] Refreshed PlayerUnitWidget after %s change: %d -> %d"):format(key, prev, v))
+            end
         end
     end
 
@@ -82,6 +154,13 @@ function Resources:Set(resId, value)
     return v, max
 end
 
+--- Add to a resource's current value (clamped to max).
+function Resources:Add(resId, amount)
+    local cur, max = self:Get(resId)
+    local newValue = math.min(cur + tonumber(amount or 0), max)
+    return self:Set(resId, newValue)
+end
+
 local function evalCostAmount(spell, cost, profile)
     local Formula = RPE and RPE.Core and RPE.Core.Formula
     if not Formula then return tonumber(cost.amount) or 0 end
@@ -95,19 +174,133 @@ local function evalCostAmount(spell, cost, profile)
     return base + perVal
 end
 
---- Can the player afford these costs?
+--- Get the list of resources the player "uses" (checks for spell costs).
+--- Always-used resources: HEALTH, ACTION, BONUS_ACTION, REACTION
+function Resources:GetUsedResources(profile)
+    profile = profile or RPE.Profile.DB.GetOrCreateActive()
+    local usedSet = {}
+    
+    -- Get the 'use' list from profile settings (what the user has toggled on/off)
+    local settings = {}
+    if profile and profile.resourceDisplaySettings then
+        local DatasetDB = RPE.Profile.DatasetDB
+        local activeDatasets = DatasetDB and DatasetDB.GetActiveNamesForCurrentCharacter()
+        local datasetKey = ""
+        if activeDatasets and #activeDatasets > 0 then
+            table.sort(activeDatasets)
+            datasetKey = table.concat(activeDatasets, "|")
+        else
+            datasetKey = "none"
+        end
+        
+        -- Normalize settings in case they're in old format
+        settings = profile:_NormalizeResourceSettings(datasetKey)
+    end
+    
+    -- If there's a use list, use it (it represents what the user has toggled on)
+    if settings and settings.use and #settings.use > 0 then
+        for _, resId in ipairs(settings.use) do
+            usedSet[resId] = true
+        end
+    else
+        -- If no custom use list, use defaults: HEALTH + action-like if allowed by rules
+        usedSet["HEALTH"] = true
+        
+        local ActiveRules = RPE.ActiveRules
+        if ActiveRules then
+            local actionLikeResources = { "ACTION", "BONUS_ACTION", "REACTION" }
+            for _, resId in ipairs(actionLikeResources) do
+                local allowed = ActiveRules:IsStatEnabled(resId, "RESOURCE")
+                if allowed then
+                    usedSet[resId] = true
+                end
+            end
+        else
+            -- If no rules, include them by default
+            usedSet["ACTION"] = true
+            usedSet["BONUS_ACTION"] = true
+            usedSet["REACTION"] = true
+        end
+    end
+    
+    return usedSet
+end
+
+--- Get the list of resources to display on the bar.
+function Resources:GetDisplayedResources(profile)
+    profile = profile or RPE.Profile.DB.GetOrCreateActive()
+    
+    local displayed = {}
+    if profile and profile.resourceDisplaySettings then
+        local DatasetDB = RPE.Profile.DatasetDB
+        local activeDatasets = DatasetDB and DatasetDB.GetActiveNamesForCurrentCharacter()
+        local datasetKey = ""
+        if activeDatasets and #activeDatasets > 0 then
+            table.sort(activeDatasets)
+            datasetKey = table.concat(activeDatasets, "|")
+        else
+            datasetKey = "none"
+        end
+        
+        -- Normalize settings in case they're in old format
+        local settings = profile:_NormalizeResourceSettings(datasetKey)
+        if settings and settings.show and #settings.show > 0 then
+            displayed = settings.show
+        end
+    end
+    
+    -- If no custom display settings, use defaults
+    if #displayed == 0 then
+        displayed = { "HEALTH" }
+        if profile and profile.stats and profile.stats["MANA"] then
+            table.insert(displayed, "MANA")
+        end
+    end
+    
+    -- Filter out resources not allowed by ActiveRules
+    local ActiveRules = RPE.ActiveRules
+    local actionLikeResources = { "ACTION", "BONUS_ACTION", "REACTION" }
+    local actionLikeSet = {}
+    for _, resId in ipairs(actionLikeResources) do
+        actionLikeSet[resId] = true
+    end
+    
+    local filtered = {}
+    for _, resId in ipairs(displayed) do
+        -- Always show HEALTH; for action-like resources, check ActiveRules
+        if resId == "HEALTH" or not actionLikeSet[resId] then
+            table.insert(filtered, resId)
+        elseif actionLikeSet[resId] then
+            local allowed = ActiveRules and ActiveRules:IsStatEnabled(resId, "RESOURCE")
+            if allowed then
+                table.insert(filtered, resId)
+            end
+        end
+    end
+    
+    return filtered
+end
+
+--- Can the player afford these costs (checking against 'used' resources)?
 function Resources:CanAfford(costs, spell, profile)
     profile = profile or RPE.Profile.DB.GetOrCreateActive()
+    local usedResources = self:GetUsedResources(profile)
+    
     for _, c in ipairs(costs or {}) do
-        local need
-        if spell then
-            need = evalCostAmount(spell, c, profile)
-        else
-            need = tonumber(c.amount) or 0 -- fallback
-        end
-        local cur = self.pool[string.upper(c.resource)] or 0
-        if cur < need then
-            return false
+        local resId = string.upper(c.resource)
+        
+        -- Only check costs for resources the player "uses"
+        if usedResources[resId] then
+            local need
+            if spell then
+                need = evalCostAmount(spell, c, profile)
+            else
+                need = tonumber(c.amount) or 0 -- fallback
+            end
+            local cur = self.pool[resId] or 0
+            if cur < need then
+                return false
+            end
         end
     end
     return true
@@ -159,6 +352,8 @@ function Resources:OnPlayerTurnStart()
     end
 
     local refresh = false
+    
+    -- First, regenerate resources that are in profile.stats
     for id, stat in pairs(profile.stats or {}) do
         if stat.category == "RESOURCE" then
             local cur, max = self.pool[id] or 0, stat:GetMaxValue(profile)
@@ -169,11 +364,6 @@ function Resources:OnPlayerTurnStart()
                 local newVal = math.floor(cur + regen + 0.5)
                 self.pool[id] = math.min(max, newVal)
 
-                -- RPE.Debug:Print(string.format(
-                --     "Recovered %s %s this turn. (Current: %s)",
-                --     regen, stat.name, self.pool[id]
-                -- ))
-
                 if id == "HEALTH" then
                     local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
                     if B and B.UpdateUnitHealth then
@@ -181,6 +371,23 @@ function Resources:OnPlayerTurnStart()
                     end
                 end
 
+                refresh = true
+            end
+        end
+    end
+    
+    -- Handle always-used resources that might not be in profile.stats
+    -- ACTION, BONUS_ACTION, REACTION restore to 1 per turn if allowed by rules
+    local ActiveRules = RPE.ActiveRules
+    local actionLikeResources = { "ACTION", "BONUS_ACTION", "REACTION" }
+    for _, resId in ipairs(actionLikeResources) do
+        -- Only regenerate if allowed by ruleset
+        local allowed = ActiveRules and ActiveRules:IsStatEnabled(resId, "RESOURCE")
+        if allowed then
+            local cur = self.pool[resId] or 0
+            local max = 1  -- ACTION/BONUS_ACTION/REACTION max out at 1
+            if cur < max then
+                self.pool[resId] = max
                 refresh = true
             end
         end

@@ -695,6 +695,10 @@ Comms:RegisterHandler("START_EVENT", function(data, sender)
                 end
             end
         end
+        
+        -- New: parse summonedBy
+        u.summonedBy = tonumber(args[i]) or 0; i = i + 1
+        
         units[#units+1] = u
     end
 
@@ -766,7 +770,35 @@ Comms:RegisterHandler("ADVANCE", function(data, sender)
                             active     = fields.active or false,
                             hidden     = fields.hidden or false,
                             flying     = fields.flying or false,
+                            displayId  = fields.displayId or nil,
+                            fileDataId = fields.fileDataId or nil,
+                            cam        = fields.cam or nil,
+                            rot        = fields.rot or nil,
+                            z          = fields.z or nil,
+                            summonedBy = fields.summonedBy or 0,
                         })
+                        
+                        -- If this is an NPC, look up spells from the registry
+                        if fields.isNPC and RPE.Core and RPE.Core.NPCRegistry then
+                            -- Try to find the NPC in the registry by searching for matching name
+                            -- (we don't have npcId in the delta, so we search by name)
+                            local NPCRegistry = RPE.Core.NPCRegistry
+                            local nameToMatch = fields.name and fields.name:lower() or nil
+                            if nameToMatch then
+                                for npcId, npcDef in NPCRegistry:Pairs() do
+                                    if npcDef and npcDef.name and npcDef.name:lower() == nameToMatch then
+                                        if type(npcDef.spells) == "table" then
+                                            u.spells = npcDef.spells
+                                            if RPE.Debug and RPE.Debug.Internal then
+                                                RPE.Debug:Internal(("[Handle] Populated spells for NPC %s from registry"):format(fields.name))
+                                            end
+                                        end
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                        
                         ev.units[key] = u
                         structureChanged = true
                     else
@@ -844,6 +876,27 @@ Comms:RegisterHandler("ADVANCE", function(data, sender)
             local k, v = pair:match("([^=]+)=([^=]+)")
             if k then u.stats[k] = tonumber(v) or 0 end
         end
+        
+        -- model data
+        u.fileDataId = tonumber(args[i]) or nil; i = i + 1
+        u.displayId  = tonumber(args[i]) or nil; i = i + 1
+        u.cam        = tonumber(args[i]) or nil; i = i + 1
+        u.rot        = tonumber(args[i]) or nil; i = i + 1
+        u.z          = tonumber(args[i]) or nil; i = i + 1
+        
+        -- spells
+        local spellsStr = args[i] or ""; i = i + 1
+        u.spells = {}
+        if spellsStr ~= "" then
+            for sid in string.gmatch(spellsStr, "([^,]+)") do
+                if sid and sid ~= "" then
+                    table.insert(u.spells, sid)
+                end
+            end
+        end
+        
+        -- summonedBy
+        u.summonedBy = tonumber(args[i]) or 0; i = i + 1
 
         units[#units+1] = u
     end
@@ -974,8 +1027,43 @@ Comms:RegisterHandler("DAMAGE", function(data, sender)
         if tId > 0 and amount > 0 then
             local target = findUnitById(tId)
             if target then
-                target:ApplyDamage(amount)
+                target:ApplyDamage(amount, isCrit)
                 if sId ~= 0 then target:AddThreat(sId, tDelta) end
+
+                local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
+                
+                -- Emit ON_HIT_TAKEN trigger for the target
+                if AuraTriggers and AuraTriggers.Emit then
+                    AuraTriggers:Emit("ON_HIT_TAKEN", ev or {}, tId, tId, { 
+                        damageAmount = amount, 
+                        school = school,
+                        sourceId = sId,
+                    })
+                end
+                
+                -- Emit ON_CRIT trigger for attacker if this is a crit
+                if isCrit and sId ~= 0 and AuraTriggers and AuraTriggers.Emit then
+                    AuraTriggers:Emit("ON_CRIT", ev or {}, sId, tId, { 
+                        damageAmount = amount, 
+                        school = school,
+                    })
+                end
+                
+                -- Emit ON_CRIT_TAKEN trigger for target if this is a crit
+                if isCrit and AuraTriggers and AuraTriggers.Emit then
+                    AuraTriggers:Emit("ON_CRIT_TAKEN", ev or {}, tId, tId, { 
+                        damageAmount = amount, 
+                        school = school,
+                        sourceId = sId,
+                    })
+                end
+
+                -- Emit ON_KILL trigger when target dies from damage dealt by attacker
+                if sId ~= 0 and (target:IsDead() or target.hp < 1) then                 
+                    if AuraTriggers and AuraTriggers.Emit then
+                        AuraTriggers:Emit("ON_KILL", ev or {}, sId, tId, { damageAmount = amount, school = school })
+                    end
+                end
 
                 local getMyId = RPE.Core.GetLocalPlayerUnitId
                 local myId    = getMyId and getMyId() or nil
@@ -1030,8 +1118,36 @@ Comms:RegisterHandler("HEAL", function(data, sender)
         if tId > 0 and amount > 0 then
             local target = findUnitById(tId)
             if target then
-                target:Heal(amount)
+                target:Heal(amount, isCrit)
                 if sId ~= 0 then target:AddThreat(sId, -tDelta) end -- heals often reduce threat vs damage
+
+                local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
+                
+                -- Emit ON_HEAL_TAKEN trigger for the target
+                if AuraTriggers and AuraTriggers.Emit then
+                    AuraTriggers:Emit("ON_HEAL_TAKEN", ev or {}, tId, tId, { 
+                        healAmount = amount,
+                        sourceId = sId,
+                        isCrit = isCrit,
+                    })
+                end
+                
+                -- Emit ON_CRIT trigger for healer if this was a crit heal
+                if isCrit and sId ~= 0 and AuraTriggers and AuraTriggers.Emit then
+                    AuraTriggers:Emit("ON_CRIT", ev or {}, sId, tId, { 
+                        healAmount = amount,
+                        isCrit = true,
+                    })
+                end
+                
+                -- Emit ON_CRIT_TAKEN trigger for target if this was a crit heal
+                if isCrit and AuraTriggers and AuraTriggers.Emit then
+                    AuraTriggers:Emit("ON_CRIT_TAKEN", ev or {}, tId, tId, { 
+                        healAmount = amount,
+                        sourceId = sId,
+                        isCrit = true,
+                    })
+                end
 
                 local getMyId = RPE.Core.GetLocalPlayerUnitId
                 local myId    = getMyId and getMyId() or nil
@@ -1174,15 +1290,41 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
     -- Parse aura effects from JSON (format: auraId|actionKey|argsJSON||auraId|actionKey|argsJSON)
     local auraEffects = {}
     if auraEffectsJSON ~= "" then
-        for effectStr in string.gmatch(auraEffectsJSON, "([^|][^|]*||?|[^|][^|]*||?[^|]*||?)") do
-            local parts = { strsplit("|", effectStr) }
-            if #parts >= 2 then
-                table.insert(auraEffects, {
-                    auraId = parts[1],
-                    actionKey = parts[2],
-                    argsJSON = parts[3] or "",
-                })
+        -- Replace || with a marker, then split properly
+        local marker = "\001"  -- Use a rare character as separator
+        local normalized = auraEffectsJSON:gsub("||", marker)
+        
+        for effectStr in string.gmatch(normalized, "[^" .. marker .. "]+") do
+            if effectStr ~= "" then
+                local parts = { strsplit("|", effectStr) }
+                if #parts >= 3 then
+                    table.insert(auraEffects, {
+                        auraId = parts[1],
+                        actionKey = parts[2],
+                        argsJSON = parts[3] or "",
+                    })
+                elseif #parts == 2 then
+                    -- Handle case where argsJSON is empty
+                    table.insert(auraEffects, {
+                        auraId = parts[1],
+                        actionKey = parts[2],
+                        argsJSON = "",
+                    })
+                end
             end
+        end
+    end
+    
+    -- Debug: Log parsed aura effects
+    if RPE and RPE.Debug and RPE.Debug.Print then
+        if #auraEffects > 0 then
+            local effectDescs = {}
+            for _, effect in ipairs(auraEffects) do
+                table.insert(effectDescs, effect.auraId .. "|" .. effect.actionKey .. "|" .. effect.argsJSON)
+            end
+            RPE.Debug:Internal(('[Handle] ATTACK_SPELL parsed auraEffects: %s'):format(table.concat(effectDescs, " + ")))
+        else
+            RPE.Debug:Internal(('[Handle] ATTACK_SPELL no auraEffects parsed (input was: "%s")'):format(auraEffectsJSON))
         end
     end
 
@@ -1241,67 +1383,140 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
         }
         
         -- Completion callback: will be called when player chooses a defense
-        -- For AC mode: lhs is attackRoll, rhs is player's AC
-        -- For complex/simple: lhs is player's total, rhs is player's defense modifier
+        -- For AC mode: hitResult is (attackRoll >= AC), lhs is attackRoll, rhs is playerAC
+        -- For complex/simple: hitResult is defendSuccess (boolean), lhs is player defense roll, rhs is mitigated damage
         local function onAttackComplete(hitResult, roll, lhs, rhs)
             local playerDefends
+            local mitigatedDamage = totalDamage  -- Default to full damage
             
             if hitSystem == "ac" then
-                -- AC mode: player AC is in rhs, attacker roll is in lhs (from PlayerReactionWidget callback)
-                -- Actually, let me check what PlayerReactionWidget passes...
-                -- In AC mode, it calls: PlayerReaction:Complete(isHit, reactions.attackRoll, reactions.attackRoll, reactions.ac or 0)
-                -- So: roll=attackRoll, lhs=attackRoll, rhs=AC
-                -- Attacker hits if: attackRoll >= AC (which is checked as lhs >= rhs)
-                playerDefends = (lhs < rhs)  -- Player defends if attackRoll < AC
+                -- AC mode: hitResult tells us if attack hit (attackRoll >= AC)
+                -- In AC mode, there's no mitigation - either hit or miss
+                playerDefends = not hitResult  -- If hitResult is true (hit), playerDefends is false
+                mitigatedDamage = hitResult and totalDamage or 0  -- Full damage on hit, no damage on miss
             else
-                -- Complex/Simple mode: lhs is player total, attackRoll is attacker's roll
-                -- Player defends if their total >= attacker's roll
-                playerDefends = (lhs >= attackRoll)
+                -- Complex/Simple mode: hitResult is defendSuccess (boolean)
+                -- rhs is mitigated damage to apply (0 if fully defended, otherwise partial damage)
+                playerDefends = hitResult  -- hitResult is defendSuccess
+                mitigatedDamage = rhs or 0  -- Use the mitigated damage passed from handler
             end
             
             if RPE and RPE.Debug and RPE.Debug.Print then
-                RPE.Debug:Internal(('[Handle] Attack complete: hitSystem=%s, playerRoll=%d, lhs=%d, rhs=%d, attackerRoll=%d, playerDefends=%s')
-                    :format(hitSystem, roll or 0, lhs or 0, rhs or 0, attackRoll, tostring(playerDefends)))
+                RPE.Debug:Internal(('[Handle] Attack complete: hitSystem=%s, playerRoll=%d, lhs=%d, rhs=%d, attackerRoll=%d, playerDefends=%s, mitigatedDamage=%d')
+                    :format(hitSystem, roll or 0, lhs or 0, rhs or 0, attackRoll, tostring(playerDefends), mitigatedDamage))
             end
             
-            -- Apply damage if attacker hits (player failed to defend)
-            if not playerDefends and totalDamage > 0 then
-                local target = Common:FindUnitById(tId)
-                if target then
-                    -- Apply total damage from all schools combined
-                    target:ApplyDamage(totalDamage)
-                    
-                    -- Print damage breakdown message
-                    local damageMessage = "You take "
-                    local damageList = {}
-                    for school, amount in pairs(damageBySchool) do
-                        if tonumber(amount) and tonumber(amount) > 0 then
-                            table.insert(damageList, string.format("%d %s", math.floor(tonumber(amount)), school))
+            -- Apply damage based on result
+            if playerDefends then
+                -- Player successfully defended - apply mitigated damage
+                if mitigatedDamage > 0 then
+                    local target = Common:FindUnitById(tId)
+                    if target then
+                        -- Check if this was a critical hit
+                        local isCrit = false
+                        for _, effect in ipairs(auraEffects) do
+                            if effect.auraId == "CRIT_FLAG" and effect.argsJSON and effect.argsJSON:match("isCrit=true") then
+                                isCrit = true
+                                break
+                            end
+                        end
+                        
+                        -- Apply mitigated damage
+                        target:ApplyDamage(mitigatedDamage, isCrit)
+                        
+                        -- Emit ON_HIT_TAKEN trigger (defender partially took hit)
+                        local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
+                        if AuraTriggers and AuraTriggers.Emit then
+                            AuraTriggers:Emit("ON_HIT_TAKEN", ev or {}, tId, tId, {
+                                damageAmount = mitigatedDamage,
+                                sourceId = sId,
+                                isCrit = isCrit,
+                            })
+                        end
+                        
+                        -- Print damage message
+                        local damageMessage = "You take " .. mitigatedDamage .. " mitigated damage."
+                        local Debug = RPE and RPE.Debug
+                        if Debug and Debug.Print then
+                            Debug:Print(damageMessage)
+                        end
+                        
+                        if RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget then
+                            RPE.Core.Windows.PlayerUnitWidget:Refresh()
                         end
                     end
-                    if #damageList > 0 then
-                        damageMessage = damageMessage .. table.concat(damageList, ", ") .. " damage."
-                    else
-                        damageMessage = damageMessage .. totalDamage .. " damage."
-                    end
-                    
-                    local Debug = RPE and RPE.Debug
-                    if Debug and Debug.Print then
-                        Debug:Print(damageMessage)
-                    end
-                    
-                    if RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget then
-                        RPE.Core.Windows.PlayerUnitWidget:Refresh()
+                else
+                    -- Fully defended - no damage taken
+                    if RPE and RPE.Debug and RPE.Debug.Print then
+                        RPE.Debug:Print("[Handle] You fully defend against the attack - no damage taken!")
                     end
                 end
-            elseif playerDefends then
-                if RPE and RPE.Debug and RPE.Debug.Print then
-                    RPE.Debug:Internal("[Handle] Player successfully defended against attack!")
+            else
+                -- Attack hits - apply full damage
+                if mitigatedDamage > 0 then
+                    local target = Common:FindUnitById(tId)
+                    if target then
+                        -- Check if this was a critical hit
+                        local isCrit = false
+                        for _, effect in ipairs(auraEffects) do
+                            if effect.auraId == "CRIT_FLAG" and effect.argsJSON and effect.argsJSON:match("isCrit=true") then
+                                isCrit = true
+                                break
+                            end
+                        end
+                        
+                        -- Apply full damage (no defense in AC mode)
+                        target:ApplyDamage(mitigatedDamage, isCrit)
+                        
+                        -- Emit ON_HIT_TAKEN trigger
+                        local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
+                        if AuraTriggers and AuraTriggers.Emit then
+                            AuraTriggers:Emit("ON_HIT_TAKEN", ev or {}, tId, tId, {
+                                damageAmount = mitigatedDamage,
+                                sourceId = sId,
+                                isCrit = isCrit,
+                            })
+                        end
+                        
+                        -- Emit ON_CRIT_TAKEN trigger if crit
+                        if isCrit and AuraTriggers and AuraTriggers.Emit then
+                            AuraTriggers:Emit("ON_CRIT_TAKEN", ev or {}, tId, tId, {
+                                damageAmount = mitigatedDamage,
+                                sourceId = sId,
+                                isCrit = true,
+                            })
+                        end
+                        
+                        -- Print damage breakdown message
+                        local damageMessage = "You take "
+                        local damageList = {}
+                        for school, amount in pairs(damageBySchool) do
+                            if tonumber(amount) and tonumber(amount) > 0 then
+                                table.insert(damageList, string.format("%d %s", math.floor(tonumber(amount)), school))
+                            end
+                        end
+                        if #damageList > 0 then
+                            damageMessage = damageMessage .. table.concat(damageList, ", ") .. " damage."
+                        else
+                            damageMessage = damageMessage .. mitigatedDamage .. " damage."
+                        end
+                        
+                        local Debug = RPE and RPE.Debug
+                        if Debug and Debug.Print then
+                            Debug:Print(damageMessage)
+                        end
+                        
+                        if RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget then
+                            RPE.Core.Windows.PlayerUnitWidget:Refresh()
+                        end
+                    end
                 end
             end
             
-            -- Apply triggered aura effects if attacker hit
-            if not playerDefends and #auraEffects > 0 then
+            -- Apply triggered aura effects if attacker hit (only in AC mode when not defended)
+            -- In complex/simple mode, only apply if not defended
+            local shouldApplyEffects = (hitSystem == "ac" and not playerDefends) or (hitSystem ~= "ac" and not playerDefends)
+            if shouldApplyEffects and #auraEffects > 0 then
                 if RPE and RPE.Debug and RPE.Debug.Print then
                     RPE.Debug:Internal(('[Handle] Applying %d aura effects from attack'):format(#auraEffects))
                 end
@@ -1412,5 +1627,80 @@ Comms:RegisterHandler("NPC_MESSAGE", function(data, sender)
         ChatBoxWidget.speechBubbleWidget:ShowBubble(nil, unitName, message, npcUnit)
     end
 end)
+
+-- Handle SUMMON message from a summoner - supergroup leader adds the unit
+Comms:RegisterHandler("SUMMON", function(data, sender)
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(("[Comms] Received SUMMON from " .. tostring(sender)))
+    end
+    
+    -- Only the leader processes SUMMON messages
+    if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal("[Comms] SUMMON: Ignoring (not leader)")
+        end
+        return
+    end
+    
+    local args = { strsplit(";", data) }
+    local ev = RPE.Core.ActiveEvent
+    if not ev then 
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal("[Comms] SUMMON: No active event")
+        end
+        return 
+    end
+    
+    -- Parse message: npcId; summonerUnitId; summonerTeam
+    local npcId = args[1]
+    local summonerUnitId = tonumber(args[2]) or 0
+    local summonerTeam = tonumber(args[3]) or 1
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(("[Comms] SUMMON: Parsed args - npcId=%s, summonerUnitId=%s (raw), summonerTeam=%s"):format(
+            tostring(args[1]), tostring(args[2]), tostring(args[3])))
+        RPE.Debug:Internal(("[Comms] SUMMON: Converted - npcId=%s, summonerUnitId=%d, summonerTeam=%d"):format(
+            npcId, summonerUnitId, summonerTeam))
+    end
+    
+    if not npcId or npcId == "" then
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal("[Comms] SUMMON: Missing npcId")
+        end
+        return
+    end
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(("[Comms] SUMMON: Adding %s on team %d, summoned by unit %d"):format(
+            npcId, summonerTeam, summonerUnitId))
+    end
+    
+    -- Leader adds the NPC to the event just like AddNPCFromRegistry
+    local summoned = ev:AddNPCFromRegistry(npcId, {
+        team = summonerTeam,
+        active = true,
+        hidden = false,
+        flying = false,
+        summonedBy = summonerUnitId,
+    })
+    
+    if summoned then
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(("[Comms] SUMMON: Successfully added unit %d (%s)"):format(
+                summoned.id, summoned.name))
+        end
+        
+        -- Refresh UI to show the new unit
+        if ev.RebuildTicks then ev:RebuildTicks() end
+        if RPE.Core.Windows and RPE.Core.Windows.UnitFrameWidget then
+            RPE.Core.Windows.UnitFrameWidget:Refresh(true)
+        end
+    else
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(("[Comms] SUMMON: Failed to add unit for %s"):format(npcId))
+        end
+    end
+end)
+
 
 

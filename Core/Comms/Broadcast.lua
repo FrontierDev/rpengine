@@ -592,6 +592,7 @@ function Broadcast:StartEvent(ev)
             end
         end
         flat[#flat+1] = table.concat(spellParts, ",")
+        flat[#flat+1] = tostring(u.summonedBy or 0)
     end
 
     if IsInRaid() then
@@ -658,6 +659,7 @@ function Broadcast:Advance(payload)
                 -- stats as key=value CSV
                 local statsCSV = UnitClass.StatsEncode(u.stats or {})
                 flat[#flat+1] = statsCSV
+                flat[#flat+1] = tostring(u.summonedBy or 0)
             end
         end
     end
@@ -963,4 +965,29 @@ function Broadcast:SendNPCMessage(unitId, unitName, message)
     }
     
     _sendAll("NPC_MESSAGE", flat)
+end
+
+--- Broadcast a summon request to the supergroup leader
+--- The leader will look up the NPC and add it to the event
+---@param npcId string The NPC registry ID (e.g. "NPC-5e9204c0")
+---@param summonerUnitId integer The unit ID of the summoner
+---@param summonerTeam integer The team of the summoner
+function Broadcast:Summon(npcId, summonerUnitId, summonerTeam)
+    if not npcId or not summonerUnitId then 
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(("[Broadcast] SUMMON: Missing npcId or summoner ID"))
+        end
+        return 
+    end
+    
+    local flat = {
+        npcId,
+        tostring(summonerUnitId),
+        tostring(summonerTeam or 1),
+    }
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(("[Broadcast] SUMMON: Broadcasting summon for " .. npcId))
+    end
+    _sendAll("SUMMON", flat)
 end

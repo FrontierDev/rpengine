@@ -525,7 +525,24 @@ function TrainerWindow:SetTrainerData(data)
     if self.mode == "SPELLS" then
         self.profName = "Spells"
     else
-        self.profName = (self.flags and self.flags.profession) or "Blacksmithing"
+        -- flags can be either a string (e.g., "engineering") or a table with profession key
+        local flagsValue = data.flags or {}
+        local professionName = "Blacksmithing"
+        
+        if type(flagsValue) == "string" then
+            professionName = flagsValue
+        elseif type(flagsValue) == "table" and flagsValue.profession then
+            professionName = flagsValue.profession
+        end
+        
+        -- Capitalize profession name for display (e.g., "engineering" -> "Engineering")
+        if type(professionName) == "string" and professionName ~= "" then
+            professionName = professionName:sub(1, 1):upper() .. professionName:sub(2):lower()
+            -- Handle special cases like "First Aid" and "Herbalism"
+            if professionName == "First-aid" then professionName = "First Aid" end
+        end
+        
+        self.profName = professionName
     end
     
     local profile = RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()

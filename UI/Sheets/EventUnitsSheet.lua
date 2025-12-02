@@ -170,6 +170,11 @@ function EventUnitsSheet:BuildUI(opts)
     local addNpcBtn = TextButton:New("RPE_EUS_AddNPC", {
         parent = self.controls, width = 100, height = 24, text = "Add NPC",
         onClick = function()
+            -- Only the supergroup leader can add NPCs
+            if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then
+                RPE.Debug:Print("Only the supergroup leader can add NPCs.")
+                return
+            end
             local AddNPCWindow = RPE_UI.Windows.AddNPCWindow
             AddNPCWindow.Open({
                 team = 2,

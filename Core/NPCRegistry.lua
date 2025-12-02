@@ -42,16 +42,23 @@ local function _normNPC(id, def)
     d.raidMarker= tonumber(d.raidMarker) or nil
 
     -- HP / initiative
-    local hpMax = tonumber(d.hpMax or d.maxHP or d.maxHp or d.healthMax)
-    d.hpMax     = (hpMax and hpMax > 0) and math.floor(hpMax) or 100
-    d.hpStart   = tonumber(d.hp or d.startHP or d.health) or d.hpMax
+    -- Try to extract from hp.base and hp.perPlayer (set by NPC editor)
+    local hpBase = tonumber((d.hp and d.hp.base) or d.hpBase or d.hpMax or d.maxHP or d.maxHp or d.healthMax)
+    local hpPerPlayer = tonumber((d.hp and d.hp.perPlayer) or d.hpPerPlayer) or 0
+    
+    -- hpMax is the base HP value (without perPlayer scaling)
+    d.hpMax     = (hpBase and hpBase > 0) and math.floor(hpBase) or 100
+    -- Also store the per-player scaling factor for later use
+    d.hpPerPlayer = hpPerPlayer
+    -- hpStart defaults to hpMax, but can be overridden
+    d.hpStart   = tonumber(d.startHP or d.health) or d.hpMax
     d.initiative= math.floor(tonumber(d.initiative) or 0)
 
     -- Stats: keep table as-is (seed fill happens when building a unit seed)
     d.stats     = (type(d.stats) == "table") and _copyDeep(d.stats) or nil
 
     -- Anything else stays under .extra to avoid polluting Unit.New
-    local keep = { id=true,key=true,name=true,team=true,tags=true,icon=true,model=true,raidMarker=true,hpMax=true,hpStart=true,initiative=true,stats=true }
+    local keep = { id=true,key=true,name=true,team=true,tags=true,icon=true,model=true,raidMarker=true,hpMax=true,hpPerPlayer=true,hpStart=true,initiative=true,stats=true }
     local extra = {}
     for k, v in pairs(d) do if not keep[k] then extra[k] = v end end
     d.extra = next(extra) and extra or nil

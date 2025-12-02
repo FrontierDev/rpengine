@@ -94,6 +94,57 @@ local function _getNumActionBarSlots()
     return tonumber(slots) or 12
 end
 
+local function _getAvailableResources()
+    -- Get all RESOURCE category stats from the active profile
+    local profile = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DB and _G.RPE.Profile.DB.GetOrCreateActive and _G.RPE.Profile.DB:GetOrCreateActive()
+    local resources = {}
+    
+    -- Always include these base resources
+    local alwaysInclude = {
+        HEALTH = true,
+        ACTION = true,
+        BONUS_ACTION = true,
+        REACTION = true,
+    }
+    
+    -- Add always-included resources first
+    for _, resId in ipairs({"HEALTH", "ACTION", "BONUS_ACTION", "REACTION"}) do
+        table.insert(resources, resId)
+    end
+    
+    -- Add all other RESOURCE category stats from the active profile
+    if profile and profile.stats then
+        for statId, stat in pairs(profile.stats) do
+            if stat and stat.category == "RESOURCE" and not statId:match("^MAX_") and not alwaysInclude[statId] then
+                table.insert(resources, statId)
+            end
+        end
+    end
+    
+    -- Sort the non-always-included ones
+    if #resources > 4 then
+        local alwaysFirst = {}
+        local rest = {}
+        for i, resId in ipairs(resources) do
+            if i <= 4 then
+                table.insert(alwaysFirst, resId)
+            else
+                table.insert(rest, resId)
+            end
+        end
+        table.sort(rest)
+        resources = {}
+        for _, resId in ipairs(alwaysFirst) do
+            table.insert(resources, resId)
+        end
+        for _, resId in ipairs(rest) do
+            table.insert(resources, resId)
+        end
+    end
+    
+    return resources
+end
+
 local function _ensureActionBar()
     local coreWindows = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows
     local existing    = coreWindows and coreWindows.ActionBarWidget
@@ -168,6 +219,7 @@ local _TARGETER_CHOICES = { "PRECAST", "CASTER", "ALLY_SINGLE_OR_SELF" }
 local _CAST_TYPES       = { "INSTANT", "CAST_TURNS", "CHANNEL" }
 local _CD_STARTS        = { "onStart", "onResolve" }
 local _SCHOOLS          = { "Physical","Fire","Frost","Arcane","Shadow","Nature","Holy" }
+local _SUMMON_TYPES     = { "None", "Pet", "Totem" }
 local function _trim(s) return (tostring(s or ""):gsub("^%s+",""):gsub("%s+$","")) end
 
 local function _buildSpellSchema(entryId, spellData, isEdit)
@@ -180,6 +232,7 @@ local function _buildSpellSchema(entryId, spellData, isEdit)
         description = spellData.description or "",
         npcOnly     = spellData.npcOnly or false,
         alwaysKnown = spellData.alwaysKnown or false,
+        canCrit     = spellData.canCrit ~= false,
 
         castType     = (spellData.cast and spellData.cast.type) or "INSTANT",
         castTurns    = tonumber(spellData.cast and spellData.cast.turns) or 1,
@@ -213,6 +266,7 @@ local function _buildSpellSchema(entryId, spellData, isEdit)
                     { id="description", label="Description", type="input",  default = defaults.description },
                     { id="npcOnly", label="NPCOnly", type="checkbox",  default = defaults.npcOnly or false },
                     { id="alwaysKnown", label="Always Known", type="checkbox",  default = defaults.alwaysKnown or false },
+                    { id="canCrit", label="Can Crit", type="checkbox",  default = defaults.canCrit or true },
                     { id="ranksHeader",     label="Spell Ranks",     type="label" },
                     { id="maxRanks",     label="Max Ranks",     type="number", default = tonumber(spellData.maxRanks) or 1, min=1, max=20, step=1 },
                     { id="unlockLevel",  label="Unlock Level",  type="number", default = tonumber(spellData.unlockLevel) or 1, min=1, max=100, step=1 },
@@ -263,7 +317,7 @@ local function _buildSpellSchema(entryId, spellData, isEdit)
                         type = "editor_table",
                         mode = "rows",
                         columns = {
-                            { id="resource", header="Resource", type="select", choices={"mana","action"} },
+                            { id="resource", header="Resource", type="select", choices=_getAvailableResources() },
                             { id="amount",   header="Amount",   type="input",  placeholder="e.g. 10 or 1d6", width = 100 },
                             { id="perRank",  header="Per Rank", type="input",  placeholder="e.g. 2 or 1d4", width = 100 },
                             { id="when",     header="When",     type="select", choices={"onStart","onResolve"} },
@@ -405,6 +459,7 @@ local function _saveSpellValues(ds, targetId, v, isEdit, oldId)
             targeter = targeter, groups = groups, requirements = requirements,
             npcOnly  = v.npcOnly or false,
             alwaysKnown = v.alwaysKnown or false,
+            canCrit = v.canCrit ~= false,
             rank        = tonumber(v.rank) or 1,
             maxRanks    = tonumber(v.maxRanks) or 1,
             unlockLevel = tonumber(v.unlockLevel) or 1,
@@ -418,6 +473,7 @@ local function _saveSpellValues(ds, targetId, v, isEdit, oldId)
             costs = costs, cast = cast, cooldown = cd, targeter = targeter, groups = groups, requirements = requirements,
             npcOnly     = v.npcOnly or false,
             alwaysKnown = v.alwaysKnown or false,
+            canCrit     = v.canCrit ~= false,
             rank        = tonumber(v.rank) or 1,
             maxRanks    = tonumber(v.maxRanks) or 1,
             unlockLevel = tonumber(v.unlockLevel) or 1,

@@ -15,15 +15,50 @@ local reactionQueue = {}  -- Queue of pending reactions waiting to be displayed
 
 -- ===== API =====
 
+--- Calculate final damage after applying mitigation
+---@param baseDamage number The incoming damage amount
+---@param mitigationExpr string|number The mitigation expression (string like "$value$*0.5", number for flat reduction, or 0/nil for no mitigation)
+---@param targetUnit table The target unit for stat lookups
+---@return number finalDamage The damage after mitigation (minimum 0)
+local function _calculateMitigatedDamage(baseDamage, mitigationExpr, targetUnit)
+    if not baseDamage or baseDamage <= 0 then 
+        return baseDamage 
+    end
+    if not mitigationExpr or mitigationExpr == 0 then 
+        return baseDamage 
+    end
+    
+    -- If mitigation is a simple number, subtract it from damage
+    if type(mitigationExpr) == "number" then
+        local result = math.max(0, baseDamage - mitigationExpr)
+        return result
+    end
+    
+    -- If mitigation is a string expression, evaluate it with $value$ as the damage
+    if type(mitigationExpr) == "string" then
+        local Formula = RPE and RPE.Core and RPE.Core.Formula
+        if Formula and Formula.Roll then
+            local profile = targetUnit and targetUnit._profile or (RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB:GetOrCreateActive())
+            -- Replace $value$ with the actual damage amount (as a string for substitution)
+            local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(baseDamage))
+            -- Use Roll() to get a single numeric result from the expression
+            -- This is more appropriate for actual damage calculations than Parse() which returns ranges
+            local result = Formula:Roll(exprWithValue, profile)
+            if result and type(result) == "number" then
+                return math.max(0, result)
+            end
+        end
+    end
+    return baseDamage
+end
+
 --- Internal: Show the next queued reaction or hide if none pending
 local function _showNextReaction()
     if #reactionQueue > 0 then
         currentReaction = table.remove(reactionQueue, 1)
-        
-        if RPE and RPE.Debug and RPE.Debug.Print then
+        if RPE and RPE.Debug and RPE.Debug.Internal then
             RPE.Debug:Internal(('[PlayerReaction] Showing next queued reaction, %d remaining'):format(#reactionQueue))
         end
-        
         -- Show the reaction widget
         local Widget = RPE_UI and RPE_UI.Widgets and RPE_UI.Widgets.PlayerReactionWidget
         if Widget and Widget.Open then
@@ -48,7 +83,7 @@ end
 ---@param caster integer Unit ID of the attacker
 ---@param target integer Unit ID of the defender (usually player)
 ---@param onComplete function Callback: function(hitResult, roll, lhs, rhs)
----@param attackDetails table Optional: { attackRoll, predictedDamage, damageSchool, spellName }
+---@param attackDetails table Optional: { attackRoll, predictedDamage, damageSchool, spellName, isCritical }
 function PlayerReaction:Start(hitSystem, spell, action, caster, target, onComplete, attackDetails)
     if not hitSystem or not spell or not action then
         if RPE and RPE.Debug and RPE.Debug.Warning then
@@ -93,6 +128,24 @@ function PlayerReaction:Start(hitSystem, spell, action, caster, target, onComple
         end
     end
 
+    -- Get the target unit for damage calculations
+    local targetUnit = RPE.Core and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent.units and RPE.Core.ActiveEvent.units[target]
+    
+    -- Calculate final damage based on mitigation
+    local predictedDamage = attackDetails and attackDetails.predictedDamage or 0
+    local isCritical = attackDetails and attackDetails.isCritical or false
+    local finalDamage = predictedDamage
+    local thresholdStats = attackDetails and attackDetails.thresholdStats or {}
+    
+    if RPE and RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(("[PlayerReaction.Start] predictedDamage=%d, isCritical=%s"):format(
+            predictedDamage, tostring(isCritical)))
+    end
+    
+    -- NOTE: finalDamage will be calculated in the defense handler based on which specific defense is chosen.
+    -- We do NOT calculate it here to avoid incorrectly applying the first threshold stat's mitigation
+    -- when the player might choose a different defense stat.
+
     local reaction = {
         hitSystem = hitSystem,
         spell = spell,
@@ -102,24 +155,18 @@ function PlayerReaction:Start(hitSystem, spell, action, caster, target, onComple
         onComplete = onComplete,
         -- Attack details for display
         attackRoll = attackDetails and attackDetails.attackRoll or nil,
-        predictedDamage = attackDetails and attackDetails.predictedDamage or nil,
+        predictedDamage = predictedDamage,
+        finalDamage = finalDamage,
         damageSchool = attackDetails and attackDetails.damageSchool or nil,
         damageBySchool = attackDetails and attackDetails.damageBySchool or nil,
         spellName = attackDetails and attackDetails.spellName or (spell and spell.name) or "Unknown Spell",
         turn = attackDetails and attackDetails.turn or nil,
         thresholdStats = attackDetails and attackDetails.thresholdStats or {},  -- Threshold stats for complex defense
+        isCritical = isCritical,
     }
-
-    if RPE and RPE.Debug and RPE.Debug.Print then
-        RPE.Debug:Internal(('[PlayerReaction] Queueing reaction: hitSystem=' .. hitSystem .. ', spell=' .. tostring(spell.id or spell.name)))
-    end
 
     -- Queue the reaction
     table.insert(reactionQueue, reaction)
-    
-    if RPE and RPE.Debug and RPE.Debug.Print then
-        RPE.Debug:Internal(('[PlayerReaction] Queue size: %d'):format(#reactionQueue))
-    end
     
     -- If no reaction is currently displayed, show the first one
     if not currentReaction then
@@ -166,7 +213,7 @@ end
 function PlayerReaction:Cancel()
     if not currentReaction then return end
 
-    if RPE and RPE.Debug and RPE.Debug.Print then
+    if RPE and RPE.Debug and RPE.Debug.Internal then
         RPE.Debug:Internal("[PlayerReaction] Reaction cancelled")
     end
 

@@ -771,13 +771,19 @@ function ActionBarWidget:SetTemporaryActions(actions, label, tintColor, controll
         end
     end
 
+    -- Only show temp action row if player is a supergroup leader
     if self.tempActionRow then
-        self.tempActionRow:Show()
-        
-        -- Reparent to WorldFrame if in immersion mode (UIParent is hidden)
-        local isImmersion = RPE.Core and RPE.Core.ImmersionMode
-        if isImmersion and self.tempActionRow.frame:GetParent() ~= WorldFrame then
-            self.tempActionRow.frame:SetParent(WorldFrame)
+        local isLeader = RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()
+        if isLeader then
+            self.tempActionRow:Show()
+            
+            -- Reparent to WorldFrame if in immersion mode (UIParent is hidden)
+            local isImmersion = RPE.Core and RPE.Core.ImmersionMode
+            if isImmersion and self.tempActionRow.frame:GetParent() ~= WorldFrame then
+                self.tempActionRow.frame:SetParent(WorldFrame)
+            end
+        else
+            self.tempActionRow:Hide()
         end
     end
     
@@ -863,6 +869,11 @@ end
 
 --- Restore the previously saved actions (typically the local player's)
 function ActionBarWidget:RestoreActions()
+    -- Reset the cached active profile to force reload of player profile
+    if RPE and RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.ResetActiveInstance then
+        RPE.Profile.DB.ResetActiveInstance()
+    end
+    
     -- Unbind from the NPC's cooldown key if we were controlling one
     if self._controlledUnitId then
         local CD = RPE.Core and RPE.Core.Cooldowns
@@ -1161,8 +1172,10 @@ function ActionBarWidget:_ShowSetHealthDialog()
         return ("Enter HP (0-%d):%s"):format(hpMax, deltaStr)
     end
     
+    local Common = RPE and RPE.Common
+    local displayName = Common and Common.FormatUnitName and Common:FormatUnitName(unit) or unit.name or "Unit"
     local p = Popup.New({
-        title        = "Set Health for " .. (unit.name or "Unit"),
+        title        = "Set Health for " .. displayName,
         text         = updateText(currentHp),
         showInput    = true,
         defaultText  = tostring(currentHp),
@@ -1310,7 +1323,9 @@ function ActionBarWidget:_ToggleUnitFlag(flag)
     if not unit then return end
     
     unit[flag] = not unit[flag]
-    RPE.Debug:Internal(("Toggled unit %s flag %s to %s"):format(unit.name, flag, tostring(unit[flag])))
+    local Common = RPE and RPE.Common
+    local displayName = Common and Common.FormatUnitName and Common:FormatUnitName(unit) or unit.name
+    RPE.Debug:Internal(("Toggled unit %s flag %s to %s"):format(displayName, flag, tostring(unit[flag])))
     
     -- Update the corresponding button with color feedback
     local btn = self.flagButtons and self.flagButtons[flag]

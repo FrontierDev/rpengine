@@ -1318,6 +1318,24 @@ function AuraManager:TriggerEvent(eventName, ctx, sourceId, targetId, extra)
 
                             elseif act.key == "APPLY_AURA" and args.auraId then
                                 RPE.Core.AuraManager:Apply(sourceId, unitId, args.auraId)
+                            
+                            elseif act.key == "GAIN_RESOURCE" then
+                                local Resources = RPE.Core and RPE.Core.Resources
+                                if Resources then
+                                    local resourceId = args.resourceId
+                                    local amount = 0
+                                    if type(args.amount) == "string" and RPE.Core.Formula then
+                                        amount = tonumber(RPE.Core.Formula:Roll(args.amount, profile)) or 0
+                                    else
+                                        amount = tonumber(args.amount or 0)
+                                    end
+                                    if resourceId and amount > 0 then
+                                        Resources:Add(resourceId, amount)
+                                        if RPE.Debug and RPE.Debug.Internal then
+                                            RPE.Debug:Internal(("[AuraManager:TriggerEvent] GAIN_RESOURCE: Added %d %s to unit %s"):format(amount, resourceId, unitId))
+                                        end
+                                    end
+                                end
                             end
                         end
 

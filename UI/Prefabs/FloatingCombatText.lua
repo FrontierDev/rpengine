@@ -53,19 +53,26 @@ local function clamp01(x) return (x < 0 and 0) or (x > 1 and 1) or x end
 -- Ease-out quad
 local function easeOutQuad(t) t = clamp01(t); return 1 - (1 - t) * (1 - t) end
 
--- Helper: format numbers for AddNumber (centralized formatting)
 local function formatNumberText(kind, amount, opts)
     opts = opts or {}
+    local text
     if kind == "damage" then
         opts.variant = opts.variant or "damage"
-        return string.format("-%s", tostring(amount)), opts
+        text = string.format("-%s", tostring(amount))
     elseif kind == "heal" then
         opts.variant = opts.variant or "heal"
-        return string.format("+%s", tostring(amount)), opts
+        text = string.format("+%s", tostring(amount))
     else
         opts.variant = opts.variant or kind
-        return tostring(amount), opts
+        text = tostring(amount)
     end
+    
+    -- Add "!" to crit text
+    if opts.isCrit then
+        text = text .. "!"
+    end
+    
+    return text, opts
 end
 
 ---@param name string
@@ -273,6 +280,14 @@ function FloatingCombatText:AddText(text, opts)
         else
             r,g,b,a = Colors.Get("text")
         end
+        
+        -- Brighten color for crits
+        if opts.isCrit then
+            r = math.min(1, r * 1.3)
+            g = math.min(1, g * 1.3)
+            b = math.min(1, b * 1.3)
+        end
+        
         fs:SetTextColor(r, g, b, a or 1)
         fs:SetShadowOffset(1, -1); fs:SetShadowColor(0, 0, 0, 0.8)
     end
@@ -335,6 +350,13 @@ function FloatingCombatText:AddText(text, opts)
     e.height     = tonumber(opts.distance or self.scrollDistance)
     e.baseScale  = (opts.scale and tonumber(opts.scale) or self.baseScale) or 1
     e.isCrit     = (opts.isCrit == true)
+    
+    -- Larger scale and distance for crits
+    if e.isCrit then
+        e.baseScale = e.baseScale * 1.3
+        e.height = e.height * 1.15
+    end
+    
     e.popPeak    = 1
 
     e.frame:SetAlpha(1)

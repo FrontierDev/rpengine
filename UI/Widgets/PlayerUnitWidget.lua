@@ -28,6 +28,7 @@ local AuraStripWidget = RPE_UI.Windows.AuraStripWidget
 ---@field auraIcons table<string, { btn: any, count: Text, turns: Text }>
 ---@field _originalResources table<string, number>
 ---@field _inTemporaryMode boolean Flag to prevent refresh from overwriting NPC health display
+---@field _cachedBarsToShow table<string, boolean> Cache of which bars to show
 local PlayerUnitWidget = {}
 _G.RPE_UI.Windows.PlayerUnitWidget = PlayerUnitWidget
 PlayerUnitWidget.__index = PlayerUnitWidget
@@ -145,27 +146,38 @@ function PlayerUnitWidget:BuildUI(opts)
     })
     self.content:Add(self.portrait)
 
+    -- Right-click menu on portrait to select resources
+    if self.portrait and self.portrait.frame then
+        self.portrait.frame:SetScript("OnMouseUp", function(frame, button)
+            if button == "RightButton" and not self._inTemporaryMode then
+                self:ShowResourceMenu()
+            end
+        end)
+    end
+
     -- === RIGHT: resource bars ===
-    local barsGroup = VGroup:New("RPE_PlayerUnitWidget_BarsGroup", {
+    self.barsGroup = VGroup:New("RPE_PlayerUnitWidget_BarsGroup", {
         parent   = self.content,
         autoSize = true,
         spacingY = 4,
         alignH   = "LEFT",
     })
-    self.content:Add(barsGroup)
+    self.content:Add(self.barsGroup)
 
     self.bars = {}
-    for _, resId in ipairs(resList) do
-        local bar = Progress:New("RPE_PlayerUnitWidget_Bar_" .. resId, {
-            parent = barsGroup,
-            width  = 160,
-            height = 10,
-            style  = "progress_" .. string.lower(resId),
-        })
-        bar:SetText(resId)
-        barsGroup:Add(bar)
-        self.bars[resId] = bar
-    end
+    
+    -- Get profile
+    local profile = RPE.Profile.DB.GetOrCreateActive()
+    
+    -- Try to load saved resource display settings for this dataset combination
+    local Resources = RPE.Core and RPE.Core.Resources
+    local resourcesToDisplay = Resources and Resources:GetDisplayedResources(profile) or { "HEALTH", "MANA" }
+    
+    -- Cache which bars to show for later use by RebuildResourceBars
+    self._cachedBarsToShow = resourcesToDisplay or {}
+    
+    -- Build bars based on what should be displayed
+    self:RebuildResourceBars(self._cachedBarsToShow)
 
     -- === RIGHT OF BARS: Aura strips ===
     -- === Aura strips (self-contained widget) ===
@@ -194,10 +206,51 @@ function PlayerUnitWidget:Refresh()
         return
     end
     
+    -- Ensure bars table exists
+    if not self.bars then
+        self.bars = {}
+        return  -- Can't refresh if we have no bars yet
+    end
+    
+    -- Get current display settings from profile
+    local profile = RPE.Profile.DB.GetOrCreateActive()
+    if profile and profile.resourceDisplaySettings then
+        local DatasetDB = RPE.Profile.DatasetDB
+        local activeDatasets = DatasetDB and DatasetDB.GetActiveNamesForCurrentCharacter()
+        local datasetKey = ""
+        if activeDatasets and #activeDatasets > 0 then
+            table.sort(activeDatasets)
+            datasetKey = table.concat(activeDatasets, "|")
+        else
+            datasetKey = "none"
+        end
+        
+        local settings = profile:_NormalizeResourceSettings(datasetKey)
+        
+        -- Hide all bars first
+        for resId, bar in pairs(self.bars) do
+            if bar and bar.frame then
+                bar.frame:Hide()
+            end
+        end
+        
+        -- Show only bars that should be displayed
+        if settings and settings.show then
+            for _, resId in ipairs(settings.show) do
+                local bar = self.bars[resId]
+                if bar and bar.frame then
+                    bar.frame:Show()
+                end
+            end
+        end
+    end
+    
     -- === Existing bars/tokens refresh ===
     for resId, bar in pairs(self.bars or {}) do
-        local cur, max = Resources:Get(resId)
-        bar:SetValue(cur, max)
+        if bar and bar.frame and bar.frame:IsShown() then
+            local cur, max = Resources:Get(resId)
+            bar:SetValue(cur, max)
+        end
     end
     
     for resId, parts in pairs(self.tokens or {}) do
@@ -212,6 +265,255 @@ end
 
 function PlayerUnitWidget:Show() if self.root then self.root:Show() end end
 function PlayerUnitWidget:Hide() if self.root then self.root:Hide() end end
+
+--- Apply the stat's itemTooltipColor to a progress bar
+function PlayerUnitWidget:_ApplyStatColor(bar, resourceId)
+    if not bar then return end
+    
+    -- Get the stat definition from StatRegistry (which has itemTooltipColor)
+    local StatRegistry = RPE.Core and RPE.Core.StatRegistry
+    local statDef = StatRegistry and StatRegistry:Get(resourceId)
+    
+    if statDef and statDef.itemTooltipColor then
+        local r, g, b = statDef.itemTooltipColor[1] or 1, statDef.itemTooltipColor[2] or 1, statDef.itemTooltipColor[3] or 1
+        bar:SetColor(r, g, b, 1)
+    end
+end
+
+function PlayerUnitWidget:ShowResourceMenu()
+    local profile = RPE.Profile.DB.GetOrCreateActive()
+    if not profile or not profile.stats then return end
+
+    -- Always-used resources (always in use list, but shown in dropdown as locked)
+    local alwaysUsed = {
+        HEALTH = true,
+        ACTION = true,
+        BONUS_ACTION = true,
+        REACTION = true,
+    }
+
+    -- Collect ALL RESOURCE category stats that don't start with "MAX_" (but exclude HEALTH as it's implicit)
+    local allResources = {}
+    for statId, stat in pairs(profile.stats) do
+        if stat.category == "RESOURCE" and not statId:match("^MAX_") and statId ~= "HEALTH" then
+            table.insert(allResources, { id = statId, name = stat.name or statId, alwaysUsed = alwaysUsed[statId] or false })
+        end
+    end
+
+    if #allResources == 0 then return end
+
+    -- Sort by name
+    table.sort(allResources, function(a, b) return (a.name or "") < (b.name or "") end)
+
+    -- Get current settings
+    local useSet = {}
+    local showSet = {}
+    local DatasetDB = RPE.Profile.DatasetDB
+    local activeDatasets = DatasetDB and DatasetDB.GetActiveNamesForCurrentCharacter()
+    local datasetKey = ""
+    if activeDatasets and #activeDatasets > 0 then
+        table.sort(activeDatasets)
+        datasetKey = table.concat(activeDatasets, "|")
+    else
+        datasetKey = "none"
+    end
+    
+    -- Populate sets (always-used always in use list)
+    -- Normalize settings in case they're in old format
+    local settings = profile:_NormalizeResourceSettings(datasetKey)
+    for _, resId in ipairs({"HEALTH", "ACTION", "BONUS_ACTION", "REACTION"}) do
+        useSet[resId] = true
+    end
+    if settings then
+        if settings.use then
+            for _, resId in ipairs(settings.use) do
+                useSet[resId] = true
+            end
+        end
+        if settings.show then
+            for _, resId in ipairs(settings.show) do
+                showSet[resId] = true
+            end
+        end
+    end
+
+    -- Build menu via ContextMenu with two sections
+    if RPE_UI.Common and RPE_UI.Common.ContextMenu then
+        RPE_UI.Common:ContextMenu(self.portrait.frame, function(level, menuList)
+            if level == 1 then
+                -- USE section header
+                local headerUse = UIDropDownMenu_CreateInfo()
+                headerUse.text = "\124cff1eff00USE\124r"
+                headerUse.isTitle = true
+                headerUse.disabled = true
+                UIDropDownMenu_AddButton(headerUse, level)
+
+                -- USE section items
+                for _, res in ipairs(allResources) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = res.name
+                    info.checked = useSet[res.id]
+                    info.disabled = res.alwaysUsed  -- Lock always-used resources
+                    if not res.alwaysUsed then
+                        local resourceId = res.id
+                        info.func = function()
+                            self:CycleResourceState(resourceId, "use")
+                        end
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+
+                -- Separator
+                local sep = UIDropDownMenu_CreateInfo()
+                sep.disabled = true
+                sep.notClickable = true
+                sep.text = ""
+                UIDropDownMenu_AddButton(sep, level)
+
+                -- SHOW section header
+                local headerShow = UIDropDownMenu_CreateInfo()
+                headerShow.text = "\124cff6699ffSHOW\124r"
+                headerShow.isTitle = true
+                headerShow.disabled = true
+                UIDropDownMenu_AddButton(headerShow, level)
+
+                -- SHOW section items (same resources)
+                for _, res in ipairs(allResources) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = res.name
+                    info.checked = showSet[res.id]
+                    -- Always-used can still be toggled for SHOW, but use is locked
+                    local resourceId = res.id
+                    info.func = function()
+                        self:CycleResourceState(resourceId, "show")
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end
+        end)
+    end
+end
+
+function PlayerUnitWidget:CycleResourceState(resourceId, section)
+    local profile = RPE.Profile.DB.GetOrCreateActive()
+    if not profile then return end
+    
+    -- Get dataset key
+    local DatasetDB = RPE.Profile.DatasetDB
+    local activeDatasets = DatasetDB and DatasetDB.GetActiveNamesForCurrentCharacter()
+    local datasetKey = ""
+    if activeDatasets and #activeDatasets > 0 then
+        table.sort(activeDatasets)
+        datasetKey = table.concat(activeDatasets, "|")
+    else
+        datasetKey = "none"
+    end
+    
+    -- Initialize if needed and normalize settings
+    if not profile.resourceDisplaySettings then
+        profile.resourceDisplaySettings = {}
+    end
+    local settings = profile:_NormalizeResourceSettings(datasetKey)
+    
+    if section == "use" then
+        -- Toggle in use list
+        local idx = nil
+        for i, resId in ipairs(settings.use or {}) do
+            if resId == resourceId then
+                idx = i
+                break
+            end
+        end
+        if idx then
+            table.remove(settings.use, idx)
+        else
+            if not settings.use then settings.use = {} end
+            table.insert(settings.use, resourceId)
+        end
+    elseif section == "show" then
+        -- Toggle in show list
+        local idx = nil
+        for i, resId in ipairs(settings.show or {}) do
+            if resId == resourceId then
+                idx = i
+                break
+            end
+        end
+        if idx then
+            table.remove(settings.show, idx)
+        else
+            if not settings.show then settings.show = {} end
+            table.insert(settings.show, resourceId)
+        end
+    end
+    
+    -- Save to profile and rebuild bars with new display settings
+    RPE.Profile.DB.SaveProfile(profile)
+    
+    -- Pass the profile explicitly so we read the same one we just saved
+    local resourcesToDisplay = Resources:GetDisplayedResources(profile)
+    self:RebuildResourceBars(resourcesToDisplay)
+end
+
+function PlayerUnitWidget:RebuildResourceBars(resourceList)
+    if not self.barsGroup then 
+        self.bars = {}  -- Ensure bars is always initialized
+        return 
+    end
+
+    -- Destroy all existing bars
+    for resId, bar in pairs(self.bars or {}) do
+        if bar and bar.frame then
+            bar.frame:Hide()
+            bar.frame:SetParent(nil)
+            bar.frame = nil
+        end
+    end
+    self.bars = {}
+    
+    -- Clear the layout group's children
+    self.barsGroup.children = {}
+    
+    -- Create bars in the order specified, with HEALTH always first
+    local orderedResources = {}
+    if resourceList and #resourceList > 0 then
+        -- Add HEALTH first if it's in the list
+        for _, resId in ipairs(resourceList) do
+            if resId == "HEALTH" then
+                table.insert(orderedResources, resId)
+                break
+            end
+        end
+        -- Add all other resources in order
+        for _, resId in ipairs(resourceList) do
+            if resId ~= "HEALTH" then
+                table.insert(orderedResources, resId)
+            end
+        end
+    end
+    
+    -- Create bars
+    for _, resId in ipairs(orderedResources) do
+        local bar = RPE_UI.Prefabs.ProgressBar:New("RPE_PlayerUnitWidget_Bar_" .. resId, {
+            parent = self.barsGroup,
+            width  = 160,
+            height = 10,
+            style  = "progress_" .. string.lower(resId),
+        })
+        bar:SetText(resId)
+        self:_ApplyStatColor(bar, resId)
+        self.barsGroup:Add(bar)
+        self.bars[resId] = bar
+    end
+    
+    -- Relayout
+    if self.barsGroup.Relayout then
+        self.barsGroup:Relayout()
+    end
+    
+    -- Refresh to populate values
+    self:Refresh()
+end
 
 function PlayerUnitWidget:_AddAuraIcon(parent, auraId, iconPath, isHelpful)
     local btn = IconBtn:New(("RPE_PlayerUnitWidget_Aura_%s"):format(auraId), {
@@ -348,6 +650,11 @@ function PlayerUnitWidget:RestoreStats()
         -- RestoreActions() will handle the cast bar visibility
     end
     self._originalCast = nil
+    
+    -- Reset the active profile instance to ensure we're displaying the player's actual profile
+    if RPE and RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.ResetActiveInstance then
+        RPE.Profile.DB.ResetActiveInstance()
+    end
     
     -- Force a refresh to ensure the latest player resources are displayed
     self:Refresh()

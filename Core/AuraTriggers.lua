@@ -56,13 +56,30 @@ end
 --- @param extra table|nil
 function AuraTriggers:Emit(event, ctx, sourceId, targetId, extra)
     local list = self.listeners[event]
-    if not list then return end
-
+    
+    local listCount = 0
+    if list then
+        for _ in pairs(list) do listCount = listCount + 1 end
+    end
+    
     if RPE.Debug and RPE.Debug.Internal then
         RPE.Debug:Internal(("[AuraTriggers] Emitting '%s' (source=%s, target=%s) to %d listener(s)"):format(
-            event, tostring(sourceId), tostring(targetId), table.getn(list)))
+            event, tostring(sourceId), tostring(targetId), listCount))
     end
 
+    -- Execute registered individual aura trigger callbacks
+    if list then
+        for _, fn in pairs(list) do
+            if type(fn) == "function" then
+                local ok, err = pcall(fn, ctx, sourceId, targetId, extra)
+                if not ok and RPE.Debug and RPE.Debug.Internal then
+                    RPE.Debug:Internal("|cffff5555AuraTriggers listener error:|r " .. tostring(err))
+                end
+            end
+        end
+    end
+
+    -- Also trigger via AuraManager for trigger event actions
     if RPE.Core.ActiveEvent and RPE.Core.ActiveEvent._auraManager then
         RPE.Core.ActiveEvent._auraManager:TriggerEvent(event, ctx, sourceId, targetId, extra)
     end
@@ -86,17 +103,33 @@ function AuraTriggers:RegisterFromAura(aura)
             local action = trig.action
             local args = action.args or {}
             local targetSpec = (action.targets and action.targets.ref) or "target"
+            local auraId = aura.id
+            local sourceId = aura.sourceId  -- Capture at registration time
+            local targetId = aura.targetId
 
-            local handle = self:On(eventName, function(ctx, sourceId, targetId, extra)
-                if tonumber(sourceId) ~= tonumber(aura.sourceId) then return end
+            local handle = self:On(eventName, function(ctx, eventSourceId, eventTargetId, extra)
+                -- Check if this event is for the right source unit
+                if tonumber(eventSourceId) ~= tonumber(sourceId) then return end
+                
+                -- For ON_HIT and similar, verify the aura is still active
+                if RPE.Core.ActiveEvent and RPE.Core.ActiveEvent._auraManager then
+                    local auraManager = RPE.Core.ActiveEvent._auraManager
+                    local stillActive = auraManager:Has(targetId, auraId)
+                    if not stillActive then
+                        if RPE.Debug and RPE.Debug.Internal then
+                            RPE.Debug:Internal(("[AuraTriggers] Aura '%s' no longer active, skipping trigger"):format(auraId))
+                        end
+                        return
+                    end
+                end
 
                 local targets = {}
                 if targetSpec == "SOURCE" or targetSpec == "self" then
-                    targets = { sourceId }
+                    targets = { eventSourceId }
                 elseif targetSpec == "TARGET" or targetSpec == "target" then
-                    targets = { targetId }
+                    targets = { eventTargetId }
                 elseif targetSpec == "both" then
-                    targets = { sourceId, targetId }
+                    targets = { eventSourceId, eventTargetId }
                 else
                     return
                 end
@@ -106,17 +139,38 @@ function AuraTriggers:RegisterFromAura(aura)
                 for k, v in pairs(snapshot) do runtimeArgs[k] = v end
 
                 local cast = {
-                    caster = sourceId,
+                    caster = eventSourceId,
                     profile = casterProfile,
                 }
 
                 if RPE.Debug and RPE.Debug.Internal then
                     RPE.Debug:Internal(("[AuraTriggers] Aura '%s' triggered action '%s' on %d target(s) [%s]"):format(
-                        def.id or "?", action.key, #targets, table.concat(targets, ", ")))
+                        auraId or "?", action.key, #targets, table.concat(targets, ", ")))
                 end
 
                 local ok, err = pcall(function()
-                    SpellActions:Run(action.key, ctx or {}, cast, targets, runtimeArgs)
+                    if action.key == "GAIN_RESOURCE" then
+                        -- Handle GAIN_RESOURCE action: add to current value
+                        local Resources = RPE.Core and RPE.Core.Resources
+                        if Resources then
+                            local resourceId = runtimeArgs.resourceId
+                            local amount = tonumber(runtimeArgs.amount) or 0
+                            if RPE.Debug and RPE.Debug.Internal then
+                                RPE.Debug:Internal(("[AuraTriggers] GAIN_RESOURCE: resourceId=%s, amount=%s"):format(
+                                    tostring(resourceId), tostring(runtimeArgs.amount)))
+                            end
+                            if resourceId and amount > 0 then
+                                local cur, max = Resources:Get(resourceId)
+                                local newValue = math.min(cur + amount, max)
+                                Resources:Set(resourceId, newValue)
+                                if RPE.Debug and RPE.Debug.Internal then
+                                    RPE.Debug:Internal(("[AuraTriggers] Gained %d %s (now %d/%d)"):format(amount, resourceId, newValue, max))
+                                end
+                            end
+                        end
+                    else
+                        SpellActions:Run(action.key, ctx or {}, cast, targets, runtimeArgs)
+                    end
                 end)
 
                 if not ok and RPE.Debug and RPE.Debug.Internal then

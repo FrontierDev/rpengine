@@ -123,6 +123,7 @@ local function _saveNPCValues(ds, npcId, v)
         raidMarker = tonumber(v.raidMarker) or nil,
         unitType = v.unitType or "Humanoid",
         unitSize = v.unitSize or "Medium",
+        summonType = v.summonType or "None",
         fileDataId = tonumber(v.modelEdit and v.modelEdit.fileDataId) or tonumber(v.fileDataId),
         displayId  = tonumber(v.modelEdit and v.modelEdit.displayId)  or tonumber(v.displayId),
         cam        = tonumber(v.modelEdit and v.modelEdit.cam) or 1.0,
@@ -256,6 +257,12 @@ local function _buildEditSchema(npcId, def)
                     choices = { "Tiny","Small","Medium","Large","Huge","Gargantuan" },
                     default = def.unitSize or "Medium" },
 
+                    -- Summon Type
+                    { id="summonHeader", label="Summon Control", type="label" },
+                    { id="summonType", label="Summon Type", type="select",
+                    choices = { "None", "Pet", "Minion", "Totem", "Guardian" },
+                    default = def.summonType or "None" },
+
                     -- Hitpoints
                     { id="hpHeader",     label="Hitpoints",     type="label" },
                     { id="hpBase",       label="Base HP",       type="number", default = hpBase },
@@ -381,6 +388,26 @@ local function _buildRow(self, idx)
                     info.isTitle = true; info.notCheckable = true
                     info.text = entry.name or entry.id
                     UIDropDownMenu_AddButton(info, level)
+
+                    -- Copy NPC ID
+                    local copyId = UIDropDownMenu_CreateInfo()
+                    copyId.notCheckable = true
+                    copyId.text = "Copy NPC ID"
+                    copyId.func = function()
+                        local Clipboard = RPE_UI and RPE_UI.Windows and RPE_UI.Windows.Clipboard
+                        if Clipboard then
+                            Clipboard:SetContent(entry.id)
+                            Clipboard:Show()
+                            if RPE and RPE.Debug then
+                                RPE.Debug:Internal("NPC ID copied to clipboard: " .. entry.id)
+                            end
+                        else
+                            if RPE and RPE.Debug then
+                                RPE.Debug:Internal("Clipboard widget not available")
+                            end
+                        end
+                    end
+                    UIDropDownMenu_AddButton(copyId, level)
 
                     -- Edit
                     UIDropDownMenu_AddButton({

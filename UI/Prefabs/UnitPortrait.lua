@@ -304,11 +304,56 @@ function UnitPortrait:New(name, opts)
     end)
 
     f:SetScript("OnClick", function()
-        if not portrait.unit then return end
-        if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then return end
-
+        if not portrait.unit then 
+            if RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal("[UnitPortrait:OnClick] No unit in portrait")
+            end
+            return 
+        end
+        
         local unit = portrait.unit
-        if not unit.isNPC or not unit.spells or #unit.spells == 0 then return end
+        if not unit.isNPC or not unit.spells or #unit.spells == 0 then 
+            if RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal(("[UnitPortrait:OnClick] Not controllable: isNPC=%s, spells=%d"):format(
+                    tostring(unit.isNPC), unit.spells and #unit.spells or 0))
+            end
+            return 
+        end
+        
+        -- Check if player can control this NPC
+        local isLeader = RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()
+        local canControl = isLeader
+        
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(("[UnitPortrait:OnClick] Unit: %s (id=%d, summonedBy=%s), isLeader=%s"):format(
+                unit.name, unit.id, tostring(unit.summonedBy), tostring(isLeader)))
+        end
+        
+        -- If not leader, check if player summoned this pet
+        if not canControl and unit.summonedBy then
+            local ev = RPE.Core and RPE.Core.ActiveEvent
+            local localPlayerUnitId = ev and ev.GetLocalPlayerUnitId and ev:GetLocalPlayerUnitId()
+            if RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal(("[UnitPortrait:OnClick] Checking summoner: localPlayerUnitId=%s, unit.summonedBy=%s"):format(
+                    tostring(localPlayerUnitId), tostring(unit.summonedBy)))
+            end
+            canControl = (localPlayerUnitId and unit.summonedBy and localPlayerUnitId == unit.summonedBy)
+            if RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal(("[UnitPortrait:OnClick] Summoner check result: canControl=%s"):format(
+                    tostring(canControl)))
+            end
+        end
+        
+        if not canControl then 
+            if RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal(("[UnitPortrait:OnClick] Cannot control unit (not leader and not summoner)"))
+            end
+            return 
+        end
+        
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(("[UnitPortrait:OnClick] Can control unit, opening action bar"))
+        end
 
         local SR = RPE.Core.SpellRegistry
         if not SR then return end
@@ -329,7 +374,9 @@ function UnitPortrait:New(name, opts)
         local actionBar = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
         if actionBar then
             -- Pass unit.id and unit.name so spells can be cast as this unit and they can speak as it
-            actionBar:SetTemporaryActions(actions, unit.name, { 0.3, 0.2, 0.1, 0.95 }, unit.id, unit.name) -- brown tint
+            local Common = RPE and RPE.Common
+            local displayName = Common and Common.FormatUnitName and Common:FormatUnitName(unit) or unit.name
+            actionBar:SetTemporaryActions(actions, displayName, { 0.3, 0.2, 0.1, 0.95 }, unit.id, unit.name) -- brown tint
         end
 
         local PUW = RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget

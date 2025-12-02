@@ -72,6 +72,7 @@ local STATS_CLASSIC = {
         visible = 0,
         pct     = 0,
         icon    = "Interface\\Addons\\RPEngine\\UI\\Textures\\mana.png",
+        itemTooltipColor = {0.99, 0.84, 0},
         sourceDataset = "DefaultClassic",
     },
     HOLY_POWER = {
@@ -84,6 +85,7 @@ local STATS_CLASSIC = {
         pct     = 0,
         icon    = "Interface\\Addons\\RPEngine\\UI\\Textures\\mana.png",
         tooltip = "Divine power used to perform powerful Paladin-specific spells.",
+        itemTooltipColor = {0.99, 0.84, 0},
         sourceDataset = "DefaultClassic",
     },
     MAX_MANA = {

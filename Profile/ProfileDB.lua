@@ -85,6 +85,17 @@ end
 ---@param profile CharacterProfile
 function ProfileDB.SaveProfile(profile)
     assert(getmetatable(profile) == CharacterProfile, "SaveProfile: CharacterProfile expected")
+    
+    -- Guard: only allow saving profiles for the current player character
+    -- NPC profiles should NEVER be persisted to the database
+    local playerName = UnitName("player")
+    if profile.name and profile.name:lower() ~= (playerName or ""):lower() then
+        RPE.Debug:Error(string.format(
+            "Attempted to save NPC profile '%s' for player '%s' - rejected", 
+            profile.name, playerName))
+        return
+    end
+    
     local db = EnsureDB()
     profile.updatedAt = time() or profile.updatedAt
     db.profiles[profile.name] = profile:ToTable()
@@ -156,6 +167,12 @@ function ProfileDB.GetOrCreateActive()
     local profile = ProfileDB.GetOrCreateByName(profName)
     _activeInstance = profile  -- Cache it for session
     return profile
+end
+
+--- Reset the active instance cache (useful when exiting temporary mode to refresh which profile is active)
+function ProfileDB.ResetActiveInstance()
+    _activeInstance = nil
+    loaded = false  -- Allow LoadActiveForCurrentCharacter to reload from DB next time
 end
 
 --- Rename a profile. Also updates any character mappings pointing to it.

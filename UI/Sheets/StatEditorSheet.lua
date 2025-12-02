@@ -118,7 +118,7 @@ local function _valueToDisplay(val)
 end
 
 local function _displayToValue(str)
-    -- Convert display string back to value (number or reference)
+    -- Convert display string back to value (number, reference, or formula)
     -- BUT: if it's already a table (rule table), return it as-is
     if type(str) == "table" then
         if str.ruleKey then
@@ -134,8 +134,15 @@ local function _displayToValue(str)
         return 0
     end
     str = _trim(str)
+    
+    -- Check if it's a formula expression (contains $value$)
+    if str:find("%$value%$") then
+        -- It's a formula expression like "$value$*0.5", keep it as a string
+        return str
+    end
+    
     if str:sub(1, 1) == "$" then
-        -- It's a reference
+        -- It's a reference like "$STAT_ID"
         local refName = str:sub(2)
         if refName ~= "" then
             return { ref = refName }
@@ -144,6 +151,17 @@ local function _displayToValue(str)
         return math.huge
     end
     return tonumber(str) or 0
+end
+
+local function _parseMitigation(v)
+    -- Mitigation can be: table with { normal, critical } where each is an expression (literal, stat ref, or formula)
+    -- Or nil/empty
+    if type(v) == "table" then
+        local normal = v.normal or 0
+        local critical = v.critical or 0
+        return { normal = normal, critical = critical }
+    end
+    return nil
 end
 
 local function _syncStatToProfile(statId, statDef)
@@ -155,6 +173,7 @@ local function _syncStatToProfile(statId, statDef)
     stat:SetData({
         id=statId, name=statDef.name, category=statDef.category, base=statDef.base, min=statDef.min, max=statDef.max,
         icon=statDef.icon, tooltip=statDef.tooltip, visible=statDef.visible, pct=statDef.pct, recovery=statDef.recovery,
+        mitigation=statDef.mitigation,
         itemTooltipFormat=statDef.itemTooltipFormat, itemTooltipColor=statDef.itemTooltipColor,
         itemTooltipPriority=statDef.itemTooltipPriority, itemLevelWeight=statDef.itemLevelWeight,
     })
@@ -179,6 +198,7 @@ local function _saveStat(ds, statId, v)
         tooltip         = v.tooltip or "",
         recovery        = _parseRecovery(v.recovery),
         pct             = (v.pct == 1 or v.pct == true or v.pct == "1") and 1 or 0,
+        mitigation      = _parseMitigation(v.mitigation),
         data            = v.data or {},
         sourceDataset   = ds_name,
         itemTooltipFormat = v.itemTooltipFormat or "",
@@ -216,6 +236,14 @@ local function _buildEditSchema(statId, def)
     
     local recoveryRuleKey = (type(def.recovery) == "table" and def.recovery.ruleKey) or ""
     local recoveryDefault = (type(def.recovery) == "table" and def.recovery.default) or 0
+    
+    -- Mitigation values
+    local mitigationNormalValue = ""
+    local mitigationCriticalValue = ""
+    if type(def.mitigation) == "table" then
+        mitigationNormalValue = _valueToDisplay(def.mitigation.normal)
+        mitigationCriticalValue = _valueToDisplay(def.mitigation.critical)
+    end
     
     -- Determine base value type and values
     local baseKey = ""
@@ -261,6 +289,13 @@ local function _buildEditSchema(statId, def)
             { title="Recovery", elements={
                 { id="ruleKey",    label="Rule Key",    type="input", default=recoveryRuleKey, hint="e.g., 'health_regen'" },
                 { id="recoveryDefault", label="Default Value", type="number", default=recoveryDefault },
+            }},
+            { title="Mitigation", elements={
+                { id="mitigationHeader", label="Damage Reduction (only applies to DEFENSE/RESISTANCE stats)", type="label" },
+                { id="mitigationNormalValue", label="Mitigation", type="input", default=mitigationNormalValue, 
+                  hint="Expression that modifies incoming damage. $value$ is the damage amount (e.g., $value$*0.5 reduces by 50%, $value$-$stat.ARMOR$ for flat reduction)" },
+                { id="mitigationCriticalValue", label="Crit. Mitigation", type="input", default=mitigationCriticalValue, 
+                  hint="Expression that modifies incoming critical damage. $value$ is the damage amount (e.g., $value$*0.75 reduces by 25%, $value$-($stat.ARMOR$*2) for stat-based reduction)" },
             }},
             { title="Item Bonuses", elements={
                 { id="itemTooltipFormat", label="Tooltip Format", type="input", 
@@ -400,6 +435,21 @@ local function _buildRow(self, idx)
                                     values.ruleKey = nil
                                     values.recoveryDefault = nil
                                     
+                                    -- Reconstruct mitigation from separate fields
+                                    local mitigationNormalValue = _displayToValue(values.mitigationNormalValue or "")
+                                    local mitigationCriticalValue = _displayToValue(values.mitigationCriticalValue or "")
+                                    if mitigationNormalValue ~= 0 or mitigationCriticalValue ~= 0 then
+                                        values.mitigation = {
+                                            normal = mitigationNormalValue,
+                                            critical = mitigationCriticalValue
+                                        }
+                                    else
+                                        values.mitigation = nil
+                                    end
+                                    values.mitigationNormalValue = nil
+                                    values.mitigationCriticalValue = nil
+                                    values.mitigationHeader = nil
+                                    
                                     local ds2 = self:GetEditingDataset()
                                     -- If ID changed, delete the old entry and save with new ID
                                     if newStatId ~= entry.id and ds2 and ds2.extra and ds2.extra.stats then
@@ -531,6 +581,21 @@ function StatEditorSheet:BuildUI(opts)
                 end
                 values.ruleKey = nil
                 values.recoveryDefault = nil
+                
+                -- Reconstruct mitigation from separate fields
+                local mitigationNormalValue = _displayToValue(values.mitigationNormalValue or "")
+                local mitigationCriticalValue = _displayToValue(values.mitigationCriticalValue or "")
+                if mitigationNormalValue ~= 0 or mitigationCriticalValue ~= 0 then
+                    values.mitigation = {
+                        normal = mitigationNormalValue,
+                        critical = mitigationCriticalValue
+                    }
+                else
+                    values.mitigation = nil
+                end
+                values.mitigationNormalValue = nil
+                values.mitigationCriticalValue = nil
+                values.mitigationHeader = nil
                 
                 local okId = _saveStat(ds, newStatId, values)
                 if okId and _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then

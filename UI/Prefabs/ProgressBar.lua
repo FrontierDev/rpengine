@@ -78,6 +78,7 @@ function ProgressBar:New(name, opts)
 
     -- State styles
     o.styles = opts.styles or { default = opts.style or "default" }
+    o.customColor = nil  -- Track if a custom color has been set
     o:SetStyle(o.styles.default)
 
     -- Animation driver
@@ -147,13 +148,15 @@ function ProgressBar:UpdateAnimation(elapsed)
     end
 end
 
---- Explicitly change fill color by RGBA
+--- Explicitly change fill color by RGBA (takes precedence over styles)
 function ProgressBar:SetColor(r, g, b, a)
+    self.customColor = {r, g, b, a or 1}
     self.fill:SetColorTexture(r, g, b, a or 1)
 end
 
---- Apply a style key (from RPE_UI.Colors palette)
+--- Apply a style key (from RPE_UI.Colors palette, only if no custom color is set)
 function ProgressBar:SetStyle(style)
+    if self.customColor then return end  -- Don't override custom colors with styles
     local key = (style or "default")
     local r,g,b,a = C.Get(key)
     self.fill:SetColorTexture(r, g, b, a or 1)

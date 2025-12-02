@@ -22,6 +22,7 @@ local CharacterStat = (RPE.Stats and RPE.Stats.CharacterStat) or error("Characte
 ---@field createdAt number
 ---@field updatedAt number
 ---@field paletteName string
+---@field resourceDisplaySettings table<string, {use: string[], show: string[]}>  -- keyed by dataset combination; use = resources checked for spell costs, show = resources displayed
 ---@field professions {                       -- always present
 ---   cooking: CharacterProfession,
 ---   fishing: CharacterProfession,
@@ -130,9 +131,93 @@ function CharacterProfile:New(name, opts)
         professions = normalizeProfessions(opts.professions),
         spells      = opts.spells or {}, 
         actionBar   = opts.actionBar or {},
+        resourceDisplaySettings = opts.resourceDisplaySettings or {},
     }, self)
+    
+    -- Ensure resourceDisplaySettings has proper defaults if empty
+    self:_InitializeResourceDisplaySettings()
 
     return o
+end
+
+--- Normalize resource display settings, converting old array format to new {use, show} format.
+--- Old format: resourceDisplaySettings[key] = ["HEALTH", "MANA", ...]
+--- New format: resourceDisplaySettings[key] = {use: [...], show: [...]}
+--- IMPORTANT: HEALTH is always added to show list if missing
+function CharacterProfile:_NormalizeResourceSettings(datasetKey)
+    if not self.resourceDisplaySettings then
+        self.resourceDisplaySettings = {}
+    end
+    
+    local settings = self.resourceDisplaySettings[datasetKey]
+    
+    -- If settings is nil, initialize as new format
+    if settings == nil then
+        self.resourceDisplaySettings[datasetKey] = { use = {}, show = { "HEALTH" } }
+        return self.resourceDisplaySettings[datasetKey]
+    end
+    
+    -- If settings is an array (old format), convert to new format
+    if type(settings) == "table" and #settings > 0 and not settings.use and not settings.show then
+        -- Old format detected: array of resources
+        local oldArray = settings
+        self.resourceDisplaySettings[datasetKey] = {
+            use = {},  -- Old format didn't distinguish, so use stays empty (only always-used will be in use list)
+            show = oldArray  -- Convert array to show list
+        }
+        return self.resourceDisplaySettings[datasetKey]
+    end
+    
+    -- Already in new format or empty, ensure it has both keys and HEALTH in show
+    if type(settings) == "table" then
+        if not settings.use then settings.use = {} end
+        if not settings.show then settings.show = {} end
+        
+        -- Ensure HEALTH is always in the show list
+        local hasHealth = false
+        for _, resId in ipairs(settings.show) do
+            if resId == "HEALTH" then
+                hasHealth = true
+                break
+            end
+        end
+        if not hasHealth then
+            table.insert(settings.show, 1, "HEALTH")  -- Insert at beginning
+        end
+        
+        return settings
+    end
+    
+    -- Fallback: initialize as new format with HEALTH
+    self.resourceDisplaySettings[datasetKey] = { use = {}, show = { "HEALTH" } }
+    return self.resourceDisplaySettings[datasetKey]
+end
+
+--- Initialize resource display settings with defaults if needed
+function CharacterProfile:_InitializeResourceDisplaySettings()
+    if type(self.resourceDisplaySettings) ~= "table" then
+        self.resourceDisplaySettings = {}
+    end
+    
+    -- If no settings exist yet, create defaults
+    local hasAnySettings = false
+    for _ in pairs(self.resourceDisplaySettings) do
+        hasAnySettings = true
+        break
+    end
+    
+    if not hasAnySettings then
+        -- Set up a default for "none" (when no datasets are active)
+        self.resourceDisplaySettings["none"] = {
+            use = {},  -- Always-used resources are always in use (HEALTH, ACTION, BONUS_ACTION, REACTION)
+            show = { "HEALTH", "MANA" }  -- Default bar display
+        }
+    else
+        -- Normalize all existing settings to new format
+        for key in pairs(self.resourceDisplaySettings) do
+            self:_NormalizeResourceSettings(key)
+        end
+    end
 end
 
 
@@ -886,6 +971,7 @@ function CharacterProfile:ToTable()
         professions = self.professions,
         spells      = spellsOut,
         actionBar = self.actionBar or {},
+        resourceDisplaySettings = self.resourceDisplaySettings or {},
     }
 end
 
@@ -902,6 +988,7 @@ function CharacterProfile.FromTable(t)
         professions = t.professions or {},
         spells      = t.spells or {}, 
         actionBar = t.actionBar or {},
+        resourceDisplaySettings = type(t.resourceDisplaySettings) == "table" and t.resourceDisplaySettings or {},
     })
 end
 

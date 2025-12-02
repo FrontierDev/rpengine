@@ -46,7 +46,9 @@ local STATS_5E = {
     MAX_HEALTH = {
         name    = "Max Health",
         category = "RESOURCE",
-        base    = { ruleKey = "max_health", default = 0 },
+        base    = 120,
+        min     = 0,
+        max     = math.huge,
         visible = 0,
         pct     = 0,
         icon    = "Interface\\Addons\\RPEngine\\UI\\Textures\\health.png",
@@ -202,11 +204,12 @@ local STATS_5E = {
     -- --- Defense ---
     AC = {
         name = "Armor Class",
-        category = "DEFENSE",
+        category = "SECONDARY",
         base = 10,
         min  = 0,
         max  = math.huge,
         pct  = 0,
+        visible = true,
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\healed_last.png",
         itemTooltipFormat = "$value$ AC",
         itemTooltipColor = {1, 1, 1},

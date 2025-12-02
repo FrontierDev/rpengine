@@ -160,17 +160,44 @@ function Event:AddNPC(npcName, team, addedByFull)
         error("NPCRegistry:Get failed for name: " .. tostring(npcName))
     end
 
+    -- 3.5. Calculate NPC team and find max enemy team size for hpPerPlayer scaling
+    local npcTeam = tonumber(team) or def.team or 1
+    local enemyTeamSizes = {}
+    
+    -- Count non-NPC units on each team
+    for _, u in pairs(self.units or {}) do
+        if not u.isNPC then
+            local uTeam = tonumber(u.team) or 1
+            if uTeam ~= npcTeam then
+                enemyTeamSizes[uTeam] = (enemyTeamSizes[uTeam] or 0) + 1
+            end
+        end
+    end
+    
+    -- Find the largest enemy team size
+    local maxEnemyTeamSize = 0
+    for _, size in pairs(enemyTeamSizes) do
+        if size > maxEnemyTeamSize then
+            maxEnemyTeamSize = size
+        end
+    end
+    
+    -- Calculate total HP: hpBase + (hpPerPlayer × maxEnemyTeamSize)
+    local hpBase = tonumber(def.hpMax) or 100
+    local hpPerPlayer = tonumber(def.hpPerPlayer) or 0
+    local totalHp = hpBase + (hpPerPlayer * maxEnemyTeamSize)
+
     -- 4. Create the unit
     local u = UnitClass.New(id, {
         key        = key,
         name       = def.name or npcName,
-        team       = tonumber(team) or def.team or 1,
+        team       = npcTeam,
         isNPC      = true,
         addedBy    = addedByFull and toKey(addedByFull) or nil,
 
-        -- Vital stats
-        hpMax      = 100,
-        hp         = 100,
+        -- Vital stats: use calculated values from NPC definition
+        hpMax      = totalHp,
+        hp         = tonumber(def.hpStart) or totalHp,
         initiative = 0,
         unitType   = def.unitType or "Humanoid",
         unitSize   = def.unitSize or "Medium",
@@ -211,6 +238,34 @@ function Event:AddNPCFromRegistry(npcId, opts)
     -- 1. Allocate a unique numeric id for this unit in the event
     local id = self:_allocId()
 
+    -- 1.5. Calculate scaled HP based on enemy team size
+    local npcTeam = tonumber(opts.team or 1)
+    local enemyTeamSizes = {}
+    
+    -- Count non-NPC units on each team
+    for _, u in pairs(self.units or {}) do
+        if not u.isNPC then
+            local uTeam = tonumber(u.team) or 1
+            if uTeam ~= npcTeam then
+                enemyTeamSizes[uTeam] = (enemyTeamSizes[uTeam] or 0) + 1
+            end
+        end
+    end
+    
+    -- Find the largest enemy team size
+    local maxEnemyTeamSize = 0
+    for _, size in pairs(enemyTeamSizes) do
+        if size > maxEnemyTeamSize then
+            maxEnemyTeamSize = size
+        end
+    end
+    
+    -- Get NPC definition and calculate scaled HP
+    local proto = RPE.Core.NPCRegistry:Get(npcId)
+    local hpBase = tonumber(proto and proto.hpMax) or 100
+    local hpPerPlayer = tonumber(proto and proto.hpPerPlayer) or 0
+    local scaledHpMax = hpBase + (hpPerPlayer * maxEnemyTeamSize)
+
     -- 2. Build a unit seed from the registry prototype
     local seed = RPE.Core.NPCRegistry:BuildUnitSeed(npcId, {
         team       = opts.team,
@@ -218,6 +273,8 @@ function Event:AddNPCFromRegistry(npcId, opts)
         active     = opts.active,
         hidden     = opts.hidden,
         flying     = opts.flying,
+        hpMax      = scaledHpMax,
+        hp         = scaledHpMax,
     })
 
     -- 3. Overwrite the key with a guaranteed-unique GUID
@@ -230,6 +287,11 @@ function Event:AddNPCFromRegistry(npcId, opts)
 
     -- Optional: keep a back-reference to the registry id for tracing
     seed.npcId = npcId
+    
+    -- Optional: set summoner if provided (for summoned pets/totems)
+    if opts.summonedBy then
+        seed.summonedBy = opts.summonedBy
+    end
 
     -- 4. Create the unit and insert into the event
     local u = RPE.Core.Unit.New(id, seed)
@@ -594,8 +656,9 @@ function Event:OnStart(opts)
     end
 
     -- Launch the player unit frame.
-    local unitFrame = RPE_UI.Windows.PlayerUnitWidget.New({ resources = { "HEALTH", "MANA", "HOLY_POWER" }})
+    local unitFrame = RPE_UI.Windows.PlayerUnitWidget.New({ resources = { "HEALTH", "MANA" }})
     unitFrame:Show()
+    RPE.Core.Windows.PlayerUnitWidget = unitFrame
 
     -- Launch the unit frame grid
     local unitFrameGrid = RPE_UI.Windows.UnitFrameWidget.New()

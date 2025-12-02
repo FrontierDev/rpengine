@@ -35,6 +35,10 @@ Schemas.DAMAGE = {
             scope="action", parse="csv",
             placeholder="$stat.DODGE$, $stat.PARRY$, $stat.BLOCK$"
         },
+        { id="critModifier", label="Crit Modifier (%)", type="input", required=false, scope="action",
+            placeholder="$stat.SPELL_CRIT$ or 5 (for 5%)" },
+        { id="critMult",     label="Crit Multiplier",   type="input", required=false, scope="action",
+            placeholder="$stat.CRIT_MULTIPLIER$ or 2 (default)" },
         { id="threat",      label="Threat",       type="input",  required=false,  placeholder="1" },
     },
 }
@@ -45,6 +49,10 @@ Schemas.HEAL = {
     fields = {
         { id="amount",  label="Amount",  type="input",  required=true, placeholder="e.g. 2d4+WIS or 6" },
         { id="perRank", label="Per Rank", type="number", required=false, min=0, max=9999, step=1, default=0 },
+        { id="critModifier", label="Crit Modifier (%)", type="input", required=false, scope="action",
+            placeholder="$stat.SPELL_CRIT$ or 5 (for 5%)" },
+        { id="critMult",     label="Crit Multiplier",   type="input", required=false, scope="action",
+            placeholder="$stat.CRIT_MULTIPLIER$ or 2 (default)" },
     },
 }
 
@@ -62,6 +70,14 @@ Schemas.REDUCE_COOLDOWN = {
     fields = {
         { id="spellId", label="Spell ID", type="input",  required=true,  placeholder="e.g. HEALING_WORD" },
         { id="amount",  label="Amount",   type="number", required=true,  min=1, max=100, step=1, default=1 },
+    },
+}
+
+-- SUMMON ----------------------------------------------------------------------
+Schemas.SUMMON = {
+    key    = "SUMMON",
+    fields = {
+        { id="npcId",     label="NPC ID",    type="lookup", pattern="^NPC%-[a-fA-F0-9]+$", required=true, placeholder="e.g. NPC-5e9204c0" },
     },
 }
 
