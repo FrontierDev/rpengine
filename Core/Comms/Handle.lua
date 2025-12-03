@@ -1070,10 +1070,6 @@ Comms:RegisterHandler("DAMAGE", function(data, sender)
                 
                 if myId and tId == myId then
                     -- Player took damage, show debug message
-                    local Debug = RPE and RPE.Debug
-                    if Debug and Debug.Print then
-                        Debug:Print(("You take %d %s damage."):format(amount, school))
-                    end
                 end
                 
                 if myId and sId == myId then
@@ -1351,7 +1347,52 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
     -- Check if this is the local player being attacked
     local myId = ev.GetLocalPlayerUnitId and ev:GetLocalPlayerUnitId()
     if not myId or tonumber(myId) ~= tId then
-        -- Not us being attacked, ignore
+        -- NPC-to-NPC attack: broadcast combat message instead of triggering player reaction
+        local target = nil
+        for _, u in pairs(ev.units) do
+            if tonumber(u.id) == tId then
+                target = u
+                break
+            end
+        end
+        
+        if target then
+            -- Calculate total damage from all schools for messaging
+            local totalDamage = 0
+            for _, amount in pairs(damageBySchool) do
+                totalDamage = totalDamage + (tonumber(amount) or 0)
+            end
+            
+            -- Build damage string with all schools
+            local damageStrings = {}
+            for school, amount in pairs(damageBySchool) do
+                if tonumber(amount) and tonumber(amount) > 0 then
+                    table.insert(damageStrings, math.floor(amount) .. " " .. school)
+                end
+            end
+            
+            -- Broadcast combat message for NPC-to-NPC attack
+            if #damageStrings > 0 then
+                local damageText = table.concat(damageStrings, ", ")
+                local Broadcast = RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
+                if Broadcast and Broadcast.SendCombatMessage then
+                    Broadcast:SendCombatMessage(sId, attacker.name, ("%s deals %s damage to %s."):format(attacker.name, damageText, target.name))
+                end
+            end
+            
+            -- Apply damage to the target
+            target:ApplyDamage(totalDamage, false)
+            
+            -- Emit ON_HIT_TAKEN trigger for the target
+            local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
+            if AuraTriggers and AuraTriggers.Emit then
+                AuraTriggers:Emit("ON_HIT_TAKEN", ev or {}, tId, tId, {
+                    damageAmount = totalDamage,
+                    sourceId = sId,
+                    isCrit = false,
+                })
+            end
+        end
         return
     end
 
@@ -1434,13 +1475,6 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
                             })
                         end
                         
-                        -- Print damage message
-                        local damageMessage = "You take " .. mitigatedDamage .. " mitigated damage."
-                        local Debug = RPE and RPE.Debug
-                        if Debug and Debug.Print then
-                            Debug:Print(damageMessage)
-                        end
-                        
                         if RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget then
                             RPE.Core.Windows.PlayerUnitWidget:Refresh()
                         end
@@ -1485,25 +1519,6 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
                                 sourceId = sId,
                                 isCrit = true,
                             })
-                        end
-                        
-                        -- Print damage breakdown message
-                        local damageMessage = "You take "
-                        local damageList = {}
-                        for school, amount in pairs(damageBySchool) do
-                            if tonumber(amount) and tonumber(amount) > 0 then
-                                table.insert(damageList, string.format("%d %s", math.floor(tonumber(amount)), school))
-                            end
-                        end
-                        if #damageList > 0 then
-                            damageMessage = damageMessage .. table.concat(damageList, ", ") .. " damage."
-                        else
-                            damageMessage = damageMessage .. mitigatedDamage .. " damage."
-                        end
-                        
-                        local Debug = RPE and RPE.Debug
-                        if Debug and Debug.Print then
-                            Debug:Print(damageMessage)
                         end
                         
                         if RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget then
@@ -1591,24 +1606,35 @@ Comms:RegisterHandler("NPC_MESSAGE", function(data, sender)
     local unitId = tonumber(args[1]) or 0
     local unitName = args[2] or "NPC"
     local message = args[3] or ""
+    local language = args[4] or "Common"
     
     if not unitName or unitName == "" or not message or message == "" then
         return
     end
     
-    -- Add to chat box if available
+    -- Obfuscate message once based on player's language skill
+    local displayMessage = message
+    local Language = RPE and RPE.Core and RPE.Core.Language
+    if Language then
+        displayMessage = Language:ObfuscateText(message, language)
+    end
+    
+    -- Add to chat box if available (pass already-obfuscated message, language=nil to skip re-obfuscation)
     local ChatBoxWidget = RPE and RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
     if ChatBoxWidget and ChatBoxWidget.PushNPCMessage then
-        ChatBoxWidget:PushNPCMessage(unitName, message)
+        ChatBoxWidget:PushNPCMessage(unitName, displayMessage, language)
     end
     
-    -- Also add to default Blizzard chat frame
+    -- Also add to default Blizzard chat frame (with language prefix if not default)
     if DEFAULT_CHAT_FRAME then
         local r, g, b = 1.0, 1.0, 0.624  -- #FFFF9F
-        DEFAULT_CHAT_FRAME:AddMessage(unitName .. " says: " .. message, r, g, b)
+        local playerFaction = UnitFactionGroup("player")
+        local defaultLanguage = (playerFaction == "Alliance") and "Common" or "Orcish"
+        local languagePrefix = language and language ~= defaultLanguage and ("[" .. language .. "] ") or ""
+        DEFAULT_CHAT_FRAME:AddMessage(unitName .. " says: " .. languagePrefix .. displayMessage, r, g, b)
     end
     
-    -- Trigger speech bubble if available
+    -- Trigger speech bubble if available (pass already-obfuscated message)
     local ChatBoxWidget = RPE and RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
     if ChatBoxWidget and ChatBoxWidget.speechBubbleWidget then
         -- Look up the NPC unit to get model data
@@ -1624,7 +1650,7 @@ Comms:RegisterHandler("NPC_MESSAGE", function(data, sender)
                 end
             end
         end
-        ChatBoxWidget.speechBubbleWidget:ShowBubble(nil, unitName, message, npcUnit)
+        ChatBoxWidget.speechBubbleWidget:ShowBubble(nil, unitName, displayMessage, npcUnit, language)
     end
 end)
 
@@ -1702,5 +1728,43 @@ Comms:RegisterHandler("SUMMON", function(data, sender)
     end
 end)
 
+-- Handle DICE_MESSAGE: display dice rolls in chat
+Comms:RegisterHandler("DICE_MESSAGE", function(data, sender)
+    local args = { strsplit(";", data) }
+    local unitId = tonumber(args[1]) or 0
+    local unitName = args[2] or ""
+    local message = args[3] or ""
+    
+    if not message or message == "" then
+        return
+    end
+    
+    -- Display the dice message
+    if RPE.Debug and RPE.Debug.Dice then
+        RPE.Debug:Dice(message)
+    else
+        -- Fallback to direct print if Debug not available
+        print(message)
+    end
+end)
 
+-- Handle COMBAT_MESSAGE: display combat outcomes in chat
+Comms:RegisterHandler("COMBAT_MESSAGE", function(data, sender)
+    local args = { strsplit(";", data) }
+    local unitId = tonumber(args[1]) or 0
+    local unitName = args[2] or ""
+    local message = args[3] or ""
+    
+    if not message or message == "" then
+        return
+    end
+    
+    -- Display the combat message
+    if RPE.Debug and RPE.Debug.Combat then
+        RPE.Debug:Combat(message)
+    else
+        -- Fallback to direct print if Debug not available
+        print(message)
+    end
+end)
 

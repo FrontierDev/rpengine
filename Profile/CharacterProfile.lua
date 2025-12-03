@@ -18,6 +18,7 @@ local CharacterStat = (RPE.Stats and RPE.Stats.CharacterStat) or error("Characte
 ---@field stats table<string, CharacterStat>   -- keyed by stat id
 ---@field items table<number, {id:string, qty:number, mods:table|nil}>
 ---@field equipment table<string, string>      -- equipment: keyed by slot, value = item id
+---@field traits string[]                      -- list of trait (aura) IDs
 ---@field notes string|nil
 ---@field createdAt number
 ---@field updatedAt number
@@ -124,6 +125,8 @@ function CharacterProfile:New(name, opts)
         stats       = normalizeStats(opts.stats),
         items       = normalizeItems(opts.items),
         equipment   = opts.equipment or {},  -- slot → itemId
+        traits      = opts.traits or {},     -- list of trait aura IDs
+        languages   = opts.languages or {},  -- language name → skill level (1-300)
         notes       = opts.notes or nil,
         createdAt   = opts.createdAt or now,
         updatedAt   = opts.updatedAt or now,
@@ -220,6 +223,25 @@ function CharacterProfile:_InitializeResourceDisplaySettings()
     end
 end
 
+---Initialize faction-specific languages if empty
+function CharacterProfile:_InitializeLanguages()
+    if type(self.languages) ~= "table" then
+        self.languages = {}
+    end
+    
+    -- Only initialize if languages table is empty
+    if next(self.languages) == nil then
+        -- Initialize with faction defaults
+        local playerFaction = UnitFactionGroup("player")
+        if playerFaction == "Alliance" then
+            self.languages["Common"] = 300
+        elseif playerFaction == "Horde" then
+            self.languages["Orcish"] = 300
+        end
+    else
+        RPE.Debug:Internal("Languages already initialized for profile: " .. (self.name or "?"))
+    end
+end
 
 function CharacterProfile:RecalculateEquipmentStats()
     RPE.Debug:Internal(string.format("Recalculating equipment stats for profile: %s", self.name or "?"))
@@ -796,6 +818,141 @@ function CharacterProfile:ForEachEquipped(fn)
 end
 
 -------------------------------------------------------------------------------
+-- Traits API (permanent aura-based traits)
+-------------------------------------------------------------------------------
+
+--- Add a trait (aura) to the profile.
+---@param auraId string
+function CharacterProfile:AddTrait(auraId)
+    if not auraId or auraId == "" then return end
+    for _, id in ipairs(self.traits or {}) do
+        if id == auraId then return end  -- already present
+    end
+    
+    -- Get aura definition to check if it's racial or class
+    local AuraRegistry = RPE.Core and RPE.Core.AuraRegistry
+    local isRacial = false
+    local isClass = false
+    
+    if AuraRegistry then
+        local auraDef = AuraRegistry:Get(auraId)
+        if auraDef and auraDef.tags then
+            for _, tag in ipairs(auraDef.tags) do
+                if type(tag) == "string" then
+                    local tagLower = tag:lower()
+                    if tagLower:sub(1, 5) == "race:" then
+                        isRacial = true
+                        break
+                    elseif tagLower:sub(1, 6) == "class:" then
+                        isClass = true
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Count current traits by type
+    local racialCount = 0
+    local classCount = 0
+    local genericCount = 0
+    for _, traitId in ipairs(self.traits or {}) do
+        local def = AuraRegistry and AuraRegistry:Get(traitId)
+        if def and def.tags then
+            local isTraitRacial = false
+            local isTraitClass = false
+            for _, tag in ipairs(def.tags) do
+                if type(tag) == "string" then
+                    local tagLower = tag:lower()
+                    if tagLower:sub(1, 5) == "race:" then
+                        isTraitRacial = true
+                        break
+                    elseif tagLower:sub(1, 6) == "class:" then
+                        isTraitClass = true
+                        break
+                    end
+                end
+            end
+            if isTraitRacial then
+                racialCount = racialCount + 1
+            elseif isTraitClass then
+                classCount = classCount + 1
+            else
+                genericCount = genericCount + 1
+            end
+        else
+            genericCount = genericCount + 1
+        end
+    end
+    
+    -- Check max_traits (overall limit for ANY traits)
+    local maxTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_traits) or 0
+    local totalTraits = #(self.traits or {})
+    if maxTraits > 0 and totalTraits >= maxTraits then
+        return  -- at max total capacity
+    end
+    
+    -- Check type-specific limits
+    if isRacial then
+        local maxRacialTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_traits_racial) or 0
+        if maxRacialTraits > 0 and racialCount >= maxRacialTraits then
+            return  -- at max racial capacity
+        end
+    elseif isClass then
+        local maxClassTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_traits_class) or 0
+        if maxClassTraits > 0 and classCount >= maxClassTraits then
+            return  -- at max class capacity
+        end
+    else
+        -- Generic trait - check max_generic_traits
+        local maxGenericTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_generic_traits) or 0
+        if maxGenericTraits > 0 and genericCount >= maxGenericTraits then
+            return  -- at max generic capacity
+        end
+    end
+    
+    self.traits = self.traits or {}
+    table.insert(self.traits, auraId)
+    touch(self)
+    if RPE and RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.SaveProfile then
+        RPE.Profile.DB.SaveProfile(self)
+    end
+end
+
+--- Remove a trait (aura) from the profile.
+---@param auraId string
+function CharacterProfile:RemoveTrait(auraId)
+    if not auraId or not self.traits then return end
+    for i = #self.traits, 1, -1 do
+        if self.traits[i] == auraId then
+            table.remove(self.traits, i)
+            touch(self)
+            if RPE and RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.SaveProfile then
+                RPE.Profile.DB.SaveProfile(self)
+            end
+            return
+        end
+    end
+end
+
+--- Check if a trait is present.
+---@param auraId string
+---@return boolean
+function CharacterProfile:HasTrait(auraId)
+    if not auraId or not self.traits then return false end
+    for _, id in ipairs(self.traits) do
+        if id == auraId then return true end
+    end
+    return false
+end
+
+--- Get all trait aura IDs.
+---@return string[]
+function CharacterProfile:GetTraits()
+    return self.traits or {}
+end
+
+-------------------------------------------------------------------------------
 -- Spell Knowledge API
 -------------------------------------------------------------------------------
 
@@ -964,6 +1121,8 @@ function CharacterProfile:ToTable()
         stats     = statsOut,
         items     = itemsOut,
         equipment = equipOut,
+        traits    = self.traits or {},
+        languages = self.languages or {},
         notes     = self.notes,
         createdAt = self.createdAt,
         updatedAt = self.updatedAt,
@@ -981,6 +1140,8 @@ function CharacterProfile.FromTable(t)
         stats     = type(t.stats) == "table" and t.stats or {},
         items     = type(t.items) == "table" and t.items or {},
         equipment = type(t.equipment) == "table" and t.equipment or {},
+        traits    = type(t.traits) == "table" and t.traits or {},
+        languages = type(t.languages) == "table" and t.languages or {},
         notes     = t.notes,
         createdAt = t.createdAt,
         updatedAt = t.updatedAt,

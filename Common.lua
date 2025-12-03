@@ -24,6 +24,8 @@ Common.InlineIcons = {
     Flying = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\flying.png:12:12|t",
     Reaction = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\reaction.png:12:12|t",
     Cancel = "|TInterface\\Buttons\\UI-GroupLoot-Pass-Up:12:12|t",
+    Dice = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\dice.png:12:12|t",
+    Combat = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\parry.png:12:12|t",
     Socket_Red = ("|T%s:12:12|t"):format(Common.SocketTextures.Red),
     Socket_Blue = ("|T%s:12:12|t"):format(Common.SocketTextures.Blue),
     Socket_Yellow = ("|T%s:12:12|t"):format(Common.SocketTextures.Yellow),
@@ -37,6 +39,87 @@ Common.QualityColors = {
     rare      = { r = 0.00, g = 0.44, b = 0.87 }, -- blue
     epic      = { r = 0.64, g = 0.21, b = 0.93 }, -- purple
     legendary = { r = 1.00, g = 0.50, b = 0.00 }, -- orange
+}
+
+Common.DamageSchools = { "Physical", "Force", "Fire", "Frost", "Cold", "Nature", "Acid", "Lightning", "Poison", "Shadow", "Necrotic", "Holy", "Radiant", "Arcane", "Psychic", "Fel" }
+
+-- Shared colors for grouped damage schools
+local damageSchoolColors = {
+    physical   = { r = 0.8, g = 0.8, b = 0.8 },      -- light gray (Physical, Force)
+    fire       = { r = 1.0, g = 0.5, b = 0.0 },      -- orange (Fire)
+    frost      = { r = 0.5, g = 0.8, b = 1.0 },      -- light blue (Frost, Cold)
+    nature     = { r = 0.4, g = 1.0, b = 0.4 },      -- light green (Nature, Acid, Lightning, Poison)
+    shadow     = { r = 0.6, g = 0.4, b = 0.8 },      -- purple (Shadow, Necrotic)
+    holy       = { r = 1.0, g = 0.9, b = 0.5 },      -- light yellow/gold (Holy, Radiant)
+    arcane     = { r = 0.6, g = 0.8, b = 1.0 },      -- light blue-purple (Arcane, Psychic)
+    fel        = { r = 0.7, g = 0.1, b = 0.9 },      -- bright purple (Fel)
+}
+
+Common.DamageSchoolInfo = {
+    Physical = {
+        color = damageSchoolColors.physical,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\melee.png",
+    },
+    Force = {
+        color = damageSchoolColors.physical,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Fire = {
+        color = damageSchoolColors.fire,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Frost = {
+        color = damageSchoolColors.frost,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Cold = {
+        color = damageSchoolColors.frost,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Nature = {
+        color = damageSchoolColors.nature,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Acid = {
+        color = damageSchoolColors.nature,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Lightning = {
+        color = damageSchoolColors.nature,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Poison = {
+        color = damageSchoolColors.nature,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Shadow = {
+        color = damageSchoolColors.shadow,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Necrotic = {
+        color = damageSchoolColors.shadow,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Holy = {
+        color = damageSchoolColors.holy,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Radiant = {
+        color = damageSchoolColors.holy,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Arcane = {
+        color = damageSchoolColors.arcane,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Psychic = {
+        color = damageSchoolColors.arcane,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
+    Fel = {
+        color = damageSchoolColors.fel,
+        icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\spell.png",
+    },
 }
 
 Common.RarityRank = {
@@ -315,8 +398,10 @@ function Common:ProfileForUnit(u)
     if u.key and lk and u.key == lk then
         return RPE.Profile.DB.GetOrCreateActive()
     end
-    if u.name then
-        return RPE.Profile.DB.GetOrCreateByName(u.name)
+    -- For NPCs, return a temporary runtime profile-like object using unit ID as identifier
+    -- This prevents creating persistent DB profiles for runtime NPCs
+    if u.id then
+        return { name = "npc:" .. tostring(u.id) }
     end
     return nil
 end
@@ -334,7 +419,23 @@ function Common:IsAuraStatsEligibleTarget(u)
     return true -- solo counts as leader
 end
 
-function Common:Roll(spec)
+---Roll dice with optional advantage/disadvantage
+---@param spec string              -- dice spec like "1d20", "2d6"
+---@param advantages table|nil     -- { hit=N, defense=N, all=N, [spellId]=N }
+---@param disadvantages table|nil  -- same structure
+---@param rollType string|nil      -- "hit", "defense", "all", or spell ID (for advantage/disadvantage lookup)
+---@return number                  -- the selected roll (highest if advantage, lowest if disadvantage, only if normal)
+function Common:Roll(spec, advantages, disadvantages, rollType)
+    -- If advantages/disadvantages provided, use Advantage system
+    if advantages or disadvantages then
+        local Advantage = RPE.Core and RPE.Core.Advantage
+        if Advantage and Advantage.RollWithMode then
+            local selectedRoll = Advantage:RollWithMode(spec, advantages, disadvantages, rollType)
+            return selectedRoll
+        end
+    end
+    
+    -- Fallback: standard roll without advantage/disadvantage
     spec = tostring(spec or "")
     local n, d = spec:match("^(%d+)%s*[dD]%s*(%d+)$")
     n = tonumber(n) or 1

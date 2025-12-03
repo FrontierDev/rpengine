@@ -1,5 +1,22 @@
 -- RPE/Core/Formula.lua
 -- Unified parser/evaluator for dice/stat/weapon formulas.
+--
+-- Supported syntax:
+--   Numbers:           42, 3.14
+--   Dice notation:     3d6, 2d20
+--   Basic operators:   + - * / (with standard precedence)
+--   Parentheses:       (expression)
+--   Variables:         $stat.STAT_ID$ (player stat), $wep.slot$ (weapon damage)
+--   Math functions:    sqrt(x), pow(x,y), floor(x), ceil(x), abs(x)
+--                      ln(x) [natural log], exp(x) [e^x], min(x,y), max(x,y)
+--
+-- Examples:
+--   "100 * $level$"           - scales by level variable (if level in context)
+--   "5 + 2d6"                 - 5 plus 2d6
+--   "pow($level$, 2)"         - level squared (quadratic scaling)
+--   "100 * exp($level$ / 10)" - exponential scaling
+--   "1000 * ln($level$ + 1)"  - logarithmic scaling
+--   "floor(sqrt($level$))"    - floor of square root of level
 
 RPE      = RPE or {}
 RPE.Core = RPE.Core or {}
@@ -155,6 +172,21 @@ local function _weaponRoll(profile, which)
 end
 
 -- ==== Tokenizer =============================================================
+-- Supported math functions:
+-- sqrt(x) - square root
+-- pow(x,y) - x to the power of y
+-- floor(x) - round down
+-- ceil(x) - round up
+-- abs(x) - absolute value
+-- ln(x) - natural logarithm
+-- exp(x) - e to the power of x (exponential)
+-- min(x,y) - minimum of two values
+-- max(x,y) - maximum of two values
+local MATH_FUNCS = {
+    sqrt=true, pow=true, floor=true, ceil=true, abs=true,
+    ln=true, exp=true, min=true, max=true
+}
+
 local function tokenize(expr)
     local toks, i, n = {}, 1, #expr
     while i <= n do
@@ -163,6 +195,14 @@ local function tokenize(expr)
 
         if c:match("%s") then
             i = i + 1
+
+        -- Function names (must be followed by '(')
+        elseif rest:match("^([a-zA-Z_][%w_]*)%s*%(") then
+            local fname, adv = rest:match("^([a-zA-Z_][%w_]*)%s*()")
+            if MATH_FUNCS[fname] then
+                table.insert(toks, { t="FUNC", name=fname })
+            end
+            i = i + adv - 1
 
         elseif rest:match("^%d+[dD]%d+") then
             local a,b,adv = rest:match("^(%d+)[dD](%d+)()")
@@ -193,6 +233,10 @@ local function tokenize(expr)
             table.insert(toks, { t=c })
             i = i + 1
 
+        elseif c == "," then
+            table.insert(toks, { t="," })
+            i = i + 1
+
         else
             -- unknown char, skip
             i = i + 1
@@ -208,6 +252,8 @@ local function toRPN(tokens)
     for _, tk in ipairs(tokens) do
         if tk.t=="NUM" or tk.t=="STAT" or tk.t=="DICE" or tk.t=="WEAPON" then
             table.insert(out, tk)
+        elseif tk.t=="FUNC" then
+            table.insert(ops, tk)
         elseif tk.t=="OP" then
             while true do
                 local top = ops[#ops]
@@ -222,6 +268,14 @@ local function toRPN(tokens)
                 table.insert(out, table.remove(ops))
             end
             if #ops>0 and ops[#ops].t=="(" then table.remove(ops) end
+            -- If top of ops is a function, pop it to output
+            if #ops>0 and ops[#ops].t=="FUNC" then
+                table.insert(out, table.remove(ops))
+            end
+        elseif tk.t=="," then
+            while #ops>0 and ops[#ops].t~="(" do
+                table.insert(out, table.remove(ops))
+            end
         end
     end
     while #ops>0 do table.insert(out, table.remove(ops)) end
@@ -235,6 +289,48 @@ local function evalRPN(rpn, profile)
     local st = {}
     local function push(r) st[#st+1]=r end
     local function pop() local v=st[#st]; st[#st]=nil; return v end
+
+    -- Helper to apply single-argument math functions to ranges
+    local function applyFunc1(fname, r)
+        r = asR(r)
+        if fname == "sqrt" then
+            return R(math.sqrt(math.max(0, r.min)), math.sqrt(r.max))
+        elseif fname == "floor" then
+            return R(math.floor(r.min), math.floor(r.max))
+        elseif fname == "ceil" then
+            return R(math.ceil(r.min), math.ceil(r.max))
+        elseif fname == "abs" then
+            if r.min >= 0 then return r end
+            if r.max <= 0 then return R(-r.max, -r.min) end
+            return R(0, math.max(-r.min, r.max))
+        elseif fname == "ln" then
+            local minv = math.max(0.0001, r.min)
+            return R(math.log(minv), math.log(r.max))
+        elseif fname == "exp" then
+            return R(math.exp(r.min), math.exp(r.max))
+        end
+        return r
+    end
+
+    -- Helper to apply two-argument math functions
+    local function applyFunc2(fname, r1, r2)
+        r1, r2 = asR(r1), asR(r2)
+        if fname == "pow" then
+            -- For pow, we need to consider all combinations
+            local vals = {
+                math.pow(r1.min, r2.min),
+                math.pow(r1.min, r2.max),
+                math.pow(r1.max, r2.min),
+                math.pow(r1.max, r2.max),
+            }
+            return R(math.min(_UNPACK(vals)), math.max(_UNPACK(vals)))
+        elseif fname == "min" then
+            return R(math.min(r1.min, r2.min), math.min(r1.max, r2.max))
+        elseif fname == "max" then
+            return R(math.max(r1.min, r2.min), math.max(r1.max, r2.max))
+        end
+        return r1
+    end
 
     for _, tk in ipairs(rpn) do
         if tk.t=="NUM" then
@@ -261,6 +357,18 @@ local function evalRPN(rpn, profile)
 
         elseif tk.t=="WEAPON" then
             push(_weaponRange(profile, tk.slot))
+
+        elseif tk.t=="FUNC" then
+            -- Functions are applied to arguments already on the stack
+            if tk.name == "sqrt" or tk.name == "floor" or tk.name == "ceil" 
+               or tk.name == "abs" or tk.name == "ln" or tk.name == "exp" then
+                local arg = pop()
+                push(applyFunc1(tk.name, arg))
+            elseif tk.name == "pow" or tk.name == "min" or tk.name == "max" then
+                local arg2 = pop()
+                local arg1 = pop()
+                push(applyFunc2(tk.name, arg1, arg2))
+            end
         end
     end
 
@@ -326,6 +434,29 @@ function Formula:Roll(expr, profile)
             elseif tk.v=="/" then push(b~=0 and a/b or 0) end
         elseif tk.t=="WEAPON" then
             push(_weaponRoll(profile, tk.slot))
+        elseif tk.t=="FUNC" then
+            if tk.name == "sqrt" then
+                push(math.sqrt(math.max(0, pop())))
+            elseif tk.name == "floor" then
+                push(math.floor(pop()))
+            elseif tk.name == "ceil" then
+                push(math.ceil(pop()))
+            elseif tk.name == "abs" then
+                push(math.abs(pop()))
+            elseif tk.name == "ln" then
+                push(math.log(math.max(0.0001, pop())))
+            elseif tk.name == "exp" then
+                push(math.exp(pop()))
+            elseif tk.name == "pow" then
+                local b, a = pop(), pop()
+                push(math.pow(a, b))
+            elseif tk.name == "min" then
+                local b, a = pop(), pop()
+                push(math.min(a, b))
+            elseif tk.name == "max" then
+                local b, a = pop(), pop()
+                push(math.max(a, b))
+            end
         end
     end
 

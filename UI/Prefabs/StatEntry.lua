@@ -100,6 +100,71 @@ function StatEntry:New(name, opts)
     o.mod.fs:SetJustifyH("RIGHT")
     hGroup:Add(o.mod)
 
+    -- Click handler for advantage rolls
+    f:EnableMouse(true)
+    f:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" and opts.stat then
+            -- Perform a hit_roll with advantage/disadvantage based on stat
+            local Advantage = RPE and RPE.Core and RPE.Core.Advantage
+            local ProfileDB = RPE and RPE.Profile and RPE.Profile.DB
+
+            if not (Advantage and ProfileDB) then
+            return
+            end
+
+            local statName = opts.stat.name or opts.label or "Stat"
+            local statId = opts.stat.id or statName:upper()
+            local profile = ProfileDB.GetOrCreateActive()
+
+            if not profile then return end
+
+            -- Get the hit_roll formula from the active ruleset
+            local hitRollFormula = "1d20"  -- default fallback
+            if profile.ruleset then
+            local RulesetProfile = RPE and RPE.Core and RPE.Core.RulesetProfile
+            if RulesetProfile then
+                local rulesetData = RulesetProfile:Get(profile.ruleset)
+                if rulesetData and rulesetData.rules and rulesetData.rules.hit_roll then
+                hitRollFormula = rulesetData.rules.hit_roll
+                end
+            end
+            end
+
+            -- Roll using hit_roll formula with stat's advantage/disadvantage
+            local result = Advantage:Roll(hitRollFormula, profile, statId)
+
+            -- Parse modifier from the mod text (e.g. "+3" or "-2")
+            local modText = opts.modifier or "0"
+            local modifier = tonumber(modText) or 0
+            local total = result + modifier
+
+            -- Format display with modifier
+            local playerName = UnitName("player")
+            local displayText
+            if modifier ~= 0 then
+                displayText = string.format("%s rolls %s: %d (%d + %d)", playerName, statName, total, result, modifier)
+            else
+                displayText = string.format("%s rolls %s: %d", playerName, statName, result)
+            end
+
+            -- Print result to chat
+            local Broadcast = RPE and RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
+            local Debug = RPE and RPE.Debug
+            
+            if Broadcast then
+                local playerId = RPE.Core and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent:GetLocalPlayerUnitId()
+                if playerId then
+                    Broadcast:SendDiceMessage(playerId, playerName, displayText)
+                elseif Debug then
+                    -- Fallback to Debug:Dice if no active event
+                    Debug:Dice(displayText)
+                end
+            elseif Debug then
+                Debug:Dice(displayText)
+            end
+        end
+    end)
+
     f:SetScript("OnEnter", function()
         hl:Show()
         if not opts.stat or not opts.stat.tooltip then return end

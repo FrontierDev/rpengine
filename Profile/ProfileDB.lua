@@ -252,6 +252,19 @@ end
 function ProfileDB.InitializeUI()
     local profile = ProfileDB.GetOrCreateActive()
     
+    -- Initialize the Language system with profile data
+    local Language = RPE.Core and RPE.Core.Language
+    if Language then
+        local lang = Language.New()
+        -- Load languages from profile if they exist
+        if profile.languages and next(profile.languages) ~= nil then
+            lang:LoadFromProfile(profile)
+        else
+            -- No saved languages, initialize with faction defaults
+            lang:InitializeDefaultLanguages()
+        end
+    end
+    
     -- Create the main window with all sheets
     RPE_UI.Windows.MainWindow.New()
 

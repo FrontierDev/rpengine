@@ -955,7 +955,25 @@ end
 ---@param unitId integer NPC unit ID
 ---@param unitName string Display name of the NPC
 ---@param message string The message to broadcast
-function Broadcast:SendNPCMessage(unitId, unitName, message)
+---@param language string The language being spoken
+function Broadcast:SendNPCMessage(unitId, unitName, message, language)
+    if not unitId or not unitName or not message then return end
+    
+    local flat = {
+        tostring(tonumber(unitId) or 0),
+        tostring(unitName),
+        tostring(message),
+        tostring(language or "Common"),
+    }
+    
+    _sendAll("NPC_MESSAGE", flat)
+end
+
+--- Broadcast a chat message
+---@param unitId integer Unit ID of the player.
+---@param unitName string Display name of the player.
+---@param message string The message to broadcast
+function Broadcast:SendDiceMessage(unitId, unitName, message)
     if not unitId or not unitName or not message then return end
     
     local flat = {
@@ -964,7 +982,27 @@ function Broadcast:SendNPCMessage(unitId, unitName, message)
         tostring(message),
     }
     
-    _sendAll("NPC_MESSAGE", flat)
+    _sendAll("DICE_MESSAGE", flat)
+end
+
+--- Broadcast a chat message
+---@param unitId integer Unit ID of the player.
+---@param unitName string Display name of the player.
+---@param message string The message to broadcast
+function Broadcast:SendCombatMessage(unitId, unitName, message)
+    if not unitId or not unitName or not message then return end
+    
+    if RPE and RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(("[Broadcast] SendCombatMessage: " .. tostring(message)))
+    end
+    
+    local flat = {
+        tostring(tonumber(unitId) or 0),
+        tostring(unitName),
+        tostring(message),
+    }
+    
+    _sendAll("COMBAT_MESSAGE", flat)
 end
 
 --- Broadcast a summon request to the supergroup leader

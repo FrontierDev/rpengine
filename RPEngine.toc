@@ -18,6 +18,7 @@ Data/DefaultCommon.lua
 Data/DefaultClassic.lua
 Data/Default5e.lua
 Data/DefaultWarcraft.lua
+Data/LanguageTable.lua
 
 Core/Comms/CommsManager.lua
 Core/Comms/Broadcast.lua
@@ -48,6 +49,7 @@ Core/Formula.lua
 Core/Unit.lua
 Core/Resources.lua
 Core/Cooldowns.lua
+Core/Advantage.lua
 Core/ItemUse.lua
 Core/SpellRequirements.lua
 Core/SpellActions.lua
@@ -61,6 +63,7 @@ Core/AuraEvents.lua
 Core/AuraTriggers.lua
 Core/AuraManager.lua
 Core/NPCRegistry.lua
+Core/Language.lua
 
 Core/Crafting/Recipe.lua
 Core/Crafting/RecipeRegistry.lua
@@ -124,6 +127,8 @@ UI/Prefabs/ModelEditPrefab.lua
 UI/Prefabs/NPCSpellbookPrefab.lua
 UI/Prefabs/ShopItem.lua
 UI/Prefabs/InteractionOptions.lua
+UI/Prefabs/TraitEntry.lua
+UI/Prefabs/LanguageEntry.lua
 
 ## Widgets
 UI/Windows/Clipboard.lua

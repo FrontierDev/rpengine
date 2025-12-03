@@ -51,7 +51,8 @@
         "STR",
         "INT",
         "HISTORY",
-        "ITEMS"
+        "ITEMS",
+        "UIDropDownMenu_SetSelectedValue"
     ],
     "Lua.diagnostics.disable": [
         "assign-type-mismatch"

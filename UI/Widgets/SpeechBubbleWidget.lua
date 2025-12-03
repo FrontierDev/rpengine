@@ -234,8 +234,11 @@ function SpeechBubbleWidget:_RepositionBubbleElements(bubble, isEnemy)
 end
 
 -- Display a speech bubble for a say/yell message
-function SpeechBubbleWidget:ShowBubble(unitToken, senderName, message, npcUnit)
+function SpeechBubbleWidget:ShowBubble(unitToken, senderName, message, npcUnit, language)
     if not senderName or not message then return end
+
+    -- Message is already obfuscated by Handle.lua, use it directly
+    local displayMessage = message
 
     local bubble = self:_GetBubbleFrame()
 
@@ -319,7 +322,11 @@ function SpeechBubbleWidget:ShowBubble(unitToken, senderName, message, npcUnit)
 
     -- Set name and message
     bubble._name:SetText(senderName)
-    bubble._text:SetText(message)
+    -- Determine if language should be shown (hide for default languages)
+    local playerFaction = UnitFactionGroup("player")
+    local defaultLanguage = (playerFaction == "Alliance") and "Common" or "Orcish"
+    local languagePrefix = language and language ~= defaultLanguage and ("[" .. language .. "] ") or ""
+    bubble._text:SetText(languagePrefix .. displayMessage)
 
     -- Calculate available width for text (accounting for portrait and padding)
     local textWidth = MAX_BUBBLE_WIDTH - PORTRAIT_SIZE - PADDING * 4

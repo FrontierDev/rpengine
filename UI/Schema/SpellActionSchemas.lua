@@ -18,8 +18,9 @@ local COMMON = {
     },
 }
 
--- Shared lists
-local SCHOOLS = { "Physical","Fire","Ice","Lightning","Holy","Shadow","Arcane","Poison","Psychic","Nature" }
+-- Shared lists - use damage schools from Common
+local Common = RPE.Common or {}
+local SCHOOLS = Common.DamageSchools or { "Physical","Fire","Ice","Lightning","Holy","Shadow","Arcane","Poison","Psychic","Nature" }
 
 -- DAMAGE ---------------------------------------------------------------------
 Schemas.DAMAGE = {

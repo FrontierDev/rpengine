@@ -1100,11 +1100,18 @@ function ChatBoxWidget:PushMessage(text, r, g, b, ctype)
 end
 
 --- Push an NPC message to the chat log (with NPC filter support)
-function ChatBoxWidget:PushNPCMessage(senderName, message)
+function ChatBoxWidget:PushNPCMessage(senderName, message, language)
     if not self.log or not senderName or not message then return end
     
+    -- Message is already obfuscated by Handle.lua, just apply language prefix
     local senderPrefix = senderName or "NPC"
-    local line = senderPrefix .. " says: " .. message
+    
+    -- Determine if language should be shown (hide for default languages)
+    local playerFaction = UnitFactionGroup("player")
+    local defaultLanguage = (playerFaction == "Alliance") and "Common" or "Orcish"
+    local languagePrefix = language and language ~= defaultLanguage and ("[" .. language .. "] ") or ""
+    
+    local line = senderPrefix .. " says: " .. languagePrefix .. message
     
     -- NPC message color (#FFFF9F)
     local r, g, b = 1.0, 1.0, 0.624  -- #FFFF9F

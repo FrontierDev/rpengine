@@ -133,12 +133,15 @@ local function runActions(ctx, cast, actions)
     local hitCache = {}  -- { [action] = { [targetRef] = {hit=bool, roll=num, ...} } }
     local targetCache = {}  -- { [action] = {targets} } - cache resolved targets to avoid double resolution
     
+    local aggregatedPlayerTargets = {}  -- { [playerUnitId] = { unit, hitSystem, thresholdIds, attackRoll, isCrit, damageBySchool={}, auraEffects={} } }
+    
     for _, act in ipairs(actions or {}) do
         local targets = resolveActionTargets(cast, ctx, act)
         targetCache[act.key] = targets  -- Cache for later use
         
         -- Perform hit check (or use cached results from first action)
-        local hitTargets, missTargets = SpellCast:CheckHit(ctx, cast, act, targets)
+        -- Returns hits, misses, AND playerTargetData array
+        local hitTargets, missTargets, playerTargetData = SpellCast:CheckHit(ctx, cast, act, targets)
         
         -- Cache these results for actions that share targets
         if not hitCache[act.key] then
@@ -149,6 +152,39 @@ local function runActions(ctx, cast, actions)
         end
         for _, tgt in ipairs(missTargets or {}) do
             hitCache[act.key][tgt] = false
+        end
+        
+        -- Aggregate player target damage across actions
+        if act.key == "DAMAGE" and playerTargetData then
+            for _, ptgtData in ipairs(playerTargetData) do
+                local unitId = ptgtData.unit.id
+                if not aggregatedPlayerTargets[unitId] then
+                    aggregatedPlayerTargets[unitId] = {
+                        unit = ptgtData.unit,
+                        hitSystem = ptgtData.hitSystem,
+                        thresholdIds = ptgtData.thresholdIds,
+                        attackRoll = ptgtData.attackRoll,
+                        isCrit = ptgtData.isCrit,
+                        damageBySchool = {},
+                        auraEffects = {},
+                    }
+                end
+                
+                -- Merge damage schools
+                for school, amount in pairs(ptgtData.damageBySchool or {}) do
+                    aggregatedPlayerTargets[unitId].damageBySchool[school] = (aggregatedPlayerTargets[unitId].damageBySchool[school] or 0) + amount
+                end
+                
+                -- Merge aura effects
+                for _, effect in ipairs(ptgtData.auraEffects or {}) do
+                    table.insert(aggregatedPlayerTargets[unitId].auraEffects, effect)
+                end
+                
+                -- Mark as critical if any DAMAGE action was crit
+                if ptgtData.isCrit then
+                    aggregatedPlayerTargets[unitId].isCrit = true
+                end
+            end
         end
     end
     
@@ -172,7 +208,7 @@ local function runActions(ctx, cast, actions)
                         table.insert(applyTargets, tgt)
                     end
                 end
-                -- Player targets: skip entirely (handled via broadcast/reaction)
+                -- Player targets: skip entirely (handled via broadcast/reaction system)
             end
             
             if act.key == "APPLY_AURA" and act.requiresHit then
@@ -220,6 +256,34 @@ local function runActions(ctx, cast, actions)
             end
             Actions:Run(act.key, ctx, cast, applyTargets, act.args)
         end
+    end
+    
+    -- Broadcast aggregated player target attacks (after all DAMAGE actions processed)
+    if next(aggregatedPlayerTargets) then
+        local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+        if Broadcast and Broadcast.AttackSpell then
+            for unitId, ptgtData in pairs(aggregatedPlayerTargets) do
+                if ptgtData.unit then
+                    Broadcast:AttackSpell(
+                        cast.caster,
+                        ptgtData.unit.id,
+                        cast.def.id or "UNKNOWN",
+                        cast.def.name or "Unknown Spell",
+                        ptgtData.hitSystem,
+                        ptgtData.attackRoll,
+                        ptgtData.thresholdIds,
+                        ptgtData.damageBySchool,
+                        ptgtData.auraEffects or {}
+                    )
+                end
+            end
+        end
+    end
+    
+    -- Flush pending combat messages after all actions processed
+    local castKey = tostring(cast and cast.def and cast.def.id or cast and cast.caster or "unknown")
+    if RPE.Core.SpellActions and RPE.Core.SpellActions.FlushCombatMessages then
+        RPE.Core.SpellActions:FlushCombatMessages(castKey)
     end
 end
 
@@ -798,7 +862,7 @@ local function _checkHitVsNPC(tgtUnit, casterUnit, hitSystem, rollSpec, baseThre
     -- Check for crit: roll >= critThreshold
     local isCrit = _checkCrit(roll, critThreshold)
     if RPE and RPE.Debug and RPE.Debug.Print then
-        RPE.Debug:Print(("  Crit check (NPC): roll=%d >= threshold=%.1f → %s"):format(roll, critThreshold, isCrit and "CRIT" or "normal"))
+        RPE.Debug:Internal(("  Crit check (NPC): roll=%d >= threshold=%.1f → %s"):format(roll, critThreshold, isCrit and "CRIT" or "normal"))
     end
     if hitSystem == "simple" then
         -- Simple: always use DEFENCE stat
@@ -841,7 +905,7 @@ local function _checkHitVsPlayer(tgtUnit, casterUnit, hitSystem, rollSpec, baseT
         local rhs = ac
         local isCrit = _checkCrit(roll, critThreshold)
         if RPE and RPE.Debug and RPE.Debug.Print then
-            RPE.Debug:Print(("  Crit check (Player AC): roll=%d >= threshold=%.1f → %s"):format(roll, critThreshold, isCrit and "CRIT" or "normal"))
+            RPE.Debug:Internal(("  Crit check (Player AC): roll=%d >= threshold=%.1f → %s"):format(roll, critThreshold, isCrit and "CRIT" or "normal"))
         end
         return lhs >= rhs, roll, lhs, rhs, isCrit
     else
@@ -868,7 +932,7 @@ local function _checkHitVsPlayer(tgtUnit, casterUnit, hitSystem, rollSpec, baseT
         local rhs = baseThreshold + defThr
         local isCrit = roll >= critThreshold
         if RPE and RPE.Debug and RPE.Debug.Print then
-            RPE.Debug:Print(("  Crit check (Player %s): roll=%d >= threshold=%.1f → %s"):format(hitSystem:upper(), roll, critThreshold, isCrit and "CRIT" or "normal"))
+            RPE.Debug:Internal(("  Crit check (Player %s): roll=%d >= threshold=%.1f → %s"):format(hitSystem:upper(), roll, critThreshold, isCrit and "CRIT" or "normal"))
         end
         return lhs >= rhs, roll, lhs, rhs, isCrit
     end
@@ -919,7 +983,7 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
             local roll = RPE.Common:Roll(rollSpec)
             act._rolls[ref] = roll
             if RPE and RPE.Debug and RPE.Debug.Print then
-                RPE.Debug:Print(("  Generated roll for target %s: %d"):format(tostring(ref), roll))
+                RPE.Debug:Internal(("  Generated roll for target %s: %d"):format(tostring(ref), roll))
             end
         end
         
@@ -1008,7 +1072,7 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
             lhs = roll + attMod
             isCrit = _checkCrit(roll, critThreshold)
             if RPE and RPE.Debug and RPE.Debug.Print then
-                RPE.Debug:Print(("  Crit check (Player target): roll=%d >= threshold=%.1f → %s"):format(roll, critThreshold, isCrit and "CRIT" or "normal"))
+                RPE.Debug:Internal(("  Crit check (Player target): roll=%d >= threshold=%.1f → %s"):format(roll, critThreshold, isCrit and "CRIT" or "normal"))
             end
             
             -- Store player target info for broadcasting after the loop
@@ -1031,10 +1095,10 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
         if hitResult then
             if RPE and RPE.Debug and RPE.Debug.Print then
                 if hitSystem == "ac" then
-                    RPE.Debug:Print((' > Hit: %s (%d + %d vs %d) [%s]%s')
+                    RPE.Debug:Internal((' > Hit: %s (%d + %d vs %d) [%s]%s')
                         :format(tostring(ref), roll or 0, attMod, rhs or 0, hitSystem, isCrit and " CRIT" or ""))
                 else
-                    RPE.Debug:Print((' > Hit: %s (%d + %d vs %d + %d) [%s]%s')
+                    RPE.Debug:Internal((' > Hit: %s (%d + %d vs %d + %d) [%s]%s')
                         :format(tostring(ref), roll or 0, attMod, baseThreshold, rhs or 0, hitSystem, isCrit and " CRIT" or ""))
                 end
             end
@@ -1042,10 +1106,10 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
         else
             if RPE and RPE.Debug and RPE.Debug.Print then
                 if hitSystem == "ac" then
-                    RPE.Debug:Print((' > Miss: %s (%d + %d vs %d) [%s]')
+                    RPE.Debug:Internal((' > Miss: %s (%d + %d vs %d) [%s]')
                         :format(tostring(ref), roll or 0, attMod, rhs or 0, hitSystem))
                 else
-                    RPE.Debug:Print((' > Miss: %s (%d + %d vs %d + %d) [%s]')
+                    RPE.Debug:Internal((' > Miss: %s (%d + %d vs %d + %d) [%s]')
                         :format(tostring(ref), roll or 0, attMod, baseThreshold, rhs or 0, hitSystem))
                 end
             end
@@ -1053,9 +1117,22 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
         end
     end
 
-    -- Broadcast attacks on player targets
+    -- Prepare player target data for aggregation (broadcast happens in runActions after all DAMAGE actions)
+    local playerTargetDataArray = {}
     if #playerTargets > 0 then
-        local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+        -- Get caster's stats: use NPC's stats if caster is an NPC, otherwise use player profile
+        local profile = cast and cast.profile
+        if not profile and cast and cast.caster then
+            -- Find the caster unit to check if it's an NPC
+            if casterUnit and casterUnit.isNPC and casterUnit.stats then
+                -- For NPCs, create a wrapper that acts like a profile with their stats
+                profile = {
+                    GetStatValue = function(self, statId)
+                        return tonumber(casterUnit.stats[statId] or 1) or 1
+                    end
+                }
+            end
+        end
         
         -- Calculate total predicted damage including base spell damage + on-hit aura effects
         -- Damage is tracked per school: { [school] = amount, ... }
@@ -1068,7 +1145,7 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
                 -- Evaluate formula using the caster's profile
                 local Formula = RPE.Core and RPE.Core.Formula
                 if Formula and Formula.Roll then
-                    amt = tonumber(Formula:Roll(act.args.amount, cast.profile)) or 0
+                    amt = tonumber(Formula:Roll(act.args.amount, profile)) or 0
                 else
                     amt = tonumber(act.args.amount) or 0
                 end
@@ -1082,7 +1159,7 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
                 if rank > 1 then
                     local Formula = RPE.Core and RPE.Core.Formula
                     if Formula and Formula.Roll then
-                        local perRankAmt = tonumber(Formula:Roll(act.args.perRank, cast.profile)) or 0
+                        local perRankAmt = tonumber(Formula:Roll(act.args.perRank, profile)) or 0
                         amt = amt + (perRankAmt * (rank - 1))
                     end
                 end
@@ -1142,7 +1219,7 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
                                         -- Evaluate formula using the caster's profile
                                         local Formula = RPE.Core and RPE.Core.Formula
                                         if Formula and Formula.Roll then
-                                            amt = tonumber(Formula:Roll(trigger.action.args.amount, cast.profile)) or 0
+                                            amt = tonumber(Formula:Roll(trigger.action.args.amount, profile)) or 0
                                         else
                                             amt = tonumber(trigger.action.args.amount) or 0
                                         end
@@ -1167,8 +1244,9 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
             end
         end
         
+        -- Build playerTargetDataArray for aggregation in runActions
         for _, ptgt in ipairs(playerTargets) do
-            if Broadcast and Broadcast.AttackSpell and ptgt.unit then
+            if ptgt.unit then
                 -- Apply crit multiplier to damage if this was a critical hit
                 local finalDamageBySchool = {}
                 for school, amount in pairs(damageBySchool) do
@@ -1176,7 +1254,7 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
                         -- Apply the crit multiplier that was calculated in _getCritParams
                         amount = math.floor(amount * critMult)
                         if RPE and RPE.Debug and RPE.Debug.Print then
-                            RPE.Debug:Internal(('[SpellCast] Applying crit multiplier to NPC attack: damage×%.1f'):format(critMult))
+                            RPE.Debug:Internal(('[SpellCast] Applying crit multiplier to player attack: damage×%.1f'):format(critMult))
                         end
                     end
                     finalDamageBySchool[school] = amount
@@ -1197,22 +1275,21 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
                     })
                 end
                 
-                Broadcast:AttackSpell(
-                    cast.caster,
-                    ptgt.unit.id,
-                    cast.def.id or "UNKNOWN",
-                    cast.def.name or "Unknown Spell",
-                    hitSystem,
-                    ptgt.attackRoll,  -- Send total attack roll, not just modifier
-                    ptgt.thresholdIds,
-                    finalDamageBySchool,
-                    allEffects
-                )
+                -- Store for aggregation in runActions
+                table.insert(playerTargetDataArray, {
+                    unit = ptgt.unit,
+                    hitSystem = hitSystem,
+                    thresholdIds = thresholdIds,
+                    attackRoll = ptgt.attackRoll,
+                    isCrit = ptgt.isCrit,
+                    damageBySchool = finalDamageBySchool,
+                    auraEffects = allEffects,
+                })
             end
         end
     end
 
-    return hits, misses
+    return hits, misses, playerTargetDataArray
 end
 
 return SpellCast

@@ -50,4 +50,86 @@ Targeters:Register("ALLY_SINGLE_OR_SELF", function(ctx, cast, args)
     return { name = "self", targets = { cast.caster } }
 end)
 
+-- All allies (including self)
+Targeters:Register("ALL_ALLIES", function(ctx, cast, args)
+    local Common = RPE.Common
+    if not Common or not Common.Event then
+        return { name = "all_allies", targets = {} }
+    end
+    
+    local event = Common:Event()
+    if not (event and event.units) then
+        return { name = "all_allies", targets = {} }
+    end
+    
+    local casterTeam = cast.casterTeam
+    if not casterTeam then
+        -- Try to find caster's team from event
+        local casterUnit = Common:FindUnitById(cast.caster)
+        if casterUnit then
+            casterTeam = casterUnit.team
+        end
+    end
+    
+    local targets = {}
+    for _, unit in pairs(event.units) do
+        if unit.team == casterTeam then
+            table.insert(targets, unit.id)
+        end
+    end
+    
+    return { name = "all_allies", targets = targets }
+end)
+
+-- All enemies
+Targeters:Register("ALL_ENEMIES", function(ctx, cast, args)
+    local Common = RPE.Common
+    if not Common or not Common.Event then
+        return { name = "all_enemies", targets = {} }
+    end
+    
+    local event = Common:Event()
+    if not (event and event.units) then
+        return { name = "all_enemies", targets = {} }
+    end
+    
+    local casterTeam = cast.casterTeam
+    if not casterTeam then
+        -- Try to find caster's team from event
+        local casterUnit = Common:FindUnitById(cast.caster)
+        if casterUnit then
+            casterTeam = casterUnit.team
+        end
+    end
+    
+    local targets = {}
+    for _, unit in pairs(event.units) do
+        if unit.team and unit.team ~= casterTeam then
+            table.insert(targets, unit.id)
+        end
+    end
+    
+    return { name = "all_enemies", targets = targets }
+end)
+
+-- All units
+Targeters:Register("ALL_UNITS", function(ctx, cast, args)
+    local Common = RPE.Common
+    if not Common or not Common.Event then
+        return { name = "all_units", targets = {} }
+    end
+    
+    local event = Common:Event()
+    if not (event and event.units) then
+        return { name = "all_units", targets = {} }
+    end
+    
+    local targets = {}
+    for _, unit in pairs(event.units) do
+        table.insert(targets, unit.id)
+    end
+    
+    return { name = "all_units", targets = targets }
+end)
+
 return Targeters

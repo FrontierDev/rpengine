@@ -17,6 +17,7 @@ local AuraRegistry = assert(RPE.Core.AuraRegistry, "AuraRegistry required")
 ---@field charges integer|nil
 ---@field snapshot table|nil -- author-defined values frozen at apply
 ---@field rngSeed integer|nil
+---@field isTrait boolean|nil -- whether this aura is a permanent trait
 local Aura = {}
 Aura.__index = Aura
 RPE.Core.Aura = Aura
@@ -128,6 +129,7 @@ function Aura:ToState()
         charges = self.charges,
         rngSeed = self.rngSeed,
         snapshot = self.snapshot,
+        isTrait = self.isTrait,
     }
 end
 

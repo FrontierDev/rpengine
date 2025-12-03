@@ -7,10 +7,14 @@ RPE.Core = RPE.Core or {}
 
 local Formula  = assert(RPE.Core.Formula, "Formula required")
 local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
-local Actions  = { _acts = {} }
+local Actions  = { _acts = {}, _pendingCombatMessages = {} }
 
 Actions.__index = Actions
 RPE.Core.SpellActions = Actions
+
+-- Pending combat messages to be sent after all actions are processed
+-- Format: { [spellCastKey] = { [targetId] = { casterName, casterUnit, schools={} } } }
+local _pendingCombatMessages = {}
 
 -- Local helpers
 local GetMyUnitId = function()
@@ -43,6 +47,49 @@ local function findUnitById(id)
         if tonumber(u.id) == id then return u end
     end
     return nil
+end
+
+--- Flush pending combat messages for a spell cast (after all actions processed)
+function Actions:FlushCombatMessages(castKey)
+    if not castKey or not _pendingCombatMessages[castKey] then return end
+    
+    local targets = _pendingCombatMessages[castKey]
+    for targetId, targetData in pairs(targets) do
+        if Broadcast and Broadcast.SendCombatMessage then
+            local targetUnit = findUnitById(targetId)
+            local targetName = (RPE.Common and RPE.Common:FormatUnitName(targetUnit)) or (targetUnit and targetUnit.name) or tostring(targetId)
+            local message = nil
+            
+            -- Check if this is damage (has schools) or healing (has healAmount)
+            if targetData.schools and #targetData.schools > 0 then
+                -- Damage message
+                local damageStrings = {}
+                for _, schoolInfo in ipairs(targetData.schools) do
+                    if schoolInfo.amount > 0 then
+                        table.insert(damageStrings, math.floor(schoolInfo.amount) .. " " .. schoolInfo.school)
+                    end
+                end
+                
+                if #damageStrings > 0 then
+                    local damageText = table.concat(damageStrings, ", ")
+                    message = targetData.casterName .. " deals " .. damageText .. " damage to " .. targetName .. "."
+                end
+            elseif targetData.healAmount and targetData.healAmount > 0 then
+                -- Healing message
+                message = targetData.casterName .. " heals " .. targetName .. " for " .. math.floor(targetData.healAmount) .. " hitpoints."
+            end
+            
+            if message then
+                if RPE and RPE.Debug and RPE.Debug.Internal then
+                    RPE.Debug:Internal(("[SpellActions] Flushed combat message: " .. message))
+                end
+                
+                Broadcast:SendCombatMessage(targetData.casterId, targetData.casterName, message)
+            end
+        end
+    end
+    
+    _pendingCombatMessages[castKey] = nil
 end
 
 -- ===== Registry ==============================================================
@@ -80,7 +127,21 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
     local ev = ctx and ctx.event
     if not (ev and targets and #targets > 0) then return end
 
+    -- Get caster's stats: use NPC's stats if caster is an NPC, otherwise use player profile
     local profile = cast and cast.profile
+    if not profile and cast and cast.caster then
+        -- Find the caster unit to check if it's an NPC
+        local casterUnit = ev.units and ev.units[cast.caster]
+        if casterUnit and casterUnit.isNPC and casterUnit.stats then
+            -- For NPCs, create a wrapper that acts like a profile with their stats
+            profile = {
+                GetStatValue = function(self, statId)
+                    return tonumber(casterUnit.stats[statId] or 1) or 1
+                end
+            }
+        end
+    end
+    
     local school  = tostring(args.school or "Physical")
 
     if not cast or not cast.def then
@@ -134,7 +195,7 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
                 -- Use the roll stored by CheckHit to determine crit
                 local roll = args._rolls and args._rolls[tgt]
                 if RPE and RPE.Debug and RPE.Debug.Print then
-                    RPE.Debug:Print(("  Crit lookup: tgt=%s, roll=%s, threshold=%.1f → %s"):format(
+                    RPE.Debug:Internal(("  Crit lookup: tgt=%s, roll=%s, threshold=%.1f → %s"):format(
                         tostring(tgt), tostring(roll), args._critThreshold,
                         (roll and roll >= args._critThreshold) and "CRIT" or "normal"
                     ))
@@ -145,7 +206,7 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
                     local origAmt = amt
                     amt = math.floor(amt * mult)
                     if RPE and RPE.Debug and RPE.Debug.Print then
-                        RPE.Debug:Print(("  Crit multiplier applied: %d × %.1f = %d"):format(origAmt, mult, amt))
+                        RPE.Debug:Internal(("  Crit multiplier applied: %d × %.1f = %d"):format(origAmt, mult, amt))
                     end
                 end
             end
@@ -193,6 +254,33 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
         end
         
         Broadcast:Damage(cast and cast.caster, entries)
+        
+        -- Accumulate damage into pending combat messages (will be flushed after all actions)
+        if #entries > 0 then
+            local casterUnit = findUnitById(cast and cast.caster)
+            local casterName = (RPE.Common and RPE.Common:FormatUnitName(casterUnit)) or (casterUnit and casterUnit.name) or tostring(cast and cast.caster or "")
+            local castKey = tostring(cast and cast.def and cast.def.id or cast and cast.caster or "unknown")
+            
+            if not _pendingCombatMessages[castKey] then
+                _pendingCombatMessages[castKey] = {}
+            end
+            
+            -- Accumulate damage for each target
+            for _, e in ipairs(entries) do
+                if not _pendingCombatMessages[castKey][e.target] then
+                    _pendingCombatMessages[castKey][e.target] = {
+                        casterId = cast and cast.caster,
+                        casterName = casterName,
+                        schools = {},
+                    }
+                end
+                
+                table.insert(_pendingCombatMessages[castKey][e.target].schools, {
+                    school = e.school,
+                    amount = e.amount,
+                })
+            end
+        end
     end
 end)
 
@@ -203,7 +291,20 @@ Actions:Register("HEAL", function(ctx, cast, targets, args)
     local ev      = ctx and ctx.event
     if not (ev and targets and #targets > 0) then return end
 
+    -- Get caster's stats: use NPC's stats if caster is an NPC, otherwise use player profile
     local profile = cast and cast.profile
+    if not profile and cast and cast.caster then
+        -- Find the caster unit to check if it's an NPC
+        local casterUnit = ev.units and ev.units[cast.caster]
+        if casterUnit and casterUnit.isNPC and casterUnit.stats then
+            -- For NPCs, create a wrapper that acts like a profile with their stats
+            profile = {
+                GetStatValue = function(self, statId)
+                    return tonumber(casterUnit.stats[statId] or 1) or 1
+                end
+            }
+        end
+    end
 
     local function rollAmount()
         local base = 0
@@ -296,6 +397,31 @@ Actions:Register("HEAL", function(ctx, cast, targets, args)
         end
 
         Broadcast:Heal(cast and cast.caster, entries)
+        
+        -- Accumulate healing into pending combat messages (will be flushed after all actions)
+        if #entries > 0 then
+            local casterUnit = findUnitById(cast and cast.caster)
+            local casterName = (RPE.Common and RPE.Common:FormatUnitName(casterUnit)) or (casterUnit and casterUnit.name) or tostring(cast and cast.caster or "")
+            local castKey = tostring(cast and cast.def and cast.def.id or cast and cast.caster or "unknown")
+            
+            if not _pendingCombatMessages[castKey] then
+                _pendingCombatMessages[castKey] = {}
+            end
+            
+            -- Accumulate healing for each target
+            for _, e in ipairs(entries) do
+                if not _pendingCombatMessages[castKey][e.target] then
+                    _pendingCombatMessages[castKey][e.target] = {
+                        casterId = cast and cast.caster,
+                        casterName = casterName,
+                        healAmount = 0,
+                    }
+                end
+                
+                _pendingCombatMessages[castKey][e.target].healAmount = 
+                    _pendingCombatMessages[castKey][e.target].healAmount + e.amount
+            end
+        end
     end
 end)
 
@@ -320,7 +446,21 @@ Actions:Register("APPLY_AURA", function(ctx, cast, targets, args)
         return
     end
 
+    -- Get caster's stats: use NPC's stats if caster is an NPC, otherwise use player profile
     local profile = cast and cast.profile
+    if not profile and cast and cast.caster then
+        local ev = ctx and ctx.event
+        -- Find the caster unit to check if it's an NPC
+        local casterUnit = ev and ev.units and ev.units[cast.caster]
+        if casterUnit and casterUnit.isNPC and casterUnit.stats then
+            -- For NPCs, create a wrapper that acts like a profile with their stats
+            profile = {
+                GetStatValue = function(self, statId)
+                    return tonumber(casterUnit.stats[statId] or 1) or 1
+                end
+            }
+        end
+    end
 
     for _, tgt in ipairs(targets or {}) do
         -- Build per-instance snapshot
@@ -436,6 +576,7 @@ Actions:Register("REDUCE_COOLDOWN", function(ctx, cast, targets, args)
 end)
 
 
+-- ADVANTAGE_LEVEL: grant advantage/disadvantage levels to a stat roll
 -- SUMMON: summon an NPC to the caster's team
 -- args:
 --   npcId = "npc-12345" -- NPC registry ID to summon

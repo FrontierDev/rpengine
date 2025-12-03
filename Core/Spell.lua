@@ -598,8 +598,17 @@ function Spell:GetFormattedTrainingCost(rank)
 end
 
 -- ===== Tooltip ==============================================================
-function Spell:GetTooltip(rank)
+function Spell:GetTooltip(rank, casterUnit)
+    -- If casterUnit is an NPC with stats, create a wrapper profile for them
     local profile = _activeProfile()
+    if casterUnit and casterUnit.isNPC and casterUnit.stats then
+        profile = {
+            GetStatValue = function(self, statId)
+                return tonumber(casterUnit.stats[statId] or 1) or 1
+            end
+        }
+    end
+    
     local spec  = { title = nil, lines = {} }
     local lines = spec.lines
     local rank  = tonumber(rank or self.rank or 1) or 1

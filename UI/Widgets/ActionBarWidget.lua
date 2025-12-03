@@ -23,6 +23,7 @@ local SpellRegistry = _G.RPE and _G.RPE.Core and _G.RPE.Core.SpellRegistry
 ---@field _controlledUnitId integer|nil  -- Unit ID when in temporary action bar mode (controlling another unit)
 ---@field _originalActions table|nil     -- Saved actions before entering temporary mode
 ---@field _auraStrip table|nil           -- AuraStripWidget showing buffs/debuffs of controlled unit
+---@field _lastSelectedLanguage string|nil -- Remembers the last language selected in the speak dialog
 local ActionBarWidget = {}
 _G.RPE_UI.Windows.ActionBarWidget = ActionBarWidget
 ActionBarWidget.__index = ActionBarWidget
@@ -628,6 +629,7 @@ function ActionBarWidget:BuildUI(opts)
     self.slots          = {}
     self.actions        = {}
     self.cooldownTurns  = {}
+    self._lastSelectedLanguage = "Common"  -- Remember the last language selected in speak dialog
 
     -- Pre-create slots
     for i = 1, self.numSlots do
@@ -819,42 +821,108 @@ function ActionBarWidget:SetTemporaryActions(actions, label, tintColor, controll
     -- You could implement a floating text object here if needed
 end
 
---- Show a dialog to speak as the controlled NPC unit
+--- Show a dialog to speak as the controlled NPC unit (with language dropdown)
 function ActionBarWidget:_ShowSpeakDialog()
     local Popup = RPE_UI.Prefabs and RPE_UI.Prefabs.Popup
-    if not Popup or not Popup.New then
+    local HGroup = RPE_UI.Elements and RPE_UI.Elements.HorizontalLayoutGroup
+    local Text = RPE_UI.Elements and RPE_UI.Elements.Text
+    local Dropdown = RPE_UI.Elements and RPE_UI.Elements.Dropdown
+    
+    if not (Popup and HGroup and Text and Dropdown) then
         return
     end
     
     local unitName = self._controlledUnitName or "NPC"
-    
-    -- Create popup with proper parent for Immersion mode
     local isImmersion = RPE.Core and RPE.Core.ImmersionMode
     local parentFrame = isImmersion and WorldFrame or UIParent
     
+    -- Get available languages from LanguageTable
+    local languages = {}
+    local LanguageTable = RPE.Core and RPE.Core.LanguageTable
+    if LanguageTable and LanguageTable.GetLanguages then
+        languages = LanguageTable.GetLanguages()
+    end
+    
+    -- Fallback if no languages found
+    if #languages == 0 then
+        table.insert(languages, "Common")
+    end
+    
+    -- Create popup dialog with input
     local p = Popup.New({
-        title        = "Speaking as " .. unitName,
-        text         = "Enter message:",
-        showInput    = true,
-        defaultText  = "",
-        primaryText  = "OK",
-        secondaryText= "Cancel",
-        parentFrame  = parentFrame,
+        title = "Speaking as " .. unitName,
+        text = "Select a language and enter your message:",
+        showInput = true,
+        width = 380,
+        parentFrame = parentFrame,
+        clickOffToClose = true,
     })
     
+    -- Create language selector row and add it to the mid (content) layout
+    local langRow = HGroup:New("RPE_SpeakDialog_LangRow", {
+        parent = p.mid,
+        autoSize = true,
+        spacingX = 10,
+        alignV = "CENTER",
+    })
+    
+    local langLabel = Text:New("RPE_SpeakDialog_LangLabel", {
+        parent = langRow,
+        text = "Language:",
+        width = 70,
+    })
+    langRow:Add(langLabel)
+    
+    local langDropdown = Dropdown:New("RPE_SpeakDialog_LangDropdown", {
+        parent = langRow,
+        width = 250,
+        choices = languages,
+        value = self._lastSelectedLanguage or languages[1],
+    })
+    langRow:Add(langDropdown)
+    
+    -- Add language row to the mid layout
+    -- The mid is a VGroup, so adding to it will auto-relayout
+    FrameElement = RPE_UI.Elements and RPE_UI.Elements.FrameElement
+    if FrameElement and FrameElement.AddChild then
+        FrameElement.AddChild(p.mid, langRow)
+        p.mid:Relayout()
+    end
+    
+    -- Focus input
+    if p.input then
+        p.input:SetAutoFocus(true)
+    end
+    
+    -- Re-size popup after adding language row
+    C_Timer.After(0, function()
+        if p and p._autoResize then
+            pcall(p._autoResize, p)
+        end
+    end)
+    
+    -- Set up callbacks
     p:SetCallbacks(
-        function(message)
+        function()
+            local message = p.input and p.input:GetText() or ""
+            local selectedLanguage = langDropdown:GetValue()
+            
+            -- Remember this language for next time
+            self._lastSelectedLanguage = selectedLanguage
+            
             if message and message ~= "" then
-                self:_BroadcastNPCMessage(message)
+                self:_BroadcastNPCMessage(message, selectedLanguage)
             end
         end,
-        function() end
+        function() end  -- Cancel callback (just close)
     )
+    
+    p:SetButtons("Send", "Cancel")
     p:Show()
 end
 
---- Broadcast an NPC message to the group
-function ActionBarWidget:_BroadcastNPCMessage(message)
+--- Broadcast an NPC message to the group with optional language
+function ActionBarWidget:_BroadcastNPCMessage(message, language)
     local Broadcast = RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
     if not Broadcast or not Broadcast.SendNPCMessage then
         return
@@ -864,7 +932,8 @@ function ActionBarWidget:_BroadcastNPCMessage(message)
         return
     end
     
-    Broadcast:SendNPCMessage(self._controlledUnitId, self._controlledUnitName, message)
+    language = language or "Common"
+    Broadcast:SendNPCMessage(self._controlledUnitId, self._controlledUnitName, message, language)
 end
 
 --- Restore the previously saved actions (typically the local player's)

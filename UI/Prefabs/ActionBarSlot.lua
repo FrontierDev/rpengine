@@ -192,7 +192,12 @@ function ActionBarSlot:New(name, opts)
         if not spell then return end
 
         if spell.GetTooltip then
-            Common:ShowTooltip(self, spell:GetTooltip(a.rank or 1))
+            -- If this action bar is controlling an NPC, pass the unit so tooltip uses NPC's stats
+            local casterUnit = nil
+            if o._ownerWidget and o._ownerWidget._controlledUnitId then
+                casterUnit = RPE.Common:FindUnitById(o._ownerWidget._controlledUnitId)
+            end
+            Common:ShowTooltip(self, spell:GetTooltip(a.rank or 1, casterUnit))
         else
             -- fallback if ShowTooltip not present (shouldn't happen once you add it)
             -- Common:ShowTooltip(self, { title = spell.name or a.spellId, lines = { spell:GetTooltip() } })

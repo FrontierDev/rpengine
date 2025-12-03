@@ -108,6 +108,7 @@ local function _buildAuraSchema(entryId, auraData, isEdit)
         isHelpful   = auraData.isHelpful or false,
         dispelType  = auraData.dispelType or "",
         tags        = _toCSV(auraData.tags),
+        isTrait     = auraData.isTrait or false,
 
         durationTurns  = (auraData.duration and auraData.duration.turns) or 0,
         durationExpire = (auraData.duration and auraData.duration.expires) or "ON_OWNER_TURN_END",
@@ -169,6 +170,7 @@ local function _buildAuraSchema(entryId, auraData, isEdit)
                     { id="isHelpful",   label="Helpful",      type="checkbox", default = defaults.isHelpful },
                     { id="dispelType",  label="Dispel Type",  type="input",    default = defaults.dispelType },
                     { id="tags",        label="Tags (CSV)",   type="input",    default = defaults.tags },
+                    { id="isTrait",     label="Trait",        type="checkbox", default = defaults.isTrait },
                     { id="hidden",      label="Hidden",       type="checkbox", default = auraData.hidden or false },
                     { id="unpurgable",  label="Unpurgable",   type="checkbox", default = auraData.unpurgable or false },
                     { id="uniqueByCaster", label="Unique Per Caster", type="checkbox", default = auraData.uniqueByCaster or false },
@@ -202,7 +204,7 @@ local function _buildAuraSchema(entryId, auraData, isEdit)
                         mode = "rows",
                         columns = {
                             { id="stat",     header="Stat",   type="input" },
-                            { id="mode",     header="Mode",   type="select", choices={"ADD","PCT_ADD","MULT","FINAL_ADD"} },
+                            { id="mode",     header="Mode",   type="select", choices={"ADD","PCT_ADD","MULT","FINAL_ADD","ADVANTAGE"} },
                             { id="value",    header="Value",  type="number" },
                             { id="scaleWithStacks", header="Scale", type="checkbox" },
                             { id="source",   header="Source", type="select", choices={"CASTER","TARGET"} },
@@ -231,11 +233,13 @@ local function _buildAuraSchema(entryId, auraData, isEdit)
                         type = "editor_table",
                         mode = "rows",
                         columns = {
-                            { id = "event",   header = "Event",   type = "select", choices = { "ON_HIT", "ON_HIT_TAKEN", "ON_CRIT", "ON_CRIT_TAKEN", "ON_CAST_RESOLVE", "ON_KILL", "ON_DEATH" } },
-                            { id = "key",     header = "Action",  type = "select", choices = { "DAMAGE", "HEAL", "APPLY_AURA", "GAIN_RESOURCE" } },
-                            { id = "amount",  header = "Amount",  type = "input" },
-                            { id = "auraId",  header = "Aura ID", type = "input" },
-                            { id = "ref",     header = "Target",  type = "select", choices = { "TARGET", "SOURCE", "BOTH" } },
+                            { id = "event",    header = "Event",       type = "select", choices = { "ON_HIT", "ON_HIT_TAKEN", "ON_CRIT", "ON_CRIT_TAKEN", "ON_CAST_RESOLVE", "ON_KILL", "ON_DEATH" } },
+                            { id = "key",      header = "Action",      type = "select", choices = { "DAMAGE", "HEAL", "APPLY_AURA", "GAIN_RESOURCE" } },
+                            { id = "amount",   header = "Amount",      type = "input" },
+                            { id = "stat",     header = "Stat",        type = "input" },
+                            { id = "duration", header = "Duration",    type = "input" },
+                            { id = "auraId",   header = "Aura ID",     type = "input" },
+                            { id = "ref",      header = "Target",      type = "select", choices = { "TARGET", "SOURCE", "BOTH" } },
                         },
                         default = defaults.triggers,
                     }
@@ -286,6 +290,7 @@ local function _saveAuraValues(ds, targetId, v, isEdit, oldId)
         isHelpful   = not not v.isHelpful,
         dispelType  = v.dispelType ~= "" and v.dispelType or nil,
         tags        = _parseCSV(v.tags),
+        isTrait     = not not v.isTrait,
 
         hidden      = not not v.hidden,
         unpurgable  = not not v.unpurgable,

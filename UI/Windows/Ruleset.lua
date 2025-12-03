@@ -122,7 +122,47 @@ function Ruleset:HeaderGroup()
     })
     self.loadRulesetBtn = TextBtn:New("RPE_RS_LoadRulesetBtn", {
         parent=self.header,width=120,height=24,text="Load Ruleset",
-        onClick=function() RPE.Debug:NYI("Ruleset load dialog.") end,
+        onClick=function(btn)
+            if not RulesetDB then return end
+            if not (RPE_UI and RPE_UI.Common and RPE_UI.Common.ContextMenu) then
+                RPE.Debug:Error("ContextMenu helper not available.")
+                return
+            end
+
+            local names = RulesetDB.ListNames and RulesetDB.ListNames() or {}
+            RPE_UI.Common:ContextMenu(btn.frame or self.header.frame or UIParent, function(level)
+                if level ~= 1 then return end
+                local current = (self.active and self.active.name) or "None"
+
+                local info = UIDropDownMenu_CreateInfo()
+                info.isTitle = true
+                info.notCheckable = true
+                info.text = "Load Ruleset"
+                UIDropDownMenu_AddButton(info, level)
+
+                if not names or #names == 0 then
+                    local nfo = UIDropDownMenu_CreateInfo()
+                    nfo.notCheckable = true
+                    nfo.disabled = true
+                    nfo.text = "No rulesets saved"
+                    UIDropDownMenu_AddButton(nfo, level)
+                    return
+                end
+
+                for _, name in ipairs(names) do
+                    local nfo = UIDropDownMenu_CreateInfo()
+                    nfo.text = name
+                    nfo.func = function()
+                        local rs = RulesetDB.GetByName(name)
+                        if rs then
+                            self:SetRuleset(rs)
+                        end
+                    end
+                    nfo.checked = (name == current)
+                    UIDropDownMenu_AddButton(nfo, level)
+                end
+            end)
+        end,
     })
     self.saveRulesetBtn = TextBtn:New("RPE_RS_SaveRulesetBtn", {
         parent=self.header,width=120,height=24,text="Save Ruleset",
@@ -130,9 +170,14 @@ function Ruleset:HeaderGroup()
             if self.active then RulesetDB.Save(self.active) end
         end,
     })
+    self.deleteRulesetBtn = TextBtn:New("RPE_RS_DeleteRulesetBtn", {
+        parent=self.header,width=120,height=24,text="Delete Ruleset",
+        onClick=function() self:DeleteActiveRuleset() end,
+    })
     self.header:Add(self.newRulesetBtn)
     self.header:Add(self.loadRulesetBtn)
     self.header:Add(self.saveRulesetBtn)
+    self.header:Add(self.deleteRulesetBtn)
 end
 
 function Ruleset:BodyGroup()
@@ -156,6 +201,10 @@ function Ruleset:FooterGroup()
         x = 0, y = 12,
     })
 
+    self.closeBtn = TextBtn:New("RPE_RS_CloseBtn", {
+        parent=self.footer,width=80,height=24,text="Close",
+        onClick=function() self.root.frame:Hide() end,
+    })
     self.prevBtn = TextBtn:New("RPE_RS_PrevBtn", {
         parent=self.footer,width=80,height=24,text="Prev",
         onClick=function()
@@ -186,12 +235,20 @@ function Ruleset:FooterGroup()
     })
 
     -- always show page controls, even if no ruleset
+    self.footer:Add(self.closeBtn)
     self.footer:Add(self.prevBtn)
     self.footer:Add(self.pageLabel)
     self.footer:Add(self.nextBtn)
     self.footer:Add(self.addBtn)
 end
 
+function Ruleset:DeleteActiveRuleset()
+    if not self.active or not RulesetDB then return end
+    local name = self.active.name
+    RulesetDB.Delete(name)
+    self.active = nil
+    self:RefreshRuleList()
+end
 
 -- ---------------------------------------------------------------------------
 

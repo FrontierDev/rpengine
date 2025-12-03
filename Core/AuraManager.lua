@@ -131,7 +131,16 @@ end
 -- Build per-instance modifiers table: { [statId] = amount }
 local function _computeInstanceMods(self, inst, targetProfile)
     local def = AuraRegistry:Get(inst.id)
-    if not def or not def.modifiers or #def.modifiers == 0 then return nil end
+    if not def or not def.modifiers or #def.modifiers == 0 then 
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(("[_computeInstanceMods] Aura '%s' has no modifiers"):format(inst.id))
+        end
+        return nil 
+    end
+
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(("[_computeInstanceMods] Processing %d modifiers for aura '%s'"):format(#def.modifiers, inst.id))
+    end
 
     -- Only use caster profile if the caster is the local player
     local casterProfile = nil
@@ -146,38 +155,54 @@ local function _computeInstanceMods(self, inst, targetProfile)
     for _, m in ipairs(def.modifiers) do
         local statId = m.stat or m.id
         if statId then
-            -- amount (supports string formulas + $stat$)
-            local amt = m.value or m.amount or 0
-            if type(amt) == "string" and RPE.Core.Formula then
-                local ctx = (m.source == "CASTER") and (casterProfile or targetProfile) or targetProfile
-                amt = RPE.Core.Formula:Roll(amt, ctx)
-            end
-            amt = tonumber(amt) or 0
-            if m.scaleWithStacks ~= false then
-                amt = amt * (inst.stacks or 1)
-            end
-
-            -- Ruleset gate (if any)
-            local ok = true
-            if targetProfile and targetProfile.stats and RPE.ActiveRules then
-                local statObj = targetProfile.stats[statId]
-                if statObj and not RPE.ActiveRules:IsStatEnabled(statId, statObj.category) then
-                    ok = false
+            local mode = string.upper(m.mode or "ADD")
+            -- Skip ADVANTAGE modifiers - they're handled separately by the Advantage system
+            if mode ~= "ADVANTAGE" then
+                -- amount (supports string formulas + $stat$)
+                local amt = m.value or m.amount or 0
+                if type(amt) == "string" and RPE.Core.Formula then
+                    local ctx = (m.source == "CASTER") and (casterProfile or targetProfile) or targetProfile
+                    amt = RPE.Core.Formula:Roll(amt, ctx)
                 end
-            end
+                amt = tonumber(amt) or 0
+                if m.scaleWithStacks ~= false then
+                    amt = amt * (inst.stacks or 1)
+                end
 
-            if ok then
-                local b = NewBucket()
-                local mode = string.upper(m.mode or "ADD")
-                if     mode == "ADD" or mode == "FLAT" then b.ADD       = amt
-                elseif mode == "PCT_ADD"               then b.PCT_ADD   = amt
-                elseif mode == "MULT" or mode == "PCT_MULT" then b.MULT = 1 + (amt / 100)
-                elseif mode == "FINAL_ADD"             then b.FINAL_ADD = amt
-                else b.ADD = amt end
+                -- Ruleset gate (if any)
+                local ok = true
+                if targetProfile and targetProfile.stats and RPE.ActiveRules then
+                    local statObj = targetProfile.stats[statId]
+                    if statObj and not RPE.ActiveRules:IsStatEnabled(statId, statObj.category) then
+                        ok = false
+                    end
+                end
 
-                local acc = sums[statId] or NewBucket()
-                AccumBucket(acc, b)
-                sums[statId] = acc
+                if ok then
+                    local b = NewBucket()
+                    if     mode == "ADD" or mode == "FLAT" then b.ADD       = amt
+                    elseif mode == "PCT_ADD"               then b.PCT_ADD   = amt
+                    elseif mode == "MULT" or mode == "PCT_MULT" then b.MULT = 1 + (amt / 100)
+                    elseif mode == "FINAL_ADD"             then b.FINAL_ADD = amt
+                    else b.ADD = amt end
+
+                    local acc = sums[statId] or NewBucket()
+                    AccumBucket(acc, b)
+                    sums[statId] = acc
+                    
+                    if RPE.Debug and RPE.Debug.Internal then
+                        RPE.Debug:Internal(("[_computeInstanceMods] Applied %s mode=%s value=%d to stat '%s'"):format(
+                            inst.id, mode, amt, statId))
+                    end
+                else
+                    if RPE.Debug and RPE.Debug.Internal then
+                        RPE.Debug:Internal(("[_computeInstanceMods] Skipped disabled stat '%s'"):format(statId))
+                    end
+                end
+            else
+                if RPE.Debug and RPE.Debug.Internal then
+                    RPE.Debug:Internal(("[_computeInstanceMods] Skipped ADVANTAGE modifier for '%s'"):format(statId))
+                end
             end
         end
     end
@@ -192,7 +217,7 @@ local function _notifyStatChanged(statId)
     end
 end
 
--- Add a new instance's mods into totals
+-- Add a new instance's mods into totals (for profiles/players)
 local function _addInstanceMods(pid, instId, mods)
     if not mods or not next(mods) then return end
     StatMods.aura[pid]     = StatMods.aura[pid]     or {}
@@ -205,6 +230,38 @@ local function _addInstanceMods(pid, instId, mods)
         StatMods.aura[pid][statId] = total
         _notifyStatChanged(statId)
     end
+end
+
+-- Add aura mods directly to an NPC's unit.stats table (not profile-based)
+local function _addNPCInstanceMods(unit, instId, mods)
+    if not unit or not unit.stats or not mods or not next(mods) then return end
+    StatMods.npcAuraInst = StatMods.npcAuraInst or {}
+    StatMods.npcAuraInst[unit.id] = StatMods.npcAuraInst[unit.id] or {}
+    StatMods.npcAuraInst[unit.id][instId] = mods
+
+    for statId, b in pairs(mods) do
+        -- For NPCs, directly add the flat value to unit.stats
+        -- (ignoring PCT_MULT, MULT, etc. for now - just use ADD/FLAT)
+        local amount = b.ADD or 0
+        unit.stats[statId] = (unit.stats[statId] or 0) + amount
+        _notifyStatChanged(statId)
+    end
+end
+
+-- Remove aura mods from an NPC's unit.stats table
+local function _removeNPCInstanceMods(unit, instId)
+    if not unit or not unit.stats then return end
+    StatMods.npcAuraInst = StatMods.npcAuraInst or {}
+    local unitMods = StatMods.npcAuraInst[unit.id] and StatMods.npcAuraInst[unit.id][instId]
+    if not unitMods then return end
+
+    for statId, b in pairs(unitMods) do
+        local amount = b.ADD or 0
+        unit.stats[statId] = (unit.stats[statId] or 0) - amount
+        _notifyStatChanged(statId)
+    end
+
+    StatMods.npcAuraInst[unit.id][instId] = nil
 end
 
 
@@ -306,7 +363,29 @@ function AuraManager.New(event)
         aurasBySource = {}, 
         listeners = {},        -- <function(ev, aura, payload, mgr)>
     }
-    return setmetatable(o, AuraManager)
+    local manager = setmetatable(o, AuraManager)
+    
+    -- Apply player's traits as auras when manager is created
+    local Common = RPE.Common
+    local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+    if profile and profile.GetTraits and Common and Common.LocalPlayerId then
+        local traits = profile:GetTraits()
+        if traits and #traits > 0 then
+            local playerId = Common:LocalPlayerId()
+            if playerId then
+                for _, traitId in ipairs(traits) do
+                    local ok, inst = manager:Apply(playerId, playerId, traitId)
+                    if ok then
+                        RPE.Debug:Internal(("[AuraManager.New] Applied trait '%s' to player"):format(tostring(traitId)))
+                    else
+                        RPE.Debug:Warning(("[AuraManager.New] Failed to apply trait '%s': %s"):format(tostring(traitId), tostring(inst)))
+                    end
+                end
+            end
+        end
+    end
+    
+    return manager
 end
 
 function AuraManager:All(unit)
@@ -1045,12 +1124,19 @@ function AuraManager:_onApplied(a)
         Broadcast:AuraApply(a.sourceId, a.targetId, a.id, desc, { stacks = a.stacks })
     end
 
-    -- per-instance add
+    -- per-instance add (apply to player profile OR directly to NPC unit)
     do
-    local tu = select(1, Common:FindUnitById(a.targetId))
-        if Common:IsAuraStatsEligibleTarget(tu) then
-            local tp = RPE.Profile.DB.GetOrCreateActive()
-            if tp then _addInstanceMods(tp.name, a.instanceId, _computeInstanceMods(self, a, tp)) end
+        local tu = select(1, Common:FindUnitById(a.targetId))
+        if tu then
+            if tu.isNPC then
+                -- For NPCs: directly modify unit.stats
+                local mods = _computeInstanceMods(self, a, nil)
+                if mods then _addNPCInstanceMods(tu, a.instanceId, mods) end
+            else
+                -- For players: use profile bucket system
+                local tp = Common:ProfileForUnit(tu)
+                if tp then _addInstanceMods(tp.name, a.instanceId, _computeInstanceMods(self, a, tp)) end
+            end
         end
     end
 
@@ -1064,6 +1150,34 @@ function AuraManager:_onApplied(a)
 
     -- purge conflicts if this aura grants immunity
     self:_applyImmunitySweepFor(a)
+    
+    -- Apply advantages from aura modifiers with mode="ADVANTAGE" (only if target is player)
+    do
+        local tu = select(1, Common:FindUnitById(a.targetId))
+        local lk = Common:LocalPlayerKey()
+        -- Only apply advantages if the aura target is the player
+        if tu and tu.key and lk and tu.key == lk then
+            local def = AuraRegistry:Get(a.id)
+            if def and def.modifiers and type(def.modifiers) == "table" then
+                local Advantage = RPE.Core and RPE.Core.Advantage
+                if Advantage then
+                    for _, mod in ipairs(def.modifiers) do
+                        if mod.mode == "ADVANTAGE" and mod.stat then
+                            local level = tonumber(mod.value) or 0
+                            if level ~= 0 then
+                                -- Apply advantage (lifecycle tied to aura duration)
+                                Advantage:Set(mod.stat:upper(), level, a.id)
+                                if RPE.Debug and RPE.Debug.Internal then
+                                    RPE.Debug:Internal(("[AuraManager:_onApplied] Applied advantage %s=%d from aura '%s'"):format(
+                                        mod.stat:upper(), level, a.id))
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
 function AuraManager:_onRefreshed(a)
@@ -1072,9 +1186,17 @@ function AuraManager:_onRefreshed(a)
     -- per-instance update (handles stacks/duration refresh that affects magnitude)
     do
         local tu = select(1, Common:FindUnitById(a.targetId))
-        if Common:IsAuraStatsEligibleTarget(tu) then
-            local tp = RPE.Profile.DB.GetOrCreateActive()
-            if tp then _updateInstanceMods(self, a, tp.name, tp) end
+        if tu then
+            if tu.isNPC then
+                -- For NPCs: remove old mods and reapply new ones
+                _removeNPCInstanceMods(tu, a.instanceId)
+                local mods = _computeInstanceMods(self, a, nil)
+                if mods then _addNPCInstanceMods(tu, a.instanceId, mods) end
+            else
+                -- For players: use profile bucket system
+                local tp = Common:ProfileForUnit(tu)
+                if tp then _updateInstanceMods(self, a, tp.name, tp) end
+            end
         end
     end
 end
@@ -1100,6 +1222,25 @@ function AuraManager:_onRemoved(a, reason)
         AuraTriggers:Unregister(a._triggerHandles)
         a._triggerHandles = nil
     end
+    
+    -- Remove advantages from aura modifiers with mode="ADVANTAGE"
+    do
+        local def = AuraRegistry:Get(a.id)
+        if def and def.modifiers and type(def.modifiers) == "table" then
+            local Advantage = RPE.Core and RPE.Core.Advantage
+            if Advantage then
+                for _, mod in ipairs(def.modifiers) do
+                    if mod.mode == "ADVANTAGE" and mod.stat then
+                        Advantage:Remove(mod.stat:upper(), a.id)
+                        if RPE.Debug and RPE.Debug.Internal then
+                            RPE.Debug:Internal(("[AuraManager:_onRemoved] Removed advantage %s from aura '%s'"):format(
+                                mod.stat:upper(), a.id))
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
 function AuraManager:_onExpired(a)
@@ -1122,15 +1263,21 @@ function AuraManager:_onExpired(a)
         Broadcast:AuraRemove(a.targetId or a.target, a.id, a.sourceId or a.source)
     end
 
-    -- Remove stat contributions
+    -- Remove stat contributions (NPCs vs players)
     do
         local tu = select(1, Common:FindUnitById(a.targetId))
-        if Common:IsAuraStatsEligibleTarget(tu) then
-            local tp = RPE.Profile.DB.GetOrCreateActive()
-            if tp then
-                RPE.Debug:Internal(("[AuraManager:_onExpired] Removing stat mods for aura '%s' (profile=%s)")
-                    :format(tostring(a.id), tostring(tp.name)))
-                _removeInstanceMods(tp.name, a.instanceId)
+        if tu then
+            if tu.isNPC then
+                -- For NPCs: remove direct stat mods
+                _removeNPCInstanceMods(tu, a.instanceId)
+            else
+                -- For players: use profile bucket system
+                local tp = Common:ProfileForUnit(tu)
+                if tp then
+                    RPE.Debug:Internal(("[AuraManager:_onExpired] Removing stat mods for aura '%s' (profile=%s)")
+                        :format(tostring(a.id), tostring(tp.name)))
+                    _removeInstanceMods(tp.name, a.instanceId)
+                end
             end
         end
     end
@@ -1139,6 +1286,30 @@ function AuraManager:_onExpired(a)
     if a._triggerHandles then
         AuraTriggers:Unregister(a._triggerHandles)
         a._triggerHandles = nil
+    end
+
+    -- Remove advantages from aura modifiers with mode="ADVANTAGE" (only if target is/was player)
+    do
+        local tu = select(1, Common:FindUnitById(a.targetId))
+        local lk = Common:LocalPlayerKey()
+        -- Only remove advantages if the aura target is/was the player
+        if tu and tu.key and lk and tu.key == lk then
+            local def = AuraRegistry:Get(a.id)
+            if def and def.modifiers and type(def.modifiers) == "table" then
+                local Advantage = RPE.Core and RPE.Core.Advantage
+                if Advantage then
+                    for _, mod in ipairs(def.modifiers) do
+                        if mod.mode == "ADVANTAGE" and mod.stat then
+                            Advantage:Remove(mod.stat:upper(), a.id)
+                            if RPE.Debug and RPE.Debug.Internal then
+                                RPE.Debug:Internal(("[AuraManager:_onExpired] Removed advantage %s from aura '%s'"):format(
+                                    mod.stat:upper(), a.id))
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end
 end
 
