@@ -621,6 +621,7 @@ RPE.Data.DefaultClassic = {
     npcs = {},
     extra = {
         stats = STATS_CLASSIC,
+        interactions = RPE.Data.Default.INTERACTIONS_COMMON,
     },
 }
 

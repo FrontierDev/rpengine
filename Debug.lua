@@ -104,6 +104,15 @@ function Debug:Dice(message)
     end
 end
 
+function Debug:Skill(message)
+    if not message or not debug then return end
+    message = tostring("|cFF5555FF" .. message .. "|r")
+    
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage(message)
+    end
+end
+
 function Debug:Combat(message)
     if not message or not debug then return end
     local icons = (RPE and RPE.Common and RPE.Common.InlineIcons) or {}
@@ -139,12 +148,14 @@ function Debug:Combat(message)
     -- Push to ChatBoxWidget if available (as both chat message and debug message)
     local chatBox = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
     if chatBox then
-        -- Push as a chat message with "DICE" channel type (like NPC messages)
-        chatBox:PushDiceMessage(message)
-
+        -- Push as a chat message with "COMBAT" channel type
+        if chatBox.PushCombatMessage then
+            chatBox:PushCombatMessage(message)
+        else
+            chatBox:PushDiceMessage(message) -- fallback for older versions
+        end
         -- Also push to debug tab
         chatBox:PushDebugMessage(message, "Combat")
-
         -- Also push to default chat frame
         if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage(message)

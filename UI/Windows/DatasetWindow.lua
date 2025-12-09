@@ -162,8 +162,8 @@ local function _toggleDatasetActive(name)
                         if stat then
                             synced = synced + 1
                             
-                            -- Use SetData to properly apply all fields with validation/normalization
-                            stat:SetData({
+                            -- Prepare data to set (will preserve setupBonus automatically since SetData doesn't touch it)
+                            local dataToSet = {
                                 id              = statId,
                                 name            = statDef.name,
                                 category        = statDef.category,
@@ -179,7 +179,9 @@ local function _toggleDatasetActive(name)
                                 itemTooltipColor    = statDef.itemTooltipColor,
                                 itemTooltipPriority = statDef.itemTooltipPriority,
                                 itemLevelWeight     = statDef.itemLevelWeight,
-                            })
+                            }
+                            
+                            stat:SetData(dataToSet)
                             
                             -- Set sourceDataset directly (not in SetData)
                             if statDef.sourceDataset then stat.sourceDataset = statDef.sourceDataset end
@@ -442,7 +444,7 @@ function DatasetWindow:BuildUI()
     self.topBorder = HBorder:New("RPE_DataManager_TopBorder", {
         parent        = self.root,
         stretch       = true,
-        thickness     = 5,
+        thickness     = 3,
         y             = 0,
         layer         = "BORDER",
     })
@@ -679,13 +681,13 @@ function DatasetWindow:BuildUI()
     self.bottomBorder = HBorder:New("RPE_DataManager_BottomBorder", {
         parent        = self.root,
         stretch       = true,
-        thickness     = 5,
-        y             = 0,
+        thickness     = 3,
+        y             = -2,
         layer         = "BORDER",
     })
     self.bottomBorder.frame:ClearAllPoints()
-    self.bottomBorder.frame:SetPoint("BOTTOMLEFT",  self.root.frame, "BOTTOMLEFT",  0, 0)
-    self.bottomBorder.frame:SetPoint("BOTTOMRIGHT", self.root.frame, "BOTTOMRIGHT", 0, 0)
+    self.bottomBorder.frame:SetPoint("BOTTOMLEFT",  self.root.frame, "BOTTOMLEFT",  0, -32)
+    self.bottomBorder.frame:SetPoint("BOTTOMRIGHT", self.root.frame, "BOTTOMRIGHT", 0, -32)
     if _G.RPE_UI and _G.RPE_UI.Colors and _G.RPE_UI.Colors.ApplyHighlight then
         _G.RPE_UI.Colors.ApplyHighlight(self.bottomBorder)
     end
@@ -701,6 +703,7 @@ function DatasetWindow:BuildUI()
     self.content.frame:SetPoint("TOPRIGHT", self.header.frame, "BOTTOMRIGHT", 0, 0)
     self.content.frame:SetPoint("BOTTOMLEFT",  self.root.frame, "BOTTOMLEFT",  0, 0)
     self.content.frame:SetPoint("BOTTOMRIGHT", self.root.frame, "BOTTOMRIGHT", 0, 0)
+
 
     -- Footer panel
     self.footer = Panel:New("RPE_DataManager_Footer", {
@@ -723,13 +726,56 @@ function DatasetWindow:BuildUI()
     self.wizard = nil
     self.activeKey = nil
 
+    -- ...existing code...
+
+    -- Draw Metadata and Setup Wizard button group after paginator (footer tabs)
+    local metaSetupGroup = Panel:New("RPE_DataManager_MetaSetupGroup", {
+        parent = self.footer,
+        autoSize = false,
+    })
+    metaSetupGroup.frame:ClearAllPoints()
+    metaSetupGroup.frame:SetPoint("TOPLEFT", self.footer.frame, "BOTTOMLEFT", 0, 0)
+    metaSetupGroup.frame:SetPoint("TOPRIGHT", self.footer.frame, "BOTTOMRIGHT", 0, 0)
+    metaSetupGroup.frame:SetHeight(BUTTON_HEIGHT + 4)
+
+    local groupBtnWidth = 120
+    local groupPad = 12
+
+    self.btnMetadata = TextBtn:New("RPE_DataManager_BtnMetadata", {
+        parent = metaSetupGroup,
+        width = groupBtnWidth,
+        height = BUTTON_HEIGHT,
+        text = "Metadata",
+        noBorder = true,
+        onClick = function()
+            if self.pages and self.pages["metadata"] then
+                self:ShowTab("metadata")
+            end
+        end,
+    })
+    self.btnMetadata.frame:ClearAllPoints()
+    self.btnMetadata.frame:SetPoint("CENTER", metaSetupGroup.frame, "CENTER", -(groupBtnWidth/2 + groupPad/2), 0)
+
+    self.btnSetupWizard = TextBtn:New("RPE_DataManager_BtnSetupWizard", {
+        parent = metaSetupGroup,
+        width = groupBtnWidth,
+        height = BUTTON_HEIGHT,
+        text = "Setup Wizard",
+        noBorder = true,
+        onClick = function()
+            self:ShowTab("setupWizard")
+        end,
+    })
+    self.btnSetupWizard.frame:ClearAllPoints()
+    self.btnSetupWizard.frame:SetPoint("CENTER", metaSetupGroup.frame, "CENTER", (groupBtnWidth/2 + groupPad/2), 0)
+
     -- Tabs
+    self:AddTabButton(1, "recipes",   "Recipes")
     self:AddTabButton(1, "items",  "Items")
     self:AddTabButton(1, "stats",   "Stats")
-    self:AddTabButton(1, "recipes",   "Recipes")
     self:AddTabButton(2, "spells", "Spells")
     self:AddTabButton(2, "auras",  "Auras")
-    self:AddTabButton(3, "npcs",   "NPCs")
+    self:AddTabButton(2, "npcs",   "NPCs")
     self:AddTabButton(3, "achievements",   "Achievements")
     self:AddTabButton(3, "interactions", "Interactions")
 
@@ -832,6 +878,19 @@ function DatasetWindow:BuildUI()
         if page.sheet and page.sheet.Hide then page.sheet:Hide() end
     else
         _dprint("InteractionEditorSheet not found.")
+    end
+
+    local SetupWizardEditorSheet = _G.RPE_UI.Windows.SetupWizardEditorSheet
+    if SetupWizardEditorSheet then
+        local page = SetupWizardEditorSheet.New({ parent = self.content, editingName = self.editingName })
+        -- ensure dataset binding if ctor doesn't handle it
+        if page and page.SetEditingDataset and self.editingName then
+            pcall(function() page:SetEditingDataset(self.editingName) end)
+        end
+        self.pages["setupWizard"] = page
+        if page.sheet and page.sheet.Hide then page.sheet:Hide() end
+    else
+        _dprint("SetupWizardEditorSheet not found.")
     end
 
     -- Now size and show the initial sheet (items)

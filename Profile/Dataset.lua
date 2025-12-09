@@ -18,6 +18,7 @@ RPE.Profile = RPE.Profile or {}
 ---@field auras table<string, any>
 ---@field npcs table<string, any>
 ---@field extra table<string, table<string, any>>
+---@field setupWizard table|nil
 local Dataset = {}
 Dataset.__index = Dataset
 RPE.Profile.Dataset = Dataset
@@ -135,6 +136,7 @@ function Dataset:New(name, opts)
         auras  = type(opts.auras)  == "table" and opts.auras  or {},
         npcs   = type(opts.npcs)   == "table" and opts.npcs   or {},
         extra  = type(opts.extra)  == "table" and opts.extra  or {},
+        setupWizard = type(opts.setupWizard) == "table" and opts.setupWizard or nil,
     }, self)
     return o
 end
@@ -225,6 +227,7 @@ function Dataset:ToTable()
         auras     = self.auras,
         npcs      = self.npcs,
         extra     = self.extra,
+        setupWizard = self.setupWizard,
     }
 end
 

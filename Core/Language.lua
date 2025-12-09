@@ -44,7 +44,7 @@ end
 ---@param skill integer
 function Language:SetLanguageSkill(languageName, skill)
     skill = math.max(1, math.min(300, tonumber(skill) or 1))
-    RPE.Debug:Print(string.format("[Language.SetLanguageSkill] %s = %d", languageName, skill))
+    RPE.Debug:Internal(string.format("[Language.SetLanguageSkill] %s = %d", languageName, skill))
     self.playerLanguages[languageName] = skill
     
     -- Save to profile
@@ -52,6 +52,10 @@ function Language:SetLanguageSkill(languageName, skill)
     if ProfileDB then
         local profile = ProfileDB.GetOrCreateActive()
         if profile then
+            -- Ensure languages table exists
+            if not profile.languages then
+                profile.languages = {}
+            end
             profile.languages[languageName] = skill
             ProfileDB.SaveProfile(profile)
         end

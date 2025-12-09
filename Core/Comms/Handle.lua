@@ -23,6 +23,40 @@ local function _unesc(s)
     return s
 end
 
+local function _toUnitId(x)
+    -- number
+    if type(x) == "number" then
+        x = math.floor(x)
+        return (x > 0) and x or nil
+    end
+
+    -- unit table (EventUnit or similar)
+    if type(x) == "table" then
+        if tonumber(x.id) then return tonumber(x.id) end
+        if type(x.key) == "string" then
+            local ev = RPE and RPE.Core and RPE.Core.ActiveEvent
+            local u  = ev and ev.units and ev.units[x.key:lower()]
+            if u and tonumber(u.id) then return tonumber(u.id) end
+        end
+        return nil
+    end
+
+    -- string: numeric id OR event key ("npc:...:<id>" or "Name-Realm")
+    if type(x) == "string" then
+        local n = tonumber(x)
+        if n then n = math.floor(n); return (n > 0) and n or nil end
+
+        local ev = RPE and RPE.Core and RPE.Core.ActiveEvent
+        if ev and ev.units then
+            local key = x:gsub("%s+", ""):lower()
+            local u = ev.units[key]
+            if u and tonumber(u.id) then return tonumber(u.id) end
+        end
+    end
+
+    return nil
+end
+
 -- URL decode: unescape percent-encoded data (%HH sequences)
 local function _urldecode(s)
     if not s then return s end
@@ -1019,41 +1053,137 @@ Comms:RegisterHandler("DAMAGE", function(data, sender)
 
     while i <= #args do
         local tId    = tonumber(args[i]) or 0; i = i + 1
-        local amount = math.max(0, math.floor(tonumber(args[i]) or 0)); i = i + 1
-        local school = args[i] or "";                                      i = i + 1
+        local totalAmount = math.max(0, math.floor(tonumber(args[i] or 0))); i = i + 1
+        local schoolCSV  = args[i] or "";                                      i = i + 1
         local isCrit = (args[i] == "1");                                   i = i + 1
-        local tDelta = tonumber(args[i] or ""); if tDelta == nil then tDelta = amount end; i = i + 1
+        local tDelta = tonumber(args[i] or ""); if tDelta == nil then tDelta = totalAmount end; i = i + 1
 
-        if tId > 0 and amount > 0 then
+        if tId > 0 and totalAmount > 0 then
             local target = findUnitById(tId)
             if target then
-                target:ApplyDamage(amount, isCrit)
+                -- Parse damage by school from CSV (format: school1:amount1,school2:amount2,...)
+                -- Or if it's a single school format: "School"
+                local damageBySchool = {}
+                if schoolCSV:find(":") then
+                    -- Multi-school format: "Fire:5,Physical:23"
+                    for damageStr in string.gmatch(schoolCSV, "([^,]+)") do
+                        local school, amount = damageStr:match("^([^:]+):(%d+)$")
+                        if school and amount then
+                            damageBySchool[school] = tonumber(amount) or 0
+                        end
+                    end
+                else
+                    -- Single school format: "Physical" or "Fire"
+                    if schoolCSV ~= "" then
+                        damageBySchool[schoolCSV] = totalAmount
+                    else
+                        damageBySchool["Physical"] = totalAmount
+                    end
+                end
+                
+                if RPE and RPE.Debug and RPE.Debug.Print then
+                    local schoolStr = ""
+                    for school, amount in pairs(damageBySchool) do
+                        if schoolStr ~= "" then schoolStr = schoolStr .. ", " end
+                        schoolStr = schoolStr .. school .. ":" .. amount
+                    end
+                    RPE.Debug:Internal(string.format(
+                        "[Handle] DAMAGE to target %d: %s (total=%d, crit=%s)",
+                        tId, schoolStr, totalAmount, tostring(isCrit)
+                    ))
+                end
+                
+                -- Track original damage for logging
+                local absorbedAmount = 0
+                local remainingDamage = totalAmount
+                
+                -- Apply absorption shields if they exist
+                if target.absorption and remainingDamage > 0 then
+                    for shieldId, shield in pairs(target.absorption) do
+                        if shield.amount > 0 and remainingDamage > 0 then
+                            local absorbed = math.min(remainingDamage, shield.amount)
+                            absorbedAmount = absorbedAmount + absorbed
+                            remainingDamage = remainingDamage - absorbed
+                            shield.amount = shield.amount - absorbed
+                            
+                            if RPE and RPE.Debug and RPE.Debug.Internal then
+                                RPE.Debug:Internal(string.format(
+                                    "[Handle] DAMAGE ABSORBED: %d damage blocked by shield (from source %d), %d remaining",
+                                    absorbed, shield.sourceId, remainingDamage
+                                ))
+                            end
+                        end
+                    end
+                    
+                    -- Clean up shields that are completely absorbed
+                    local toRemove = {}
+                    for shieldId, shield in pairs(target.absorption) do
+                        if shield.amount <= 0 then
+                            table.insert(toRemove, shieldId)
+                            if RPE and RPE.Debug and RPE.Debug.Internal then
+                                RPE.Debug:Internal(string.format(
+                                    "[Handle] Shield %s fully absorbed and removed", shieldId
+                                ))
+                            end
+                        end
+                    end
+                    for _, shieldId in ipairs(toRemove) do
+                        target.absorption[shieldId] = nil
+                    end
+                    
+                    -- Broadcast updated absorption to UI
+                    local totalAbsorption = 0
+                    for _, shield in pairs(target.absorption) do
+                        if shield.amount then
+                            totalAbsorption = totalAbsorption + shield.amount
+                        end
+                    end
+                    local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+                    if B and B.UpdateUnitHealth then
+                        B:UpdateUnitHealth(target.id, target.hp, target.hpMax, totalAbsorption)
+                    end
+                end
+                
+                target:ApplyDamage(remainingDamage, isCrit, absorbedAmount)
                 if sId ~= 0 then target:AddThreat(sId, tDelta) end
 
                 local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
                 
-                -- Emit ON_HIT_TAKEN trigger for the target
+                -- Emit ON_HIT_TAKEN trigger for the target - now for each school separately
                 if AuraTriggers and AuraTriggers.Emit then
-                    AuraTriggers:Emit("ON_HIT_TAKEN", ev or {}, tId, tId, { 
-                        damageAmount = amount, 
-                        school = school,
-                        sourceId = sId,
-                    })
+                    for school, amount in pairs(damageBySchool) do
+                        AuraTriggers:Emit("ON_HIT_TAKEN", ev or {}, tId, tId, { 
+                            damageAmount = amount, 
+                            school = school,
+                            sourceId = sId,
+                        })
+                    end
                 end
                 
                 -- Emit ON_CRIT trigger for attacker if this is a crit
                 if isCrit and sId ~= 0 and AuraTriggers and AuraTriggers.Emit then
-                    AuraTriggers:Emit("ON_CRIT", ev or {}, sId, tId, { 
-                        damageAmount = amount, 
-                        school = school,
-                    })
+                    for school, amount in pairs(damageBySchool) do
+                        AuraTriggers:Emit("ON_CRIT", ev or {}, sId, tId, { 
+                            damageAmount = amount, 
+                            school = school,
+                        })
+                    end
                 end
                 
                 -- Emit ON_CRIT_TAKEN trigger for target if this is a crit
                 if isCrit and AuraTriggers and AuraTriggers.Emit then
+                    -- For ON_CRIT_TAKEN, use total damage and primary school
+                    local primarySchool = "Physical"
+                    local maxAmount = 0
+                    for school, amount in pairs(damageBySchool) do
+                        if amount > maxAmount then
+                            maxAmount = amount
+                            primarySchool = school
+                        end
+                    end
                     AuraTriggers:Emit("ON_CRIT_TAKEN", ev or {}, tId, tId, { 
-                        damageAmount = amount, 
-                        school = school,
+                        damageAmount = remainingDamage, 
+                        school = primarySchool,
                         sourceId = sId,
                     })
                 end
@@ -1061,7 +1191,16 @@ Comms:RegisterHandler("DAMAGE", function(data, sender)
                 -- Emit ON_KILL trigger when target dies from damage dealt by attacker
                 if sId ~= 0 and (target:IsDead() or target.hp < 1) then                 
                     if AuraTriggers and AuraTriggers.Emit then
-                        AuraTriggers:Emit("ON_KILL", ev or {}, sId, tId, { damageAmount = amount, school = school })
+                        -- For ON_KILL, use total damage and primary school
+                        local primarySchool = "Physical"
+                        local maxAmount = 0
+                        for school, amount in pairs(damageBySchool) do
+                            if amount > maxAmount then
+                                maxAmount = amount
+                                primarySchool = school
+                            end
+                        end
+                        AuraTriggers:Emit("ON_KILL", ev or {}, sId, tId, { damageAmount = remainingDamage, school = primarySchool })
                     end
                 end
 
@@ -1164,6 +1303,165 @@ Comms:RegisterHandler("HEAL", function(data, sender)
     end
 end)
 
+-- SHIELD: apply absorption shield to targets (sId ; tId ; amount ; duration ; tId ; amount ; duration ; ...)
+Comms:RegisterHandler("SHIELD", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] SHIELD FULL DATA:\n%s", data))
+    local args = { strsplit(";", data) }
+    local i    = 1
+    local sId  = tonumber(args[i]) or 0; i = i + 1
+
+    local ev = RPE.Core.ActiveEvent
+    if not (ev and ev.units) then 
+        RPE.Debug:Internal("[Handle] SHIELD: No active event or units")
+        return 
+    end
+    RPE.Debug:Internal(string.format("[Handle] SHIELD: Processing for source %d, turn %d", sId, ev.turn or 0))
+
+    -- helper to find a unit quickly
+    local function findUnitById(tid)
+        for _, u in pairs(ev.units) do
+            if tonumber(u.id) == tid then return u end
+        end
+    end
+
+    local shieldedUnits = {}  -- Track which units got shields for UI refresh
+
+    while i <= #args do
+        local tId      = tonumber(args[i]) or 0; i = i + 1
+        local amount   = math.max(0, math.floor(tonumber(args[i]) or 0)); i = i + 1
+        local duration = math.max(1, math.floor(tonumber(args[i]) or 1)); i = i + 1
+
+        if tId > 0 and amount > 0 then
+            local target = findUnitById(tId)
+            if target then
+                RPE.Debug:Internal(string.format("[Handle] SHIELD: Applying %d absorption to target %s (id=%d), duration=%d", 
+                    amount, target.name or "?", tId, duration))
+                -- Apply shield: create or add to existing absorption
+                if not target.absorption then
+                    target.absorption = {}
+                end
+                
+                -- Store shield with duration and source
+                local shieldId = tostring(sId) .. "-" .. tostring(ev.turn or 0)
+                target.absorption[shieldId] = {
+                    amount = amount,
+                    sourceId = sId,
+                    duration = duration,
+                    appliedTurn = ev.turn or 0,
+                }
+                
+                shieldedUnits[tId] = target
+                
+                if RPE and RPE.Debug and RPE.Debug.Internal then
+                    RPE.Debug:Internal(string.format(
+                        "[Handle] SHIELD: Applied %d absorption to %s for %d turn(s) (from source %d)",
+                        amount, target.name or tostring(tId), duration, sId
+                    ))
+                end
+            end
+        end
+    end
+
+    -- Refresh UI for all shielded units
+    RPE.Debug:Internal(string.format("[Handle] SHIELD: Refreshing UI for %d shielded units", 
+        #(function() local c=0; for _ in pairs(shieldedUnits) do c=c+1 end; return {} end)()))
+    for tId, target in pairs(shieldedUnits) do
+        -- Calculate total absorption
+        local totalAbsorption = 0
+        if target.absorption then
+            for shieldId, shield in pairs(target.absorption) do
+                if shield.amount then
+                    totalAbsorption = totalAbsorption + shield.amount
+                end
+            end
+        end
+        RPE.Debug:Internal(string.format("[Handle] SHIELD: Unit %s (id=%d) has total absorption=%d", 
+            target.name or "?", tId, totalAbsorption))
+
+        -- Update EventWidget portraits
+        if RPE.Core.Windows and RPE.Core.Windows.EventWidget then
+            local eventWidget = RPE.Core.Windows.EventWidget
+            RPE.Debug:Internal("[Handle] SHIELD: Checking EventWidget portraits...")
+            if eventWidget.portraitsByKey then
+                -- Find portrait by matching unit key
+                local found = false
+                for unitKey, portrait in pairs(eventWidget.portraitsByKey) do
+                    if portrait.unit and tonumber(portrait.unit.id) == tonumber(tId) then
+                        found = true
+                        RPE.Debug:Internal(string.format("[Handle] SHIELD: Found EventWidget portrait for unit %d", tId))
+                        -- Ensure health is set before setting absorption
+                        if portrait.SetHealth and target.hp and target.hpMax then
+                            RPE.Debug:Internal(string.format("[Handle] SHIELD: Setting EventWidget health %d/%d", target.hp, target.hpMax))
+                            portrait:SetHealth(target.hp, target.hpMax)
+                        end
+                        if portrait.SetAbsorption then
+                            RPE.Debug:Internal(string.format("[Handle] SHIELD: Setting EventWidget absorption %d", totalAbsorption))
+                            portrait:SetAbsorption(totalAbsorption)
+                        end
+                        break
+                    end
+                end
+                if not found then
+                    RPE.Debug:Internal(string.format("[Handle] SHIELD: No EventWidget portrait found for unit %d", tId))
+                end
+            end
+        end
+
+        -- Update UnitFrameWidget portraits (for NPCs)
+        if RPE.Core.Windows and RPE.Core.Windows.UnitFrameWidget then
+            local unitFrameWidget = RPE.Core.Windows.UnitFrameWidget
+            RPE.Debug:Internal("[Handle] SHIELD: Checking UnitFrameWidget portraits...")
+            if unitFrameWidget.portraitsByKey then
+                local found = false
+                for unitKey, portrait in pairs(unitFrameWidget.portraitsByKey) do
+                    if portrait.unit and tonumber(portrait.unit.id) == tonumber(tId) then
+                        found = true
+                        RPE.Debug:Internal(string.format("[Handle] SHIELD: Found UnitFrameWidget portrait for unit %d", tId))
+                        if portrait.SetHealth and target.hp and target.hpMax then
+                            RPE.Debug:Internal(string.format("[Handle] SHIELD: Setting UnitFrame health %d/%d", target.hp, target.hpMax))
+                            portrait:SetHealth(target.hp, target.hpMax)
+                        end
+                        if portrait.SetAbsorption then
+                            RPE.Debug:Internal(string.format("[Handle] SHIELD: Setting UnitFrame absorption %d", totalAbsorption))
+                            portrait:SetAbsorption(totalAbsorption)
+                        end
+                        break
+                    end
+                end
+                if not found then
+                    RPE.Debug:Internal(string.format("[Handle] SHIELD: No UnitFrameWidget portrait found for unit %d", tId))
+                end
+            end
+        end
+
+        -- Update TargetWindow portraits
+        if RPE.Core.Windows and RPE.Core.Windows.TargetWindow then
+            local targetWindow = RPE.Core.Windows.TargetWindow
+            if targetWindow.portraitsByKey then
+                for unitKey, portrait in pairs(targetWindow.portraitsByKey) do
+                    if portrait.unit and tonumber(portrait.unit.id) == tonumber(tId) then
+                        if portrait.SetHealth and target.hp and target.hpMax then
+                            portrait:SetHealth(target.hp, target.hpMax)
+                        end
+                        if portrait.SetAbsorption then
+                            portrait:SetAbsorption(totalAbsorption)
+                        end
+                        break
+                    end
+                end
+            end
+        end
+
+        -- Update PlayerUnitWidget if this is the local player
+        local myId = ev.GetLocalPlayerUnitId and ev:GetLocalPlayerUnitId()
+        if myId and tonumber(target.id) == tonumber(myId) then
+            if RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget then
+                RPE.Core.Windows.PlayerUnitWidget:Refresh()
+            end
+        end
+    end
+end)
+
 -- HEALTH: tId ; hp ; hpMax
 Comms:RegisterHandler("HEALTH", function(data, sender)
     RPE.Debug:Internal(string.format("[Handle] HEALTH FULL DATA:\n%s", data))
@@ -1197,18 +1495,19 @@ Comms:RegisterHandler("HEALTH", function(data, sender)
     end
 end)
 
--- UNIT_HEALTH: tId ; hp ; hpMax (for any unit, including NPCs)
+-- UNIT_HEALTH: tId ; hp ; hpMax ; absorbAmount (for any unit, including NPCs)
 Comms:RegisterHandler("UNIT_HEALTH", function(data, sender)
     RPE.Debug:Internal(string.format("[Handle] UNIT_HEALTH FULL DATA:\n%s", data))
     local args = { strsplit(";", data) }
     local tId   = tonumber(args[1]) or 0
     local hp    = tonumber(args[2]) or 0
     local hpMax = tonumber(args[3]) or 1
+    local absorbAmount = tonumber(args[4]) or 0
     if tId == 0 then return end
 
     local ev = RPE.Core.ActiveEvent
     if not (ev and ev.units) then return end
-    local unit = Common:FindUnitById(tId)
+    local unit, unitKey = Common:FindUnitById(tId)
     if not unit then return end
 
     -- Clamp + apply
@@ -1217,6 +1516,39 @@ Comms:RegisterHandler("UNIT_HEALTH", function(data, sender)
     unit.hpMax = hpMax
     unit.hp    = hp
 
+    -- Update absorption display in EventWidget
+    if RPE.Core.Windows and RPE.Core.Windows.EventWidget then
+        local eventWidget = RPE.Core.Windows.EventWidget
+        if eventWidget.portraitsByKey and unitKey then
+            local portrait = eventWidget.portraitsByKey[unitKey]
+            if portrait and portrait.SetAbsorption then
+                portrait:SetAbsorption(absorbAmount)
+            end
+        end
+    end
+    
+    -- Update absorption display in UnitFrameWidget (NPC portraits)
+    if RPE.Core.Windows and RPE.Core.Windows.UnitFrameWidget then
+        local unitFrameWidget = RPE.Core.Windows.UnitFrameWidget
+        if unitFrameWidget.portraitsByKey and unitKey then
+            local portrait = unitFrameWidget.portraitsByKey[unitKey]
+            if portrait and portrait.SetAbsorption then
+                portrait:SetAbsorption(absorbAmount)
+            end
+        end
+    end
+
+    -- Update absorption display in TargetWindow (NPC target portraits)
+    if RPE.Core.Windows and RPE.Core.Windows.TargetWindow then
+        local targetWindow = RPE.Core.Windows.TargetWindow
+        if targetWindow.portraitsByKey and unitKey then
+            local portrait = targetWindow.portraitsByKey[unitKey]
+            if portrait and portrait.SetAbsorption then
+                portrait:SetAbsorption(absorbAmount)
+            end
+        end
+    end
+    
     -- UI refresh - refresh EventWidget's portrait row if unit is in current tick
     if RPE.Core.Windows and RPE.Core.Windows.EventWidget then
         RPE.Core.Windows.EventWidget:RefreshPortraitRow(false)
@@ -1356,7 +1688,7 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
             end
         end
         
-        if target then
+        if target and target.isNPC then
             -- Calculate total damage from all schools for messaging
             local totalDamage = 0
             for _, amount in pairs(damageBySchool) do
@@ -1376,12 +1708,64 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
                 local damageText = table.concat(damageStrings, ", ")
                 local Broadcast = RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
                 if Broadcast and Broadcast.SendCombatMessage then
+
                     Broadcast:SendCombatMessage(sId, attacker.name, ("%s deals %s damage to %s."):format(attacker.name, damageText, target.name))
                 end
             end
             
-            -- Apply damage to the target
-            target:ApplyDamage(totalDamage, false)
+            -- Use Broadcast:Damage so it goes through the DAMAGE handler and applies absorption
+            local Broadcast = RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
+            if Broadcast and Broadcast.Damage then
+                -- Determine primary damage school
+                local primarySchool = ""
+                local maxDamage = 0
+                for school, amount in pairs(damageBySchool) do
+                    if tonumber(amount) and tonumber(amount) > maxDamage then
+                        maxDamage = tonumber(amount)
+                        primarySchool = school
+                    end
+                end
+                Broadcast:Damage(sId, tId, totalDamage, { school = primarySchool, crit = false })
+            end
+            
+            -- Apply deferred aura effects AFTER damage (so they happen in correct order)
+            if #auraEffects > 0 then
+                if RPE and RPE.Debug and RPE.Debug.Print then
+                    RPE.Debug:Internal(('[Handle] Applying %d aura effects to NPC target'):format(#auraEffects))
+                end
+                
+                local SpellActions = RPE.Core and RPE.Core.SpellActions
+                if SpellActions then
+                    for _, effect in ipairs(auraEffects) do
+                        if RPE and RPE.Debug and RPE.Debug.Print then
+                            RPE.Debug:Internal(('[Handle] Applying aura effect to NPC: auraId=%s, action=%s'):format(
+                                effect.auraId, effect.actionKey))
+                        end
+                        
+                        -- Parse args from JSON if present
+                        local effectArgs = {}
+                        if effect.argsJSON and effect.argsJSON ~= "" then
+                            -- Simple JSON parsing for args
+                            for key, val in string.gmatch(effect.argsJSON, '([%w_]+)=([^,}]+)') do
+                                effectArgs[key] = val
+                            end
+                        end
+                        
+                        -- Execute the action on target
+                        local ok, err = pcall(function()
+                            -- Ensure we have fresh reference to event with AuraManager
+                            local currentEv = RPE.Core.ActiveEvent or ev
+                            -- Wrap event in context object with .event property
+                            local ctx = { event = currentEv }
+                            SpellActions:Run(effect.actionKey, ctx, { caster = sId }, { tId }, effectArgs)
+                        end)
+                        
+                        if not ok and RPE.Debug and RPE.Debug.Print then
+                            RPE.Debug:Internal("|cffff5555[Handle] Aura effect error:|r " .. tostring(err))
+                        end
+                    end
+                end
+            end
             
             -- Emit ON_HIT_TAKEN trigger for the target
             local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
@@ -1415,8 +1799,100 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
     end
 
     -- Trigger player reaction dialog
+    -- Track defending state separately
+    RPE.Core = RPE.Core or {}
+    RPE.Core._isDefendingThisTurn = true
+    -- Refresh action bar requirements so reaction spells are enabled
+    local actionBar = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+    if actionBar and actionBar.RefreshRequirements then
+        actionBar:RefreshRequirements()
+    end
+
     local PlayerReaction = RPE.Core and RPE.Core.PlayerReaction
     if PlayerReaction and PlayerReaction.Start then
+        -- Check if player is failing all defences or specific defence stats due to crowd control
+        local AuraManager = ev and ev._auraManager
+        local isFailingAllDefences = AuraManager and AuraManager:IsFailingAllDefences(tId)
+        
+        -- If player is failing all defences, skip the dialog and immediately fail the defence
+        if isFailingAllDefences then
+            if RPE and RPE.Debug and RPE.Debug.Print then
+                RPE.Debug:Print(("You are unable to defend yourself against %s."):format(attacker.name or "Unknown"))
+            end
+            
+            -- Immediately apply damage without dialog
+            local isCrit = false
+            for _, effect in ipairs(auraEffects) do
+                if effect.auraId == "CRIT_FLAG" and effect.argsJSON and effect.argsJSON:match("isCrit=true") then
+                    isCrit = true
+                    break
+                end
+            end
+            
+            -- Determine primary damage school
+            local primarySchool = ""
+            local maxDamage = 0
+            for school, amount in pairs(damageBySchool) do
+                if tonumber(amount) and tonumber(amount) > maxDamage then
+                    maxDamage = tonumber(amount)
+                    primarySchool = school
+                end
+            end
+            
+            -- Apply full damage (failed defence means no mitigation)
+            local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+            if B and B.Damage then
+                B:Damage(sId, tId, totalDamage, { school = primarySchool, crit = isCrit, threat = totalDamage })
+            end
+            
+            -- Apply aura effects since attack hit
+            if #auraEffects > 0 then
+                if RPE and RPE.Debug and RPE.Debug.Print then
+                    RPE.Debug:Internal(('[Handle] Applying %d aura effects from attack (auto-failed defence)'):format(#auraEffects))
+                end
+                
+                local SpellActions = RPE.Core and RPE.Core.SpellActions
+                if SpellActions then
+                    for _, effect in ipairs(auraEffects) do
+                        if RPE and RPE.Debug and RPE.Debug.Print then
+                            RPE.Debug:Internal(('[Handle] Applying aura effect: auraId=%s, action=%s'):format(
+                                effect.auraId, effect.actionKey))
+                        end
+                        
+                        -- Parse args from JSON if present
+                        local effectArgs = {}
+                        if effect.argsJSON and effect.argsJSON ~= "" then
+                            for key, val in string.gmatch(effect.argsJSON, '([%w_]+)=([^,}]+)') do
+                                effectArgs[key] = val
+                            end
+                        end
+                        
+                        -- Execute the action on target with proper context
+                        local ok, err = pcall(function()
+                            local currentEv = RPE.Core.ActiveEvent or ev
+                            local ctx = { event = currentEv }
+                            SpellActions:Run(effect.actionKey, ctx, { caster = sId }, { tId }, effectArgs)
+                        end)
+                        
+                        if not ok and RPE.Debug and RPE.Debug.Print then
+                            RPE.Debug:Internal("|cffff5555[Handle] Aura effect error:|r " .. tostring(err))
+                        end
+                    end
+                end
+            end
+            
+            -- Emit ON_HIT_TAKEN trigger for the target
+            local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
+            if AuraTriggers and AuraTriggers.Emit then
+                AuraTriggers:Emit("ON_HIT_TAKEN", ev or {}, tId, tId, {
+                    damageAmount = totalDamage,
+                    sourceId = sId,
+                    isCrit = isCrit,
+                })
+            end
+            return
+        end
+        
         -- Dummy spell/action tables for now (real values would come from NPC data)
         local dummyAction = {
             hitModifier = "$stat.NPC_MELEE_HIT$",
@@ -1451,33 +1927,29 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
             if playerDefends then
                 -- Player successfully defended - apply mitigated damage
                 if mitigatedDamage > 0 then
-                    local target = Common:FindUnitById(tId)
-                    if target then
-                        -- Check if this was a critical hit
-                        local isCrit = false
-                        for _, effect in ipairs(auraEffects) do
-                            if effect.auraId == "CRIT_FLAG" and effect.argsJSON and effect.argsJSON:match("isCrit=true") then
-                                isCrit = true
-                                break
-                            end
+                    -- Check if this was a critical hit
+                    local isCrit = false
+                    for _, effect in ipairs(auraEffects) do
+                        if effect.auraId == "CRIT_FLAG" and effect.argsJSON and effect.argsJSON:match("isCrit=true") then
+                            isCrit = true
+                            break
                         end
-                        
-                        -- Apply mitigated damage
-                        target:ApplyDamage(mitigatedDamage, isCrit)
-                        
-                        -- Emit ON_HIT_TAKEN trigger (defender partially took hit)
-                        local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
-                        if AuraTriggers and AuraTriggers.Emit then
-                            AuraTriggers:Emit("ON_HIT_TAKEN", ev or {}, tId, tId, {
-                                damageAmount = mitigatedDamage,
-                                sourceId = sId,
-                                isCrit = isCrit,
-                            })
+                    end
+                    
+                    -- Determine primary damage school
+                    local primarySchool = ""
+                    local maxDamage = 0
+                    for school, amount in pairs(damageBySchool) do
+                        if tonumber(amount) and tonumber(amount) > maxDamage then
+                            maxDamage = tonumber(amount)
+                            primarySchool = school
                         end
-                        
-                        if RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget then
-                            RPE.Core.Windows.PlayerUnitWidget:Refresh()
-                        end
+                    end
+                    
+                    -- Use Broadcast:Damage so it goes through the DAMAGE handler and applies absorption
+                    local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+                    if B and B.Damage then
+                        B:Damage(sId, tId, mitigatedDamage, { school = primarySchool, crit = isCrit, threat = mitigatedDamage })
                     end
                 else
                     -- Fully defended - no damage taken
@@ -1488,42 +1960,29 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
             else
                 -- Attack hits - apply full damage
                 if mitigatedDamage > 0 then
-                    local target = Common:FindUnitById(tId)
-                    if target then
-                        -- Check if this was a critical hit
-                        local isCrit = false
-                        for _, effect in ipairs(auraEffects) do
-                            if effect.auraId == "CRIT_FLAG" and effect.argsJSON and effect.argsJSON:match("isCrit=true") then
-                                isCrit = true
-                                break
-                            end
+                    -- Check if this was a critical hit
+                    local isCrit = false
+                    for _, effect in ipairs(auraEffects) do
+                        if effect.auraId == "CRIT_FLAG" and effect.argsJSON and effect.argsJSON:match("isCrit=true") then
+                            isCrit = true
+                            break
                         end
-                        
-                        -- Apply full damage (no defense in AC mode)
-                        target:ApplyDamage(mitigatedDamage, isCrit)
-                        
-                        -- Emit ON_HIT_TAKEN trigger
-                        local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
-                        if AuraTriggers and AuraTriggers.Emit then
-                            AuraTriggers:Emit("ON_HIT_TAKEN", ev or {}, tId, tId, {
-                                damageAmount = mitigatedDamage,
-                                sourceId = sId,
-                                isCrit = isCrit,
-                            })
+                    end
+                    
+                    -- Determine primary damage school
+                    local primarySchool = ""
+                    local maxDamage = 0
+                    for school, amount in pairs(damageBySchool) do
+                        if tonumber(amount) and tonumber(amount) > maxDamage then
+                            maxDamage = tonumber(amount)
+                            primarySchool = school
                         end
-                        
-                        -- Emit ON_CRIT_TAKEN trigger if crit
-                        if isCrit and AuraTriggers and AuraTriggers.Emit then
-                            AuraTriggers:Emit("ON_CRIT_TAKEN", ev or {}, tId, tId, {
-                                damageAmount = mitigatedDamage,
-                                sourceId = sId,
-                                isCrit = true,
-                            })
-                        end
-                        
-                        if RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget then
-                            RPE.Core.Windows.PlayerUnitWidget:Refresh()
-                        end
+                    end
+                    
+                    -- Use Broadcast:Damage so it goes through the DAMAGE handler and applies absorption
+                    local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+                    if B and B.Damage then
+                        B:Damage(sId, tId, mitigatedDamage, { school = primarySchool, crit = isCrit, threat = mitigatedDamage })
                     end
                 end
             end
@@ -1554,9 +2013,13 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
                             end
                         end
                         
-                        -- Execute the action on target
+                        -- Execute the action on target with proper context containing AuraManager
                         local ok, err = pcall(function()
-                            SpellActions:Run(effect.actionKey, ev or {}, { caster = sId }, { tId }, effectArgs)
+                            -- Ensure we have fresh reference to event with AuraManager
+                            local currentEv = RPE.Core.ActiveEvent or ev
+                            -- Wrap event in context object with .event property
+                            local ctx = { event = currentEv }
+                            SpellActions:Run(effect.actionKey, ctx, { caster = sId }, { tId }, effectArgs)
                         end)
                         
                         if not ok and RPE.Debug and RPE.Debug.Print then
@@ -1591,7 +2054,17 @@ Comms:RegisterHandler("ATTACK_SPELL", function(data, sender)
             spellName = spellName,
             turn = turnNum,  -- Include turn number if available
             thresholdStats = thresholdStats,  -- Include threshold stats for complex defense
+            failingDefenceStats = {},  -- Track which specific defence stats are failing
         }
+        
+        -- Check which specific defence stats are failing due to crowd control
+        if AuraManager then
+            for _, statId in ipairs(thresholdStats) do
+                if AuraManager:IsDefenceStatFailing(tId, statId) then
+                    table.insert(attackDetails.failingDefenceStats, statId)
+                end
+            end
+        end
         
         PlayerReaction:Start(hitSystem, spell or { name = spellName, id = spellId }, dummyAction, sId, tId, onAttackComplete, attackDetails)
     else
@@ -1728,6 +2201,144 @@ Comms:RegisterHandler("SUMMON", function(data, sender)
     end
 end)
 
+-- Handle HIDE: hide a unit
+Comms:RegisterHandler("HIDE", function(data, sender)
+    local args = { strsplit(";", data) }
+    local unitId = tonumber(args[1]) or 0
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(("[Handle] HIDE: unitId=%d"):format(unitId))
+    end
+    
+    if unitId <= 0 then return end
+    
+    local ev = RPE.Core.ActiveEvent
+    if not (ev and ev.units) then return end
+    
+    -- Find the unit and hide it
+    local unit = nil
+    local unitKey = nil
+    for key, u in pairs(ev.units) do
+        if tonumber(u.id) == unitId then
+            unit = u
+            unitKey = key
+            break
+        end
+    end
+    
+    if unit then
+        unit.hidden = true
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(("[Handle] HIDE: Unit %d (%s) is now hidden"):format(unit.id, unit.name))
+        end
+        
+        -- Refresh EventWidget portraits (includes player portraits)
+        if RPE.Core.Windows and RPE.Core.Windows.EventWidget then
+            local eventWidget = RPE.Core.Windows.EventWidget
+            if eventWidget.portraitsByKey and unitKey then
+                local portrait = eventWidget.portraitsByKey[unitKey]
+                if portrait and portrait.Refresh then
+                    portrait:Refresh()
+                end
+            end
+            if eventWidget.RefreshPortraitRow then
+                eventWidget:RefreshPortraitRow(false)
+            end
+        end
+        
+        -- Refresh UnitFrameWidget portraits (NPC portraits)
+        if RPE.Core.Windows and RPE.Core.Windows.UnitFrameWidget then
+            local unitFrameWidget = RPE.Core.Windows.UnitFrameWidget
+            if unitFrameWidget.portraitsByKey and unitKey then
+                local portrait = unitFrameWidget.portraitsByKey[unitKey]
+                if portrait and portrait.Refresh then
+                    portrait:Refresh()
+                end
+            end
+        end
+        
+        -- Refresh TargetWindow portraits (target unit portraits)
+        if RPE.Core.Windows and RPE.Core.Windows.TargetWindow then
+            local targetWindow = RPE.Core.Windows.TargetWindow
+            if targetWindow.portraitsByKey and unitKey then
+                local portrait = targetWindow.portraitsByKey[unitKey]
+                if portrait and portrait.Refresh then
+                    portrait:Refresh()
+                end
+            end
+        end
+    end
+end)
+
+-- Handle UNHIDE: unhide a unit
+Comms:RegisterHandler("UNHIDE", function(data, sender)
+    local args = { strsplit(";", data) }
+    local unitId = tonumber(args[1]) or 0
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(("[Handle] UNHIDE: unitId=%d"):format(unitId))
+    end
+    
+    if unitId <= 0 then return end
+    
+    local ev = RPE.Core.ActiveEvent
+    if not (ev and ev.units) then return end
+    
+    -- Find the unit and unhide it
+    local unit = nil
+    local unitKey = nil
+    for key, u in pairs(ev.units) do
+        if tonumber(u.id) == unitId then
+            unit = u
+            unitKey = key
+            break
+        end
+    end
+    
+    if unit then
+        unit.hidden = false
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(("[Handle] UNHIDE: Unit %d (%s) is now revealed"):format(unit.id, unit.name))
+        end
+        
+        -- Refresh EventWidget portraits (includes player portraits)
+        if RPE.Core.Windows and RPE.Core.Windows.EventWidget then
+            local eventWidget = RPE.Core.Windows.EventWidget
+            if eventWidget.portraitsByKey and unitKey then
+                local portrait = eventWidget.portraitsByKey[unitKey]
+                if portrait and portrait.Refresh then
+                    portrait:Refresh()
+                end
+            end
+            if eventWidget.RefreshPortraitRow then
+                eventWidget:RefreshPortraitRow(false)
+            end
+        end
+        
+        -- Refresh UnitFrameWidget portraits (NPC portraits)
+        if RPE.Core.Windows and RPE.Core.Windows.UnitFrameWidget then
+            local unitFrameWidget = RPE.Core.Windows.UnitFrameWidget
+            if unitFrameWidget.portraitsByKey and unitKey then
+                local portrait = unitFrameWidget.portraitsByKey[unitKey]
+                if portrait and portrait.Refresh then
+                    portrait:Refresh()
+                end
+            end
+        end
+        
+        -- Refresh TargetWindow portraits (target unit portraits)
+        if RPE.Core.Windows and RPE.Core.Windows.TargetWindow then
+            local targetWindow = RPE.Core.Windows.TargetWindow
+            if targetWindow.portraitsByKey and unitKey then
+                local portrait = targetWindow.portraitsByKey[unitKey]
+                if portrait and portrait.Refresh then
+                    portrait:Refresh()
+                end
+            end
+        end
+    end
+end)
+
 -- Handle DICE_MESSAGE: display dice rolls in chat
 Comms:RegisterHandler("DICE_MESSAGE", function(data, sender)
     local args = { strsplit(";", data) }
@@ -1740,12 +2351,7 @@ Comms:RegisterHandler("DICE_MESSAGE", function(data, sender)
     end
     
     -- Display the dice message
-    if RPE.Debug and RPE.Debug.Dice then
-        RPE.Debug:Dice(message)
-    else
-        -- Fallback to direct print if Debug not available
-        print(message)
-    end
+    RPE.Debug:Dice(message)
 end)
 
 -- Handle COMBAT_MESSAGE: display combat outcomes in chat
@@ -1760,11 +2366,125 @@ Comms:RegisterHandler("COMBAT_MESSAGE", function(data, sender)
     end
     
     -- Display the combat message
+    RPE.Debug:Combat(message)
+end)
+
+-- Handle CALL_HELP: a teammate needs assistance
+Comms:RegisterHandler("CALL_HELP", function(data, sender)
+    local args = { strsplit(";", data) }
+    local unitId = tonumber(args[1]) or 0
+    local unitName = args[2] or ""
+    
+    -- Mark that help has been called and spells can be cast out of turn
+    RPE.Core = RPE.Core or {}
+    RPE.Core._helpRequestsThisTurn = (RPE.Core._helpRequestsThisTurn or 0) + 1
+
+    -- Enable reaction glow on all action bar buttons with "assist" or "reaction" tag
+    local actionBar = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+    if actionBar and actionBar.slots then
+        local glowedCount = 0
+        for i, slot in ipairs(actionBar.slots) do
+            if slot and slot.action and slot.action.spellId then
+                local SR = RPE.Core and RPE.Core.SpellRegistry
+                local spell = SR and SR:Get(slot.action.spellId)
+                -- Check if spell has assist or reaction tag
+                if spell and spell.tags and type(spell.tags) == "table" then
+                    for _, tag in ipairs(spell.tags) do
+                        local lowerTag = tag:lower()
+                        if lowerTag == "assist" or lowerTag == "reaction" then
+                            -- Enable reaction glow on assist/reaction-tagged spells
+                            if slot.reactionGlow then
+                                slot:ShowReactionGlow()
+                                glowedCount = glowedCount + 1
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Refresh requirements so slots are enabled immediately
+        if actionBar and actionBar.RefreshRequirements then
+            actionBar:RefreshRequirements()
+        end
+    end
+    
+    -- Display the help call message
     if RPE.Debug and RPE.Debug.Combat then
-        RPE.Debug:Combat(message)
+        RPE.Debug:Combat(unitName .. " needs help!")
     else
-        -- Fallback to direct print if Debug not available
-        print(message)
+        print(unitName .. " needs help!")
     end
 end)
 
+-- Handle CALL_HELP_END: teammate responded to help call
+Comms:RegisterHandler("CALL_HELP_END", function(data, sender)
+    local args = { strsplit(";", data) }
+    local unitId = tonumber(args[1]) or 0
+    
+    -- Decrement the help call counter
+    RPE.Core = RPE.Core or {}
+    RPE.Core._helpRequestsThisTurn = math.max(0, (RPE.Core._helpRequestsThisTurn or 1) - 1)
+    
+    -- Disable reaction glow on all action bar buttons
+    local actionBar = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+    if actionBar and actionBar.slots then
+        local glowsDisabled = 0
+        for i, slot in ipairs(actionBar.slots) do
+            if slot and slot.reactionGlow then
+                slot:HideReactionGlow()
+                glowsDisabled = glowsDisabled + 1
+            end
+        end
+        if RPE.Debug and RPE.Debug.Print then
+            RPE.Debug:Print(string.format("[CALL_HELP_END] Disabled %d reaction glows", glowsDisabled))
+        end
+        -- Refresh requirements so slots are disabled immediately
+        if actionBar.RefreshRequirements then
+            actionBar:RefreshRequirements()
+        end
+    else
+        if RPE.Debug and RPE.Debug.Print then
+            RPE.Debug:Print("[CALL_HELP_END] ActionBarWidget or slots not found")
+        end
+    end
+end)
+
+Comms:RegisterHandler("TRP_NAME", function(raw, sender)
+    -- Raw is a semicolon-joined payload; first field is the display name
+    local trpName = nil
+    if type(raw) == "string" then
+        trpName = (select(1, strsplit(";", raw))) or raw
+    else
+        trpName = tostring(raw or "")
+    end
+
+    if not trpName or trpName == "" then return end
+
+    -- Only the leader should apply incoming TRP names to EventUnit objects
+    if not (RPE and RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then return end
+
+    -- Resolve sender to an event unit id (uses _toUnitId helper above)
+    local senderUnitId = _toUnitId(sender) or 0
+    if senderUnitId == 0 then return end
+
+    local ev = RPE and RPE.Core and RPE.Core.ActiveEvent
+    if not ev or not ev.units then return end
+
+    for _, u in pairs(ev.units) do
+        if tonumber(u.id) == tonumber(senderUnitId) then
+            -- Apply the TRP name to the EventUnit and update any portraits
+            u.name = trpName
+            if u._portraits and type(u._portraits) == "table" then
+                for _, p in ipairs(u._portraits) do
+                    if p and p.SetName then
+                        p:SetName(trpName)
+                    end
+                end
+            end
+            RPE.Debug:Internal(string.format("[Broadcast] Applied TRP name '%s' to unit id %d (sender=%s)", trpName, senderUnitId, sender))
+            break
+        end
+    end
+end)

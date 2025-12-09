@@ -107,6 +107,7 @@ local function _saveRecipe(ds, recipeId, v)
             end
             return costTbl
         end)(),
+        tags         = v.tags or {},
     }
     return recipeId
 end
@@ -160,6 +161,9 @@ local function _buildEditSchema(recipeId, def)
                       return t
                   end)(),
                 },
+            }},
+            { title="Tags", elements={
+                { id="tags", label="Recipe Tags", type="list", default=def.tags or {} },
             }},
         },
         labelWidth=150, navSaveAlways=true,

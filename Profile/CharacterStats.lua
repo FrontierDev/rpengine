@@ -17,6 +17,7 @@ RPE.Stats = RPE.Stats or {}
 ---@field max number|table
 ---@field visible boolean|0|1
 ---@field name string
+---@field defenceName string|nil   -- display name for defense tooltips (e.g., "Fire Resistance")
 ---@field icon string|nil
 ---@field tooltip string|nil
 ---@field pct 0|1
@@ -25,6 +26,9 @@ RPE.Stats = RPE.Stats or {}
 ---@field itemTooltipColor any
 ---@field itemTooltipPriority number
 ---@field itemLevelWeight number|nil -- per-point weight for item-level calculation
+---@field _userCustomizedBase boolean|nil -- marks that user has customized the base value (should not be overwritten by dataset)
+---@field sourceDataset string|nil -- marks which dataset this stat came from
+---@field setupBonus number|nil -- bonus applied from the setup wizard (stored as delta from definition base)
 local CharacterStat = {}
 CharacterStat.__index = CharacterStat
 RPE.Stats.CharacterStat = CharacterStat
@@ -370,6 +374,7 @@ function CharacterStat:New(id, category, base, opts)
 
         visible   = (opts.visible == 0 or opts.visible == false) and 0 or 1,
         icon      = opts.icon,
+        defenceName = opts.defenceName,
         tooltip   = opts.tooltip,
         pct       = (opts.pct == 1 or opts.pct == true) and 1 or 0,
         itemTooltipFormat   = opts.itemTooltipFormat,
@@ -451,6 +456,10 @@ function CharacterStat:SetData(t)
         self.icon = (type(t.icon) == "string" and t.icon ~= "") and t.icon or nil
     end
 
+    if t.defenceName ~= nil then
+        self.defenceName = (type(t.defenceName) == "string" and t.defenceName ~= "") and t.defenceName or nil
+    end
+
     if t.tooltip ~= nil then
         self.tooltip = (type(t.tooltip) == "string" and t.tooltip ~= "") and t.tooltip or nil
     end
@@ -502,6 +511,9 @@ end
 ---@return number
 function CharacterStat:GetValue(profile)
     local baseValue = self:_resolveBase(profile)
+    
+    -- Add setupBonus (from setup wizard) to the base value
+    baseValue = baseValue + (self.setupBonus or 0)
 
     local pid = profile and profile.name
     local equip, auraBucket = 0, { ADD=0, PCT_ADD=0, MULT=1, FINAL_ADD=0 }
@@ -534,6 +546,9 @@ function CharacterStat:GetMaxValue(profile)
     end
 
     local baseValue = self:_resolveBase(profile)
+    
+    -- Add setupBonus (from setup wizard) to the base value
+    baseValue = baseValue + (self.setupBonus or 0)
 
     local pid = profile and profile.name
     local equip, auraBucket = 0, { ADD=0, PCT_ADD=0, MULT=1, FINAL_ADD=0 }
@@ -783,12 +798,14 @@ function CharacterStat:ToTable()
         visible  = (self.visible == nil) and 1 or self.visible,
         pct      = self.pct or 0,
         icon     = self.icon,
+        defenceName = self.defenceName,
         tooltip  = self.tooltip,
         itemTooltipFormat   = self.itemTooltipFormat,
         itemTooltipColor    = self.itemTooltipColor,
         itemTooltipPriority = self.itemTooltipPriority,
         itemLevelWeight     = self.itemLevelWeight, -- [ilvl]
         sourceDataset       = self.sourceDataset, -- Track which dataset this stat came from
+        setupBonus          = self.setupBonus, -- Bonus from setup wizard
     }
 end
 
@@ -804,6 +821,7 @@ function CharacterStat.FromTable(t)
             visible = (t.visible == 0) and 0 or 1,
             pct     = (t.pct == 1 or t.pct == true) and 1 or 0,
             icon    = t.icon,
+            defenceName = t.defenceName,
             tooltip = t.tooltip,
             rule    = t.rule, -- legacy (still migrated into base if present)
             recovery = t.recovery or 0,
@@ -818,6 +836,7 @@ function CharacterStat.FromTable(t)
     stat._maxVariant = normalizeBoundVariant(stat.max)
     -- Restore dynamic fields
     if t.sourceDataset then stat.sourceDataset = t.sourceDataset end
+    if t.setupBonus then stat.setupBonus = t.setupBonus end
     return stat
 end
 

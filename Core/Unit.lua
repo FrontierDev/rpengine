@@ -26,6 +26,7 @@ RPE.Core = RPE.Core or {}
 ---@field active boolean
 ---@field hidden boolean
 ---@field flying boolean
+---@field absorption table|nil    -- absorption shields: {shieldId = {amount, sourceId, duration, appliedTurn}, ...}
 local Unit = {}
 Unit.__index = Unit
 RPE.Core.Unit = Unit
@@ -121,6 +122,9 @@ function Unit.New(id, data)
     self.hpMax = hpMax
     self.hp    = hp
 
+    -- Absorption/shield tracking (shieldId -> {amount, sourceId, duration, appliedTurn})
+    self.absorption = {}
+
     -- Initiative (guaranteed field)
     self.initiative = math.floor(tonumber(data.initiative) or 0)
 
@@ -161,9 +165,10 @@ function Unit:SetHP(hp)
     self.hp = math.max(0, math.min(hp, self.hpMax or 1))
 end
 
-function Unit:ApplyDamage(amount, isCrit)
+function Unit:ApplyDamage(amount, isCrit, absorbedAmount)
     isCrit = isCrit or false
     amount = math.max(0, math.floor(tonumber(amount) or 0))
+    absorbedAmount = math.max(0, math.floor(tonumber(absorbedAmount) or 0))
     local wasDead = self:IsDead()
     self:SetHP((self.hp or 0) - amount)
     local isDead = self:IsDead()
@@ -171,11 +176,24 @@ function Unit:ApplyDamage(amount, isCrit)
 
     if(self.id == RPE.Core.ActiveEvent:GetLocalPlayerUnitId()) then
         RPE.Core.Resources:Set("HEALTH", self.hp)
-        RPE.Core.CombatText.Screen:AddNumber(amount, "damage", { isCrit = isCrit, direction = "DOWN" })
+        -- Show damage with absorption notation if any damage was absorbed
+        if absorbedAmount > 0 then
+            local totalDamage = amount + absorbedAmount
+            RPE.Core.CombatText.Screen:AddText(string.format("-%d (Absorbed: %d)", totalDamage, absorbedAmount), 
+                { variant = "damage", isCrit = isCrit, direction = "DOWN" })
+        else
+            RPE.Core.CombatText.Screen:AddNumber(amount, "damage", { isCrit = isCrit, direction = "DOWN" })
+        end
     end
 
     local ev = RPE.Core.ActiveEvent
     if ev and ev.MarkAttacked then ev:MarkAttacked(self.id) end
+
+    -- Broadcast updated health to other players
+    local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+    if Broadcast and Broadcast.UpdateUnitHealth then
+        Broadcast:UpdateUnitHealth(self.id, self.hp, self.hpMax)
+    end
 
     -- Emit ON_DEATH trigger when unit reaches 0 HP
     if not wasDead and isDead then
@@ -204,6 +222,12 @@ function Unit:Heal(amount, isCrit)
     if(self.id == RPE.Core.ActiveEvent:GetLocalPlayerUnitId()) then
         RPE.Core.Resources:Set("HEALTH", self.hp)
         RPE.Core.CombatText.Screen:AddNumber(amount, "heal", { isCrit = isCrit, direction = "DOWN" })
+    end
+
+    -- Broadcast updated health to other players
+    local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+    if Broadcast and Broadcast.UpdateUnitHealth then
+        Broadcast:UpdateUnitHealth(self.id, self.hp, self.hpMax)
     end
 
     return self.hp
@@ -392,7 +416,111 @@ function Unit:DecayThreat(factor, epsilon)
     self:_UpdateThreatIconForPortraits()
 end
 
--- ===== Raid marker helpers =====
+-- ===== Crowd Control helpers =====
+--- Check if unit has any crowd control aura blocking actions
+function Unit:IsBlockedFromActions()
+    local ev = RPE.Core.ActiveEvent
+    if not (ev and ev._auraManager) then return false end
+    
+    local auras = ev._auraManager:All(self.id)
+    for _, aura in ipairs(auras) do
+        if aura.def and aura.def.crowdControl then
+            local cc = aura.def.crowdControl
+            -- Check block all actions
+            if cc.blockAllActions then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+--- Check if unit has crowd control blocking a specific action by tag
+function Unit:IsActionBlockedByTag(actionTag)
+    if not actionTag then return false end
+    
+    local ev = RPE.Core.ActiveEvent
+    if not (ev and ev._auraManager) then return false end
+    
+    local auras = ev._auraManager:All(self.id)
+    for _, aura in ipairs(auras) do
+        if aura.def and aura.def.crowdControl then
+            local cc = aura.def.crowdControl
+            if cc.blockActionsByTag then
+                -- Check if actionTag matches any blocked tag
+                for _, blockedTag in ipairs(cc.blockActionsByTag) do
+                    if blockedTag == actionTag then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+--- Check if unit has crowd control failing all defences
+function Unit:IsFailingAllDefences()
+    local ev = RPE.Core.ActiveEvent
+    if not (ev and ev._auraManager) then return false end
+    
+    local auras = ev._auraManager:All(self.id)
+    for _, aura in ipairs(auras) do
+        if aura.def and aura.def.crowdControl then
+            local cc = aura.def.crowdControl
+            if cc.failAllDefences then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+--- Check if unit has crowd control failing a specific defence stat
+function Unit:IsDefenceStatFailing(defenceStat)
+    if not defenceStat then return false end
+    
+    local ev = RPE.Core.ActiveEvent
+    if not (ev and ev._auraManager) then return false end
+    
+    local auras = ev._auraManager:All(self.id)
+    for _, aura in ipairs(auras) do
+        if aura.def and aura.def.crowdControl then
+            local cc = aura.def.crowdControl
+            if cc.failDefencesByStats then
+                -- Check if defenceStat matches any failed stat
+                for _, failedStat in ipairs(cc.failDefencesByStats) do
+                    if failedStat == defenceStat then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+--- Get movement speed modifier from crowd control auras (0-1, where 1=100% speed)
+function Unit:GetMovementSpeedModifier()
+    local speedMod = 1.0
+    local ev = RPE.Core.ActiveEvent
+    if not (ev and ev._auraManager) then return speedMod end
+    
+    local auras = ev._auraManager:All(self.id)
+    for _, aura in ipairs(auras) do
+        if aura.def and aura.def.crowdControl then
+            local cc = aura.def.crowdControl
+            if cc.slowMovement and cc.slowMovement > 0 then
+                -- Apply slowMovement as a percentage reduction (0-100)
+                local slow = tonumber(cc.slowMovement) or 0
+                speedMod = speedMod * (1 - (slow / 100))
+            end
+        end
+    end
+    return math.max(0, speedMod)  -- Ensure never goes below 0
+end
+
+
 function Unit:SetRaidMarker(marker)
     if marker and tonumber(marker) and marker >= 1 and marker <= 8 then
         self.raidMarker = tonumber(marker)

@@ -58,8 +58,8 @@ function IconButton:New(name, opts)
 
     -- Cache normal & hover vertex colors (before icon creation)
     local baseR, baseG, baseB, baseA = 1, 1, 1, 1
-    local hovFactor = opts.hoverDarkenFactor or 0.85
-    local hovR, hovG, hovB, hovA = baseR * hovFactor, baseG * hovFactor, baseB * hovFactor, baseA
+    local hovFactor = opts.hoverBrightenFactor or 1.3  -- Brighten on hover (was 0.85 for darken)
+    local hovR, hovG, hovB, hovA = math.min(baseR * hovFactor, 1), math.min(baseG * hovFactor, 1), math.min(baseB * hovFactor, 1), baseA
 
     -- Icon
     local icon = f:CreateTexture(nil, "ARTWORK")

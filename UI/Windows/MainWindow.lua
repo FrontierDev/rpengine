@@ -64,26 +64,26 @@ function MainWindow:BuildUI()
     self.topBorder = HBorder:New("RPE_Main_TopBorder", {
         parent        = self.root,
         stretch       = true,
-        thickness     = 5,
+        thickness     = 3,
         y             = 0,
         layer         = "BORDER",
     })
     self.topBorder.frame:ClearAllPoints()
-    self.topBorder.frame:SetPoint("TOPLEFT", self.root.frame, "TOPLEFT", 0, 0)
-    self.topBorder.frame:SetPoint("TOPRIGHT", self.root.frame, "TOPRIGHT", 0, 0)
+    self.topBorder.frame:SetPoint("TOPLEFT", self.root.frame, "TOPLEFT", 0, 3)
+    self.topBorder.frame:SetPoint("TOPRIGHT", self.root.frame, "TOPRIGHT", 0, 3)
     _G.RPE_UI.Colors.ApplyHighlight(self.topBorder)
 
     -- Bottom border (stretched full width)
     self.bottomBorder = HBorder:New("RPE_Main_BottomBorder", {
         parent        = self.root,
         stretch       = true,
-        thickness     = 5,
+        thickness     = 3,
         y             = 0,
         layer         = "BORDER",
     })
     self.bottomBorder.frame:ClearAllPoints()
-    self.bottomBorder.frame:SetPoint("BOTTOMLEFT", self.root.frame, "BOTTOMLEFT", 0, 0)
-    self.bottomBorder.frame:SetPoint("BOTTOMRIGHT", self.root.frame, "BOTTOMRIGHT", 0, 0)
+    self.bottomBorder.frame:SetPoint("BOTTOMLEFT", self.root.frame, "BOTTOMLEFT", 0, -3)
+    self.bottomBorder.frame:SetPoint("BOTTOMRIGHT", self.root.frame, "BOTTOMRIGHT", 0, -3)
     _G.RPE_UI.Colors.ApplyHighlight(self.bottomBorder)
 
     -- Content panel (fills space above footer)

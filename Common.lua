@@ -41,6 +41,30 @@ Common.QualityColors = {
     legendary = { r = 1.00, g = 0.50, b = 0.00 }, -- orange
 }
 
+-- Profession icons (from ProfessionSheet)
+Common.ProfessionIcons = {
+    Cooking        = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_cooking.png",
+    Fishing        = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_fishing.png",
+    ["First Aid"]  = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_first_aid.png",
+    Alchemy        = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_alchemy.png",
+    Blacksmithing  = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_blacksmithing.png",
+    Enchanting     = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_enchanting.png",
+    Engineering    = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_engineering.png",
+    Leatherworking = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_leatherworking.png",
+    Tailoring      = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_tailoring.png",
+    Jewelcrafting  = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_jewelcrafting.png",
+    Inscription    = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_inscription.png",
+    Mining         = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_mining.png",
+    Skinning       = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_skinning.png",
+    Herbalism      = "Interface\\AddOns\\RPEngine\\UI\\Textures\\professions\\prof_herbalism.png",
+}
+
+Common.ProfessionList = {
+    "Cooking", "Fishing", "First Aid",
+    "Alchemy", "Blacksmithing", "Enchanting", "Engineering",
+    "Leatherworking", "Tailoring", "Inscription", "Jewelcrafting", "Mining", "Skinning", "Herbalism",
+}
+
 Common.DamageSchools = { "Physical", "Force", "Fire", "Frost", "Cold", "Nature", "Acid", "Lightning", "Poison", "Shadow", "Necrotic", "Holy", "Radiant", "Arcane", "Psychic", "Fel" }
 
 -- Shared colors for grouped damage schools
@@ -156,34 +180,41 @@ end
 ---@return string Formatted display name
 function Common:FormatUnitName(unit)
     if not unit then return "Unknown" end
+
+    -- If this unit corresponds to the local player, prefer TRP3's complete player name
+    local localKey = (self.LocalPlayerKey and self:LocalPlayerKey()) or nil
+    if unit.key and localKey and unit.key == localKey and self.GetTRP3NameForUnit then
+        local ok, trpname = pcall(function() return self:GetTRP3NameForUnit("player") end)
+        if ok and trpname and trpname ~= "" then
+            return trpname
+        end
+    end
+
+    -- Default behavior: strip realm and capitalize for non-NPC players
     local name = unit.name or unit.key or "Unknown"
-    
-    -- Only format non-NPC player names
     if not unit.isNPC and name:find("-") then
         name = name:match("^[^-]+") or name
         name = name:sub(1,1):upper() .. name:sub(2):lower()
     end
-    
+
     return name
 end
 
 function Common:GetEquipment()
     local profile = RPE.Profile.DB.GetOrCreateActive()
-    local eq = profile.equipment
-
+    local eq = profile and profile.equipment or nil
     return eq
 end
 
 function Common:GetInventory()
     local profile = RPE.Profile.DB.GetOrCreateActive()
-    local inv = profile.items
-    
+    local inv = profile and profile.items or nil
     return inv
 end
 
 function Common:GetAllUnits()
     local event = RPE.Core.ActiveEvent
-    return event.units
+    return event and event.units or nil
 end
 
 function Common:Clamp(value, min, max)
@@ -463,21 +494,18 @@ function Common:GetRecipeColor(playerLevel, recipeLevel)
     -- Below required level
     if diff < 0 then
         return "|cffff0000" -- red
-    -- Equal or just learned
-    elseif diff == 0 then
-        return "|cffff7f00" -- orange
-    -- Within +15 levels
+    -- 0-15 above requirement
     elseif diff <= 15 then
-        return "|cffffff00" -- yellow
-    -- Within +30 levels
+        return "|cffff7f00" -- orange
+    -- 15-30 above requirement
     elseif diff <= 30 then
+        return "|cffffff00" -- yellow
+    -- 30-45 above requirement
+    elseif diff <= 60 then
         return "|cff00ff00" -- green
-    -- Beyond +50 levels
-    elseif diff >= 50 then
-        return "|cff808080" -- grey
+    -- 45+ above requirement
     else
-        -- fallback in between (green→grey transition)
-        return "|cff80ff80"
+        return "|cff808080" -- grey
     end
 end
 
@@ -492,4 +520,188 @@ function Common:FormatCopper(copper)
     if copperOnly > 0 or #parts == 0 then table.insert(parts, copperOnly .. "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t") end
 
     return table.concat(parts, " ")
+end
+
+--- Get a unit's TRP3 roleplay/display name, falling back to the game name.
+-- Safe: verifies TRP3 API presence and falls back to `UnitName(unit)` when unavailable.
+-- @param unit string Unit token (e.g. "player", "target", "party1")
+-- @return string name (RP name if available, else game name or nil)
+function Common:GetTRP3NameForUnit(unit)
+    if not unit then return nil end
+
+    -- Fallback to plain game name if TRP3 isn't available
+    if not (_G.TRP3_API and _G.TRP3_API.utils and _G.TRP3_API.register) then
+        if UnitName then return UnitName(unit) end
+        return nil
+    end
+
+    -- If caller passed a TRP3 characterID (contains a hyphen), use it directly
+    local charID = nil
+    if type(unit) == "string" and unit:find("%-%w+") then
+        charID = unit
+    end
+
+    -- Special-case: current player — TRP3 provides a direct helper for the local player's complete name
+    if (unit == "player" or charID == "player") and _G.TRP3_API.register.getPlayerCompleteName then
+        local ok, pname = pcall(function() return _G.TRP3_API.register.getPlayerCompleteName(false) end)
+        if ok and pname and pname ~= "" then
+            return pname
+        end
+    end
+
+    -- If we don't yet have a charID, try resolving from a unit token
+    if not charID and type(unit) == "string" and _G.TRP3_API.utils.str and _G.TRP3_API.utils.str.getUnitID then
+        pcall(function() charID = _G.TRP3_API.utils.str.getUnitID(unit) end)
+    end
+
+    -- If caller passed something else (e.g., unit table.key), accept that too
+    if not charID and type(unit) == "string" and unit:find("%-%w+") then
+        charID = unit
+    end
+
+    -- If we still don't have a charID but we have a plain name (no realm), try to guess the realm
+    if not charID and type(unit) == "string" and not unit:find("%-") then
+        -- Attempt to derive a likely realm short name from the player or TRP3 utils
+        local realmShort = nil
+        if _G.TRP3_API.utils.str and _G.TRP3_API.utils.str.getUnitID then
+            pcall(function()
+                local myCharID = _G.TRP3_API.utils.str.getUnitID("player")
+                if myCharID and myCharID:find("%-") then
+                    realmShort = myCharID:match("%-(.+)$")
+                end
+            end)
+        end
+        if not realmShort and GetRealmName then
+            realmShort = (GetRealmName() or ""):gsub("%s+","")
+        end
+
+        local candidates = {}
+        if realmShort and realmShort ~= "" then
+            table.insert(candidates, unit .. "-" .. realmShort)
+            -- Capitalize name as TRP3 often stores proper-cased names
+            local cap = unit:sub(1,1):upper() .. unit:sub(2)
+            if cap ~= unit then table.insert(candidates, cap .. "-" .. realmShort) end
+        end
+        -- Also try the plain name as a last resort
+        table.insert(candidates, unit)
+
+        for _, cand in ipairs(candidates) do
+            if cand and cand ~= "" then
+                local ok, prof = pcall(function() return _G.TRP3_API.register.getUnitIDProfile(cand) end)
+                if ok and prof and prof.characteristics then
+                    charID = cand
+                    break
+                end
+            end
+        end
+    end
+
+    -- If we couldn't resolve a character ID, return the game name (when possible)
+    if not charID then
+        if UnitName then return UnitName(unit) end
+        return nil
+    end
+
+    -- Now we have a TRP3 character ID — ask TRP3 for profile/complete name
+    if _G.TRP3_API.register.isUnitIDKnown and _G.TRP3_API.register.getUnitIDProfile then
+        local ok, isKnown = pcall(function() return _G.TRP3_API.register.isUnitIDKnown(charID) end)
+        if ok and isKnown then
+            local suc, profile, profileID = pcall(function()
+                return _G.TRP3_API.register.getUnitIDProfile(charID)
+            end)
+            if suc and profile and profile.characteristics then
+                -- Prefer TRP3 helper which formats FN/LN/TI correctly
+                if _G.TRP3_API.register.getCompleteName then
+                    local gameName = nil
+                    if _G.TRP3_API.utils.str.unitIDToInfo then
+                        pcall(function() gameName = select(1, _G.TRP3_API.utils.str.unitIDToInfo(charID)) end)
+                    end
+                    if not gameName and UnitName then gameName = UnitName("player") end
+                    local ok2, out = pcall(function()
+                        return _G.TRP3_API.register.getCompleteName(profile.characteristics, gameName)
+                    end)
+                    if ok2 and out then return out end
+                end
+
+                -- Fallback: assemble from FN/LN/TI
+                local ch = profile.characteristics
+                local fn = (ch.FN and ch.FN ~= "") and ch.FN or nil
+                local ln = (ch.LN and ch.LN ~= "") and ch.LN or nil
+                local ti = (ch.TI and ch.TI ~= "") and ch.TI or nil
+
+                local base = fn or select(1, _G.TRP3_API.utils.str.unitIDToInfo and _G.TRP3_API.utils.str.unitIDToInfo(charID) or UnitName("player"))
+                if not base and UnitName then base = UnitName("player") end
+                if ln and ln ~= "" then base = base .. " " .. ln end
+                if ti and ti ~= "" then base = ti .. " " .. base end
+                return base
+            end
+        end
+    end
+
+    -- Final fallback: try to extract the plain game name from TRP3 utils
+    if _G.TRP3_API.utils.str.unitIDToInfo then
+        local ok, name = pcall(function() return select(1, _G.TRP3_API.utils.str.unitIDToInfo(charID)) end)
+        if ok and name and name ~= "" then return name end
+    end
+
+    if UnitName then return UnitName("player") end
+    return nil
+end
+
+--- Return diagnostic information about TRP3 lookup attempts for a unit/name.
+-- Useful for debugging why a TRP3 profile wasn't found.
+-- @return table { requested=string, charID=string|nil, candidates=table, matched=string|nil, profile=table|nil }
+function Common:DebugTRP3Lookup(unit)
+    local out = { requested = unit, charID = nil, candidates = {}, matched = nil, profile = nil }
+    if not unit then return out end
+
+    if not (_G.TRP3_API and _G.TRP3_API.utils and _G.TRP3_API.register) then
+        out.error = "TRP3 API not available"
+        return out
+    end
+
+    -- Try direct charID
+    if type(unit) == "string" and unit:find("%-%w+") then
+        out.charID = unit
+    end
+
+    -- Try resolving from a unit token
+    if not out.charID and type(unit) == "string" and _G.TRP3_API.utils.str and _G.TRP3_API.utils.str.getUnitID then
+        pcall(function() out.charID = _G.TRP3_API.utils.str.getUnitID(unit) end)
+    end
+
+    -- Build candidates if needed
+    local candidates = {}
+    if out.charID then table.insert(candidates, out.charID) end
+    if type(unit) == "string" and not unit:find("%-") then
+        -- derive realm short
+        local realmShort = nil
+        pcall(function()
+            local myCharID = _G.TRP3_API.utils.str.getUnitID("player")
+            if myCharID and myCharID:find("%-") then realmShort = myCharID:match("%-(.+)$") end
+        end)
+        if not realmShort and GetRealmName then realmShort = (GetRealmName() or ""):gsub("%s+", "") end
+        if realmShort and realmShort ~= "" then
+            table.insert(candidates, unit .. "-" .. realmShort)
+            local cap = unit:sub(1,1):upper() .. unit:sub(2)
+            if cap ~= unit then table.insert(candidates, cap .. "-" .. realmShort) end
+        end
+        table.insert(candidates, unit)
+    end
+
+    out.candidates = candidates
+
+    for _, cand in ipairs(candidates) do
+        if cand and cand ~= "" then
+            local ok, prof = pcall(function() return _G.TRP3_API.register.getUnitIDProfile(cand) end)
+            if ok and prof and prof.characteristics then
+                out.matched = cand
+                out.profile = prof
+                out.charID = cand
+                break
+            end
+        end
+    end
+
+    return out
 end

@@ -148,7 +148,26 @@ function Resources:Set(resId, value)
 
     if key == "HEALTH" and (v ~= prev or maxChanged) then
         local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
-        if B and B.UpdateUnitHealth then B:UpdateUnitHealth(nil, v, max) end
+        if B and B.UpdateUnitHealth then
+            -- Calculate total absorption from player's absorption shields
+            local totalAbsorption = 0
+            local ev = RPE and RPE.Core and RPE.Core.ActiveEvent
+            if ev then
+                local localPlayerUnitId = ev:GetLocalPlayerUnitId()
+                local localPlayerKey = ev.localPlayerKey
+                if localPlayerKey and ev.units and ev.units[localPlayerKey] then
+                    local playerUnit = ev.units[localPlayerKey]
+                    if playerUnit.absorption then
+                        for _, shield in pairs(playerUnit.absorption) do
+                            if shield.amount then
+                                totalAbsorption = totalAbsorption + shield.amount
+                            end
+                        end
+                    end
+                end
+            end
+            B:UpdateUnitHealth(nil, v, max, totalAbsorption)
+        end
     end
 
     return v, max
@@ -367,7 +386,23 @@ function Resources:OnPlayerTurnStart()
                 if id == "HEALTH" then
                     local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
                     if B and B.UpdateUnitHealth then
-                        B:UpdateUnitHealth(nil, self.pool[id], max)
+                        -- Calculate total absorption from player's absorption shields
+                        local totalAbsorption = 0
+                        local ev = RPE and RPE.Core and RPE.Core.ActiveEvent
+                        if ev then
+                            local localPlayerKey = ev.localPlayerKey
+                            if localPlayerKey and ev.units and ev.units[localPlayerKey] then
+                                local playerUnit = ev.units[localPlayerKey]
+                                if playerUnit.absorption then
+                                    for _, shield in pairs(playerUnit.absorption) do
+                                        if shield.amount then
+                                            totalAbsorption = totalAbsorption + shield.amount
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        B:UpdateUnitHealth(nil, self.pool[id], max, totalAbsorption)
                     end
                 end
 

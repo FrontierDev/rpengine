@@ -225,13 +225,17 @@ function SpellbookSheet:BuildUI(opts)
     --------------------------------------------------------
     -- Highest rank toggle
     --------------------------------------------------------
-    self.rankBtn:SetOnClick(function()
+        self.rankBtn:SetOnClick(function()
         self.highestOnly = not self.highestOnly
         self.rankBtn:SetText("Show Highest Rank: " .. (self.highestOnly and "ON" or "OFF"))
         self:Refresh()
     end)
 
-    --------------------------------------------------------
+    -- Register / expose
+    if _G.RPE_UI and _G.RPE_UI.Common then
+        RPE.Debug:Internal("Registering SpellbookSheet window...")
+        RPE_UI.Common:RegisterWindow(self)
+    end    --------------------------------------------------------
     -- Spell grid
     --------------------------------------------------------
     self.grid = VGroup:New("RPE_SpellbookGrid", {
@@ -269,7 +273,7 @@ function SpellbookSheet:Refresh()
     local useRanks = (RPE.ActiveRules:Get("use_spell_ranks") or 1) ~= 0
     local known   = profile.spells or {}
 
-    local spellList, hasFilters = {}, next(self.activeTags) ~= nil
+    local spellList, hasFilters = {}, self.activeTags and next(self.activeTags) ~= nil
 
     for spellId, rank in pairs(known) do
         local def = reg and reg.Get and reg:Get(spellId)

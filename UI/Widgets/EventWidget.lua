@@ -110,6 +110,20 @@ function EventWidget:_ShowUnits(units, doFade)
         if p then
             -- Always update health (in case it changed)
             if p.SetHealth then p:SetHealth(u.hp, u.hpMax) end
+            
+            -- Update absorption shields
+            if p.SetAbsorption then
+                local totalAbsorption = 0
+                if u.absorption then
+                    for _, shield in pairs(u.absorption) do
+                        if shield.amount then
+                            totalAbsorption = totalAbsorption + shield.amount
+                        end
+                    end
+                end
+                p:SetAbsorption(totalAbsorption)
+            end
+            
             if p.ApplyRaidMarker then p:ApplyRaidMarker() end
             if p.ApplyTeamColor then p:ApplyTeamColor() end
             if p.Refresh then p:Refresh() end
@@ -380,6 +394,8 @@ function EventWidget:BuildPortraitRow(nextStep)
         autoSize = true,
         spacingX = 12,
         alignV   = "CENTER",
+        width = 500,  -- Set a reasonable initial width to ensure portraits display
+        height = 120,
     })
     self.content:Add(self.portraitRow)
 

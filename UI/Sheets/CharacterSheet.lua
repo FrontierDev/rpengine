@@ -315,6 +315,14 @@ function CharacterSheet:DrawLanguages(langBlock)
             isDefaultLanguage = isDefault,
             onRemove = not isDefault and function()
                 Language.playerLanguages[langData.name] = nil
+                -- Also remove from profile
+                if self.profile and self.profile.languages then
+                    self.profile.languages[langData.name] = nil
+                    local ProfileDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DB
+                    if ProfileDB then
+                        ProfileDB.SaveProfile(self.profile)
+                    end
+                end
                 self:DrawLanguages(langBlock)
             end or nil,
         })

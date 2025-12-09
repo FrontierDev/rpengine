@@ -106,6 +106,18 @@ function UnitFrameWidget:_EnsurePortrait(u, parent)
         if p.SetUnit then p:SetUnit(u) end
     end
     if u.hp and u.hpMax and p.SetHealth then p:SetHealth(u.hp, u.hpMax) end
+    -- Display absorption
+    if p.SetAbsorption then
+        local totalAbsorption = 0
+        if u.absorption then
+            for _, shield in pairs(u.absorption) do
+                if shield.amount then
+                    totalAbsorption = totalAbsorption + shield.amount
+                end
+            end
+        end
+        p:SetAbsorption(totalAbsorption)
+    end
     return p
 end
 

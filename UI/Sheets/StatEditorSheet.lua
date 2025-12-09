@@ -154,12 +154,13 @@ local function _displayToValue(str)
 end
 
 local function _parseMitigation(v)
-    -- Mitigation can be: table with { normal, critical } where each is an expression (literal, stat ref, or formula)
+    -- Mitigation can be: table with { normal, critical, fail } where each is an expression (literal, stat ref, or formula)
     -- Or nil/empty
     if type(v) == "table" then
         local normal = v.normal or 0
         local critical = v.critical or 0
-        return { normal = normal, critical = critical }
+        local fail = v.fail or 0
+        return { normal = normal, critical = critical, fail = fail }
     end
     return nil
 end
@@ -199,6 +200,7 @@ local function _saveStat(ds, statId, v)
         recovery        = _parseRecovery(v.recovery),
         pct             = (v.pct == 1 or v.pct == true or v.pct == "1") and 1 or 0,
         mitigation      = _parseMitigation(v.mitigation),
+        defenceName     = v.defenceName or "",
         data            = v.data or {},
         sourceDataset   = ds_name,
         itemTooltipFormat = v.itemTooltipFormat or "",
@@ -240,9 +242,11 @@ local function _buildEditSchema(statId, def)
     -- Mitigation values
     local mitigationNormalValue = ""
     local mitigationCriticalValue = ""
+    local mitigationFailValue = ""
     if type(def.mitigation) == "table" then
         mitigationNormalValue = _valueToDisplay(def.mitigation.normal)
         mitigationCriticalValue = _valueToDisplay(def.mitigation.critical)
+        mitigationFailValue = _valueToDisplay(def.mitigation.fail)
     end
     
     -- Determine base value type and values
@@ -292,10 +296,14 @@ local function _buildEditSchema(statId, def)
             }},
             { title="Mitigation", elements={
                 { id="mitigationHeader", label="Damage Reduction (only applies to DEFENSE/RESISTANCE stats)", type="label" },
+                { id="defenceName", label="Defence Name", type="input", default=def.defenceName or "", 
+                  hint="Name shown on player reaction widget (e.g., 'Fire Resistance'). If empty, uses stat name." },
                 { id="mitigationNormalValue", label="Mitigation", type="input", default=mitigationNormalValue, 
                   hint="Expression that modifies incoming damage. $value$ is the damage amount (e.g., $value$*0.5 reduces by 50%, $value$-$stat.ARMOR$ for flat reduction)" },
                 { id="mitigationCriticalValue", label="Crit. Mitigation", type="input", default=mitigationCriticalValue, 
                   hint="Expression that modifies incoming critical damage. $value$ is the damage amount (e.g., $value$*0.75 reduces by 25%, $value$-($stat.ARMOR$*2) for stat-based reduction)" },
+                { id="mitigationFailValue", label="Fail Mitigation", type="input", default=mitigationFailValue, 
+                  hint="Expression that modifies incoming damage when defense fails. $value$ is the damage amount (e.g., $value$*0.25 reduces by 75%, $value$-$stat.AC$ for stat-based reduction)" },
             }},
             { title="Item Bonuses", elements={
                 { id="itemTooltipFormat", label="Tooltip Format", type="input", 

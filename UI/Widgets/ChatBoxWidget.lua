@@ -114,12 +114,11 @@ end
 
 -- ========= internals =========
 
-local CHANNELS = { "SAY", "YELL", "EMOTE", "PARTY", "RAID", "GUILD", "OFFICER", "WHISPER", "NPC" }
+local CHANNELS = { "SAY", "YELL", "EMOTE", "PARTY", "RAID", "GUILD", "OFFICER", "WHISPER" }
 local CHANNEL_LABEL = {
     SAY = "Say", YELL = "Yell", EMOTE = "Emote",
     PARTY = "Party", RAID = "Raid",
     GUILD = "Guild", OFFICER = "Officer", WHISPER = "Whisper",
-    NPC = "NPC",
 }
 
 local function nextChannel(cur)
@@ -129,6 +128,16 @@ local function nextChannel(cur)
         end
     end
     return CHANNELS[1]
+
+end
+
+local function prevChannel(cur)
+    for i, k in ipairs(CHANNELS) do
+        if k == cur then
+            return CHANNELS[((i - 2) % #CHANNELS) + 1]
+        end
+    end
+    return CHANNELS[#CHANNELS]
 end
 
 -- ========= sending =========
@@ -174,30 +183,34 @@ local function CreateInputBox(parent, width, height, placeholder)
     -- Create a container panel for the input box with styled background
     local panel = CreateFrame("Frame", nil, parent)
     panel:SetSize(width, height)
-    
+
     -- Background texture
     local bg = panel:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(0.08, 0.08, 0.08, 0.85)
-    
-    -- Border (subtle highlight)
+
+    -- Border (transparent fill for border frame)
     local border = panel:CreateTexture(nil, "BORDER")
     border:SetAllPoints()
-    border:SetColorTexture(0, 0, 0, 0) -- transparent fill for border frame
-    
-    -- Top highlight border
+    border:SetColorTexture(0, 0, 0, 0)
+
+    -- Palette colors
+    local dr, dg, db, da = C and C.Get and C.Get("divider") or 0.3, 0.3, 0.35, 0.6
+    local hr, hg, hb, ha = C and C.Get and C.Get("highlight") or 0.5, 0.6, 0.7, 0.9
+
+    -- Top highlight border (palette divider, highlight on focus)
     local topBorder = panel:CreateTexture(nil, "BORDER")
     topBorder:SetPoint("TOPLEFT", panel, "TOPLEFT", 1, -1)
     topBorder:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -1, -1)
     topBorder:SetHeight(1)
-    topBorder:SetColorTexture(0.3, 0.3, 0.35, 0.6)
-    
-    -- Bottom/side subtle border
+    topBorder:SetColorTexture(dr * 0.6, dg * 0.6, db * 0.6, da * 0.8)
+
+    -- Bottom/side subtle border (palette divider, darker)
     local botBorder = panel:CreateTexture(nil, "BORDER")
     botBorder:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 1, 1)
     botBorder:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -1, 1)
     botBorder:SetHeight(1)
-    botBorder:SetColorTexture(0.1, 0.1, 0.1, 0.6)
+    botBorder:SetColorTexture(dr * 0.2, dg * 0.2, db * 0.2, da * 0.7)
     
     -- EditBox inside the panel
     local eb = CreateFrame("EditBox", nil, panel)
@@ -220,13 +233,17 @@ local function CreateInputBox(parent, width, height, placeholder)
     
     -- Focus effect
     eb:HookScript("OnEditFocusGained", function(self)
-        topBorder:SetColorTexture(0.5, 0.6, 0.7, 0.9)  -- brighten on focus
+        -- Use palette highlight color for focus
+        local hr, hg, hb, ha = C and C.Get and C.Get("highlight") or 0.5, 0.6, 0.7, 0.9
+        topBorder:SetColorTexture(hr, hg, hb, ha)
         local empty = (self:GetText() or "") == ""
         self._placeholderFS:SetShown(empty)
     end)
-    
+
     eb:HookScript("OnEditFocusLost", function(self)
-        topBorder:SetColorTexture(0.3, 0.3, 0.35, 0.6)  -- revert
+        -- Revert to palette divider color
+        local dr, dg, db, da = C and C.Get and C.Get("divider") or 0.3, 0.3, 0.35, 0.6
+        topBorder:SetColorTexture(dr * 0.6, dg * 0.6, db * 0.6, da * 0.8)
         local empty = (self:GetText() or "") == ""
         self._placeholderFS:SetShown(empty)
     end)
@@ -371,7 +388,6 @@ function ChatBoxWidget:BuildUI(opts)
     self.keyCatcher:SetAllPoints(UIParent or WorldFrame)
     self.keyCatcher:SetFrameStrata("DIALOG")
     self.keyCatcher:EnableMouse(false)
-    self.keyCatcher:EnableMouseWheel(true)
     self.keyCatcher:EnableKeyboard(true)
     self.keyCatcher:SetPropagateKeyboardInput(true) -- don't block other keys unless we act
 
@@ -409,18 +425,18 @@ function ChatBoxWidget:BuildUI(opts)
         end
     end)
 
-    -- Mousewheel: pass through to log for scrolling (up/down both directions)
-    self.keyCatcher:SetScript("OnMouseWheel", function(_, delta)
-        if self.log and self.log:IsVisible() then
-            if delta > 0 then
-                -- Scroll up (show older messages)
-                self.log:ScrollUp(math.abs(delta) * 3)
-            else
-                -- Scroll down (show newer messages)
-                self.log:ScrollDown(math.abs(delta) * 3)
+    -- Mousewheel: handled by self.log frame only
+    if self.log then
+        self.log:SetScript("OnMouseWheel", function(_, delta)
+            if self.log:IsVisible() then
+                if delta > 0 then
+                    self.log:ScrollUp(math.abs(delta) * 3)
+                else
+                    self.log:ScrollDown(math.abs(delta) * 3)
+                end
             end
-        end
-    end)
+        end)
+    end
 
     -- Log frame (above input) with improved styling
     self.logHeight = tonumber(opts.logHeight) or 140
@@ -435,6 +451,15 @@ function ChatBoxWidget:BuildUI(opts)
     self.log:SetMaxLines(500)
     self.log:EnableMouse(true)
     self.log:EnableMouseWheel(true)
+
+    -- Mousewheel handler for scrolling
+    self.log:SetScript("OnMouseWheel", function(_, delta)
+        if delta > 0 then
+            self.log:ScrollUp(math.abs(delta) * 3)
+        else
+            self.log:ScrollDown(math.abs(delta) * 3)
+        end
+    end)
     
     -- Log background (slightly darker than chrome for visual separation)
     local logBg = self.log:CreateTexture(nil, "BACKGROUND")
@@ -498,20 +523,31 @@ function ChatBoxWidget:BuildUI(opts)
     self.channelBtn = CreateFrame("Button", "RPE_ChatBox_ChannelBtn", self.host)
     self.channelBtn:SetSize(76, 22)
     self.channelBtn:SetPoint("LEFT", self.host, "LEFT", 8, 0)
+    self.channelBtn:EnableMouse(true)
+    self.channelBtn:RegisterForClicks("AnyUp")
     
-    -- Button background
+    -- Button background (TextButton style)
     local btnBg = self.channelBtn:CreateTexture(nil, "BACKGROUND")
     btnBg:SetAllPoints()
-    btnBg:SetColorTexture(0.12, 0.12, 0.15, 0.85)
+    local br, bg, bb, ba = C.Get and C.Get("background") or 0.10,0.10,0.14,0.95
+    btnBg:SetColorTexture(br, bg, bb, ba)
     self.channelBtn._bg = btnBg
-    
-    -- Button border
-    local btnBorder = self.channelBtn:CreateTexture(nil, "BORDER")
-    btnBorder:SetPoint("TOPLEFT", self.channelBtn, "TOPLEFT", 1, -1)
-    btnBorder:SetPoint("TOPRIGHT", self.channelBtn, "TOPRIGHT", -1, -1)
-    btnBorder:SetHeight(1)
-    btnBorder:SetColorTexture(0.4, 0.4, 0.45, 0.7)
-    self.channelBtn._border = btnBorder
+
+    -- Button border (TextButton style, top and bottom)
+    local divR, divG, divB, divA = C.Get and C.Get("divider") or 0.90,0.80,0.60,0.85
+    local topBorder = self.channelBtn:CreateTexture(nil, "BORDER")
+    topBorder:SetPoint("TOPLEFT", self.channelBtn, "TOPLEFT", 1, -1)
+    topBorder:SetPoint("TOPRIGHT", self.channelBtn, "TOPRIGHT", -1, -1)
+    topBorder:SetHeight(1)
+    topBorder:SetColorTexture(divR * 0.6, divG * 0.6, divB * 0.6, divA * 0.8)
+    self.channelBtn._topBorder = topBorder
+
+    local bottomBorder = self.channelBtn:CreateTexture(nil, "BORDER")
+    bottomBorder:SetPoint("BOTTOMLEFT", self.channelBtn, "BOTTOMLEFT", 1, 1)
+    bottomBorder:SetPoint("BOTTOMRIGHT", self.channelBtn, "BOTTOMRIGHT", -1, 1)
+    bottomBorder:SetHeight(1)
+    bottomBorder:SetColorTexture(divR * 0.2, divG * 0.2, divB * 0.2, divA * 0.7)
+    self.channelBtn._bottomBorder = bottomBorder
     
     -- Button text
     local btnText = self.channelBtn:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -525,15 +561,25 @@ function ChatBoxWidget:BuildUI(opts)
     -- Hover effects
     self.channelBtn:EnableMouse(true)
     self.channelBtn:SetScript("OnEnter", function(self)
-        self._bg:SetColorTexture(0.18, 0.18, 0.22, 0.95)
-        self._border:SetColorTexture(0.6, 0.65, 0.75, 0.9)
+        local br, bg, bb, ba = C.Get and C.Get("background") or 0.10,0.10,0.14,0.95
+        self._bg:SetColorTexture(br * 0.6, bg * 0.6, bb * 0.6, ba * 0.9)
+        local divR, divG, divB, divA = C.Get and C.Get("divider") or 0.90,0.80,0.60,0.85
+        self._topBorder:SetColorTexture(divR * 0.4, divG * 0.4, divB * 0.4, divA * 0.6)
+        self._bottomBorder:SetColorTexture(divR * 0.15, divG * 0.15, divB * 0.15, divA * 0.5)
     end)
     self.channelBtn:SetScript("OnLeave", function(self)
-        self._bg:SetColorTexture(0.12, 0.12, 0.15, 0.85)
-        self._border:SetColorTexture(0.4, 0.4, 0.45, 0.7)
+        local br, bg, bb, ba = C.Get and C.Get("background") or 0.10,0.10,0.14,0.95
+        self._bg:SetColorTexture(br, bg, bb, ba)
+        local divR, divG, divB, divA = C.Get and C.Get("divider") or 0.90,0.80,0.60,0.85
+        self._topBorder:SetColorTexture(divR * 0.6, divG * 0.6, divB * 0.6, divA * 0.8)
+        self._bottomBorder:SetColorTexture(divR * 0.2, divG * 0.2, divB * 0.2, divA * 0.7)
     end)
-    self.channelBtn:SetScript("OnClick", function()
-        self:SetChannel(nextChannel(self.currentChannel))
+    self.channelBtn:SetScript("OnClick", function(_, button)
+        if button == "RightButton" then
+            self:SetChannel(prevChannel(self.currentChannel))
+        else
+            self:SetChannel(nextChannel(self.currentChannel))
+        end
         self.channelBtn._text:SetText(CHANNEL_LABEL[self.currentChannel])
     end)
 
@@ -553,9 +599,9 @@ function ChatBoxWidget:BuildUI(opts)
     end)
 
     -- Message edit box
-    self.msgEdit = CreateInputBox(self.host, 320, 22, "Type a message…")
+    self.msgEdit = CreateInputBox(self.host, 340, 22, "Type a message…")
     self.msgEdit:SetPoint("LEFT", self.targetEdit, "RIGHT", 6, 0)
-    self.msgEdit:SetPoint("RIGHT", self.host, "RIGHT", -86, 0)
+    self.msgEdit:SetPoint("RIGHT", self.host, "RIGHT", -66, 0)
     local msgEditBox = self.msgEdit._editBox
     msgEditBox:HookScript("OnEnterPressed", function()
         self:_DoSend(msgEditBox:GetText())
@@ -583,19 +629,28 @@ function ChatBoxWidget:BuildUI(opts)
     self.sendBtn:SetSize(64, 22)
     self.sendBtn:SetPoint("RIGHT", self.host, "RIGHT", -8, 0)
     
-    -- Button background
+    -- Button background (TextButton style, same as channelBtn)
     local sendBg = self.sendBtn:CreateTexture(nil, "BACKGROUND")
     sendBg:SetAllPoints()
-    sendBg:SetColorTexture(0.15, 0.2, 0.15, 0.85)
+    local sr, sg, sb, sa = C.Get and C.Get("background") or 0.10,0.10,0.14,0.95
+    sendBg:SetColorTexture(sr, sg, sb, sa)
     self.sendBtn._bg = sendBg
-    
-    -- Button border (highlight color)
-    local sendBorder = self.sendBtn:CreateTexture(nil, "BORDER")
-    sendBorder:SetPoint("TOPLEFT", self.sendBtn, "TOPLEFT", 1, -1)
-    sendBorder:SetPoint("TOPRIGHT", self.sendBtn, "TOPRIGHT", -1, -1)
-    sendBorder:SetHeight(1)
-    sendBorder:SetColorTexture(0.4, 0.5, 0.4, 0.7)
-    self.sendBtn._border = sendBorder
+
+    -- Button border (TextButton style, top and bottom)
+    local divR2, divG2, divB2, divA2 = C.Get and C.Get("divider") or 0.90,0.80,0.60,0.85
+    local topBorder2 = self.sendBtn:CreateTexture(nil, "BORDER")
+    topBorder2:SetPoint("TOPLEFT", self.sendBtn, "TOPLEFT", 1, -1)
+    topBorder2:SetPoint("TOPRIGHT", self.sendBtn, "TOPRIGHT", -1, -1)
+    topBorder2:SetHeight(1)
+    topBorder2:SetColorTexture(divR2 * 0.6, divG2 * 0.6, divB2 * 0.6, divA2 * 0.8)
+    self.sendBtn._topBorder = topBorder2
+
+    local bottomBorder2 = self.sendBtn:CreateTexture(nil, "BORDER")
+    bottomBorder2:SetPoint("BOTTOMLEFT", self.sendBtn, "BOTTOMLEFT", 1, 1)
+    bottomBorder2:SetPoint("BOTTOMRIGHT", self.sendBtn, "BOTTOMRIGHT", -1, 1)
+    bottomBorder2:SetHeight(1)
+    bottomBorder2:SetColorTexture(divR2 * 0.2, divG2 * 0.2, divB2 * 0.2, divA2 * 0.7)
+    self.sendBtn._bottomBorder = bottomBorder2
     
     -- Button text
     local sendText = self.sendBtn:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -609,12 +664,18 @@ function ChatBoxWidget:BuildUI(opts)
     -- Hover effects (slightly brighter green)
     self.sendBtn:EnableMouse(true)
     self.sendBtn:SetScript("OnEnter", function(self)
-        self._bg:SetColorTexture(0.2, 0.28, 0.2, 0.95)
-        self._border:SetColorTexture(0.55, 0.7, 0.55, 0.9)
+        local sr, sg, sb, sa = C.Get and C.Get("background") or 0.10,0.10,0.14,0.95
+        self._bg:SetColorTexture(sr * 0.6, sg * 0.6, sb * 0.6, sa * 0.9)
+        local divR2, divG2, divB2, divA2 = C.Get and C.Get("divider") or 0.90,0.80,0.60,0.85
+        self._topBorder:SetColorTexture(divR2 * 0.4, divG2 * 0.4, divB2 * 0.4, divA2 * 0.6)
+        self._bottomBorder:SetColorTexture(divR2 * 0.15, divG2 * 0.15, divB2 * 0.15, divA2 * 0.5)
     end)
     self.sendBtn:SetScript("OnLeave", function(self)
-        self._bg:SetColorTexture(0.15, 0.2, 0.15, 0.85)
-        self._border:SetColorTexture(0.4, 0.5, 0.4, 0.7)
+        local sr, sg, sb, sa = C.Get and C.Get("background") or 0.10,0.10,0.14,0.95
+        self._bg:SetColorTexture(sr, sg, sb, sa)
+        local divR2, divG2, divB2, divA2 = C.Get and C.Get("divider") or 0.90,0.80,0.60,0.85
+        self._topBorder:SetColorTexture(divR2 * 0.6, divG2 * 0.6, divB2 * 0.6, divA2 * 0.8)
+        self._bottomBorder:SetColorTexture(divR2 * 0.2, divG2 * 0.2, divB2 * 0.2, divA2 * 0.7)
     end)
     self.sendBtn:SetScript("OnClick", function()
         self:_DoSend(msgEditBox:GetText())
@@ -708,7 +769,7 @@ function ChatBoxWidget:BuildUI(opts)
     debugFilterIcon:SetTexture("Interface\\Addons\\RPEngine\\UI\\Textures\\filter.png")
     
     -- Quick filter buttons (shows messages from this channel)
-    local quickChannels = { "SAY", "YELL", "EMOTE", "PARTY", "RAID", "GUILD", "OFFICER", "WHISPER", "NPC", "DICE" }
+    local quickChannels = { "SAY", "YELL", "EMOTE", "PARTY", "RAID", "GUILD", "OFFICER", "WHISPER", "NPC", "DICE", "COMBAT" }
     self._quickChannels = quickChannels  -- Store reference for use in closures
     local buttonWidth = math.floor((quickChannelsFrame:GetWidth() - 40) / #quickChannels)  -- Reduced width to account for icon
     
@@ -720,7 +781,42 @@ function ChatBoxWidget:BuildUI(opts)
     for idx, channel in ipairs(quickChannels) do
         local btn = CreateFrame("Button", "RPE_ChatBox_FilterBtn_" .. channel, quickChannelsFrame)
         btn:SetSize(24, 20)
-        btn:SetPoint("LEFT", quickChannelsFrame, "LEFT", 30 + (idx - 1) * (26), 0)
+        -- Add extra gap before DICE and COMBAT buttons
+        local gap = 0
+        if channel == "DICE" or channel == "COMBAT" then
+            gap = 16  -- pixels of extra space
+        end
+        btn:SetPoint("LEFT", quickChannelsFrame, "LEFT", 30 + (idx - 1) * (26) + gap, 0)
+
+        -- Tooltip text for each channel
+        local channelTooltips = {
+            SAY = "Filter Say messages",
+            YELL = "Filter Yell messages",
+            EMOTE = "Filter Emote messages",
+            PARTY = "Filter Party messages",
+            RAID = "Filter Raid messages",
+            GUILD = "Filter Guild messages",
+            OFFICER = "Filter Officer messages",
+            WHISPER = "Filter Whisper messages",
+            NPC = "Filter NPC messages",
+            DICE = "Filter Dice roll results",
+            COMBAT = "Filter Combat messages",
+        }
+
+        btn:SetScript("OnEnter", function(self)
+            self._bg:SetColorTexture(0.15, 0.15, 0.18, 0.9)
+            self._border:SetColorTexture(0.5, 0.5, 0.55, 0.8)
+            if RPE and RPE.Common and RPE.Common.ShowTooltip then
+                local desc = channelTooltips[channel] or ("Filter %s messages"):format(channel)
+                RPE.Common:ShowTooltip(self, { title = "", lines = { { text = desc } } })
+            end
+        end)
+        btn:SetScript("OnLeave", function(self)
+            self._widget:_UpdateFilterButtons()
+            if RPE and RPE.Common and RPE.Common.HideTooltip then
+                RPE.Common:HideTooltip()
+            end
+        end)
         
         -- Button background
         local bg = btn:CreateTexture(nil, "BACKGROUND")
@@ -741,21 +837,17 @@ function ChatBoxWidget:BuildUI(opts)
         text:SetAllPoints(btn)
         text:SetJustifyH("CENTER")
         text:SetJustifyV("MIDDLE")
-        text:SetText(channel:sub(1, 1))  -- First letter only
+        if channel == "NPC" then
+            text:SetText("N")
+        elseif channel == "COMBAT" then
+            text:SetText("C")
+        else
+            text:SetText(channel:sub(1, 1))  -- First letter only
+        end
         local mutedR, mutedG, mutedB, mutedA = GetColor("textMuted", {0.75, 0.75, 0.80, 1.00})
         text:SetTextColor(mutedR, mutedG, mutedB, mutedA)
         btn._text = text
         
-        -- Hover and active state
-        btn:EnableMouse(true)
-        btn:SetScript("OnEnter", function(self)
-            self._bg:SetColorTexture(0.15, 0.15, 0.18, 0.9)
-            self._border:SetColorTexture(0.5, 0.5, 0.55, 0.8)
-        end)
-        btn:SetScript("OnLeave", function(self)
-            -- Use _UpdateFilterButtons to ensure consistent state
-            self._widget:_UpdateFilterButtons()
-        end)
         btn:SetScript("OnClick", function(self)
             -- Toggle filter for this channel
             local w = self._widget
@@ -904,6 +996,7 @@ function ChatBoxWidget:BuildUI(opts)
         WHISPER = "WHISPER", WHISPER_INFORM = "WHISPER",
         NPC = "NPC",
         DICE = "DICE",
+        COMBAT = "COMBAT",
     }
     
     -- Function to check if a message should be displayed based on current filters
@@ -963,7 +1056,7 @@ function ChatBoxWidget:BuildUI(opts)
         end
     end
 
-    -- hook UIParent show/hide
+    -- hook UIParent Filter
     if UIParent then
         UIParent:HookScript("OnShow", UpdateChatBoxVisibility)
         UIParent:HookScript("OnHide", UpdateChatBoxVisibility)
@@ -1145,11 +1238,8 @@ end
 -- @param message string The reaction/roll outcome message
 function ChatBoxWidget:PushDiceMessage(message)
     if not self.log or not message then return end
-    
     -- Dice message color (grey/silver)
     local r, g, b = 0.82, 0.82, 0.82  -- Silver/grey
-    
-    -- Store in chat history with DICE channel type
     table.insert(self._chatHistory, {
         text = message,
         r = r,
@@ -1158,15 +1248,33 @@ function ChatBoxWidget:PushDiceMessage(message)
         ctype = "DICE",
         level = "Info",
     })
-    
-    -- Determine if message should be shown based on current filter state
     local shouldShow = true
     if self._filterMode and self._chatFilters then
-        -- Show if DICE is NOT filtered out
         shouldShow = not self._chatFilters["DICE"]
     end
-    
-    -- Show on Chat tab if passes filter
+    if self.currentTab == "Chat" and shouldShow then
+        self.log:AddMessage(message or "", r, g, b)
+    end
+end
+
+--- Push a combat message to the chat log (with COMBAT filter support)
+-- @param message string The combat outcome message
+function ChatBoxWidget:PushCombatMessage(message)
+    if not self.log or not message then return end
+    -- Combat message color (light red)
+    local r, g, b = 1.0, 0.4, 0.4  -- Light red
+    table.insert(self._chatHistory, {
+        text = message,
+        r = r,
+        g = g,
+        b = b,
+        ctype = "COMBAT",
+        level = "Info",
+    })
+    local shouldShow = true
+    if self._filterMode and self._chatFilters then
+        shouldShow = not self._chatFilters["COMBAT"]
+    end
     if self.currentTab == "Chat" and shouldShow then
         self.log:AddMessage(message or "", r, g, b)
     end

@@ -27,25 +27,13 @@ _G.RPE_UI.Windows.ProfessionSheet = ProfessionSheet
 ProfessionSheet.__index = ProfessionSheet
 ProfessionSheet.Name = "ProfessionSheet"
 
--- Icons (static)
-local PROF_ICONS = {
-    Cooking        = "Interface\\Icons\\INV_Misc_Food_15",
-    Fishing        = "Interface\\Icons\\Trade_Fishing",
-    ["First Aid"]  = "Interface\\Icons\\Spell_Holy_SealOfSacrifice",
-    Alchemy        = "Interface\\Icons\\Trade_Alchemy",
-    Blacksmithing  = "Interface\\Icons\\Trade_BlackSmithing",
-    Enchanting     = "Interface\\Icons\\Trade_Engraving",
-    Engineering    = "Interface\\Icons\\Trade_Engineering",
-    Herbalism      = "Interface\\Icons\\Trade_Herbalism",
-    Leatherworking = "Interface\\Icons\\Trade_Leatherworking",
-    Mining         = "Interface\\Icons\\Trade_Mining",
-    Skinning       = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01",
-    Tailoring      = "Interface\\Icons\\Trade_Tailoring",
-}
-local ALL_PROFS = {
-    "Cooking","Fishing","First Aid",
-    "Alchemy","Blacksmithing","Enchanting","Engineering",
-    "Herbalism","Leatherworking","Mining","Skinning","Tailoring",
+-- Get icons and profession list from Common.lua
+local Common = RPE and RPE.Common or {}
+local PROF_ICONS = Common.ProfessionIcons or {}
+local ALL_PROFS = Common.ProfessionList or {
+    "Cooking", "Fishing", "First Aid",
+    "Alchemy", "Blacksmithing", "Enchanting", "Engineering",
+    "Leatherworking", "Tailoring", "Inscription", "Jewelcrafting", "Mining", "Skinning", "Herbalism",
 }
 
 local function safeProf(p, id)
@@ -53,6 +41,7 @@ local function safeProf(p, id)
     return {
         id      = id or p.id or "",
         level   = tonumber(p.level) or 0,
+        learned = p.learned or false,
         spec    = p.spec or "",
         recipes = (type(p.recipes)=="table" and p.recipes) or {},
     }
@@ -70,11 +59,21 @@ local function tipHide() if GameTooltip then GameTooltip:Hide() end end
 function ProfessionSheet:BuildUI(opts)
     self.profile = RPE.Profile.DB.GetOrCreateActive()
     self.profile.professions = self.profile.professions or {}
+    
+    -- Ensure all professions are properly initialized with safeProf
+    -- This handles both legacy storage (cooking, fishing, firstaid, profession1, profession2)
+    -- and new storage (normalized profession names like alchemy, blacksmithing, etc.)
+    for profName in pairs(self.profile.professions) do
+        local prof = self.profile.professions[profName]
+        -- Get the display name by looking it up in Common.ProfessionIcons or reconstructing it
+        local displayName = prof.id or profName
+        self.profile.professions[profName] = safeProf(prof, displayName)
+    end
+    
+    -- Also ensure the utility professions exist
     self.profile.professions.cooking     = safeProf(self.profile.professions.cooking, "Cooking")
     self.profile.professions.fishing     = safeProf(self.profile.professions.fishing, "Fishing")
     self.profile.professions.firstaid    = safeProf(self.profile.professions.firstaid, "First Aid")
-    self.profile.professions.profession1 = safeProf(self.profile.professions.profession1)
-    self.profile.professions.profession2 = safeProf(self.profile.professions.profession2)
 
     self._catStates = {}
     self._craftQty  = 1
@@ -104,6 +103,28 @@ function ProfessionSheet:BuildUI(opts)
         width=1, height=16,
     })
     self.bodyGroup:Add(self.title)
+
+    -- Progress bar for profession skill level (0-300)
+    local ProgressBar = RPE_UI and RPE_UI.Prefabs and RPE_UI.Prefabs.ProgressBar
+    if ProgressBar then
+        self.skillProgress = ProgressBar:New("RPE_PS_SkillProgress", {
+            parent = self.bodyGroup,
+            width = 300,
+            height = 12,
+            showLabel = true,
+            style = "progress_xp"
+        })
+        self.bodyGroup:Add(self.skillProgress)
+        
+        -- Enable left click on progress bar to set random level
+        self.skillProgress.frame:EnableMouse(true)
+        self.skillProgress.frame:SetScript("OnMouseDown", function(_, button)
+            if button == "LeftButton" and self._currentProfession then
+                self._currentProfession.level = math.random(0, 300)
+                self:_updateProgressBar(self._currentProfession)
+            end
+        end)
+    end
 
     self.split = HGroup:New("RPE_PS_SplitRow", {
         parent=self.bodyGroup, spacingX=32, alignV="TOP", autoSize=true,
@@ -157,11 +178,16 @@ end
 -- ============================================================================
 -- Icons
 local function profOwned(self, name)
-    if name=="Cooking"   then return true,self.profile.professions.cooking end
-    if name=="Fishing"   then return true,self.profile.professions.fishing end
-    if name=="First Aid" then return true,self.profile.professions.firstaid end
-    if self.profile.professions.profession1.id==name then return true,self.profile.professions.profession1 end
-    if self.profile.professions.profession2.id==name then return true,self.profile.professions.profession2 end
+    -- Normalize profession name for storage key lookup (lowercase, no spaces)
+    local profKey = name:lower():gsub("%s+", "")
+    
+    -- Look up profession by normalized key
+    if self.profile.professions and self.profile.professions[profKey] then
+        local prof = self.profile.professions[profKey]
+        local owned = prof and prof.learned
+        return owned, prof
+    end
+    
     return false, safeProf(nil, name)
 end
 
@@ -173,11 +199,15 @@ function ProfessionSheet:DrawIconRow()
         local tex = PROF_ICONS[name] or "Interface\\Icons\\INV_Misc_QuestionMark"
         local btn = IconBtn:New("RPE_PS_Icon_"..name,{
             parent=self.iconRow, width=20,height=20, icon=tex,
+            hasBorder=false, noBorder=true,
+            hasBackground=false, noBackground=true,
             onClick=function()
                 if hasIt then
                     -- switch profession: clear any selected recipe and craft panel
                     self.selectedRecipe = nil
+                    self._currentProfession = prof
                     self.title:SetText(prof.id)
+                    self:_updateProgressBar(prof)
                     self:PopulateRecipes(prof)
                     self:BuildCraftPanel(nil)      -- empty/right panel
                     self:_syncColumnHeights()
@@ -185,10 +215,21 @@ function ProfessionSheet:DrawIconRow()
             end
         })
         self.iconRow:Add(btn)
-        if not hasIt then btn:Lock() end
+        if not hasIt then 
+            btn:Lock()
+            -- Desaturate unlearned profession icons
+            if btn.icon then
+                btn.icon:SetDesaturated(true)
+                btn.icon:SetAlpha(0.4)
+            end
+        end
         btn.frame:SetScript("OnEnter",function()
             if hasIt then
-                tipShow(btn.frame,string.format("%s\nLevel %d\nSpec: %s",name,prof.level or 0,prof.spec or "—"))
+                local tooltip = string.format("%s\nLevel %d",name,prof.level or 0)
+                if prof.spec and prof.spec ~= "" then
+                    tooltip = tooltip .. "\nSpec: " .. prof.spec
+                end
+                tipShow(btn.frame, tooltip)
             else
                 tipShow(btn.frame,name.." (Not learned)")
             end
@@ -211,15 +252,107 @@ function ProfessionSheet:_syncColumnHeights()
     end
 end
 
+function ProfessionSheet:_updateProgressBar(prof)
+    if not prof or not self.skillProgress then return end
+    
+    local level = tonumber(prof.level) or 0
+    local maxLevel = 300
+    
+    -- Update progress bar value (animates smoothly)
+    self.skillProgress:SetValue(level, maxLevel)
+end
+
 function ProfessionSheet:OnSelectRecipe(recipe)
     self.selectedRecipe=recipe
     self:BuildCraftPanel(recipe)
     self:_syncColumnHeights()
 end
 
+-- Check if player can craft the recipe with given quantity
+function ProfessionSheet:_canCraftRecipe(recipe, qty)
+    if not recipe or not self.profile then return false end
+    qty = math.max(1, tonumber(qty) or 1)
+    
+    -- Check required reagents for full quantity
+    local reagents = recipe.reagents or {}
+    for _, mat in ipairs(reagents) do
+        local need = (tonumber(mat.qty) or 1) * qty
+        if not self.profile:HasItem(tostring(mat.id), need) then
+            return false
+        end
+    end
+    return true
+end
+
 -- ============================================================================
 -- Recipe list (with known-recipe highlighting)
 function ProfessionSheet:_addCategory(parent, catKey, catTitle, items, prof, knownSet)
+    -- First, filter recipes to only those with valid items in the registry
+    local validRecipes = {}
+    local invalidRecipes = {}
+    local DBG = _G.RPE and _G.RPE.Debug
+    local ItemRegistry = RPE.Core and RPE.Core.ItemRegistry
+    
+    for _, r in ipairs(items or {}) do
+        -- Use outputItemId directly - it's the actual item ID in the recipe
+        local itemIdToCheck = r.outputItemId
+        local itemExists = ItemRegistry and ItemRegistry:Get(itemIdToCheck)
+        
+        if itemExists then
+            table.insert(validRecipes, r)
+        else
+            table.insert(invalidRecipes, r)
+            -- Debug: log what we're checking
+            if DBG then
+                DBG:Internal(("ProfessionSheet: Checking recipe '%s' (%s) with outputItemId '%s'"):format(r.name or r.id, r.id, itemIdToCheck))
+                if not ItemRegistry then
+                    DBG:Internal("  ItemRegistry is nil!")
+                else
+                    local allItems = ItemRegistry:All()
+                    if not allItems then
+                        DBG:Internal("  ItemRegistry:All() returned nil!")
+                    else
+                        local count = 0
+                        for _ in pairs(allItems) do count = count + 1 end
+                        DBG:Internal(("  ItemRegistry has %d items"):format(count))
+                        if count == 0 then
+                            DBG:Internal("  WARNING: ItemRegistry is EMPTY!")
+                        else
+                            -- Show first few items for debugging
+                            local shown = 0
+                            for id in pairs(allItems) do
+                                if shown < 5 then
+                                    DBG:Internal(("    - %s"):format(id))
+                                    shown = shown + 1
+                                end
+                            end
+                            -- Check if our item is in the list
+                            if allItems[itemIdToCheck] then
+                                DBG:Internal(("  FOUND '%s' in ItemRegistry!"):format(itemIdToCheck))
+                            else
+                                DBG:Internal(("  '%s' NOT found in ItemRegistry"):format(itemIdToCheck))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Warn about invalid recipes
+    if #invalidRecipes > 0 then
+        if DBG then
+            for _, r in ipairs(invalidRecipes) do
+                DBG:Warning(("ProfessionSheet: Recipe '%s' (%s) has invalid output item '%s' (not in ItemRegistry)"):format(r.name or r.id, r.id, r.outputItemId))
+            end
+        end
+    end
+    
+    -- If no valid recipes, don't display the category
+    if #validRecipes == 0 then
+        return
+    end
+    
     local head = HGroup:New("RPE_PS_CatHead_" .. catKey, {
         parent = parent,
         height = 12,
@@ -266,12 +399,15 @@ function ProfessionSheet:_addCategory(parent, catKey, catTitle, items, prof, kno
     parent:Add(list)
 
     local playerSkill = (prof and prof.level) or 0
-    for i, r in ipairs(items or {}) do
+    for i, r in ipairs(validRecipes) do
         local isKnown = knownSet[r.id] or false
         local color
-        if isKnown then
-            color = "|cff808080" -- grey for known
+        
+        -- "Unlearned" category: always show in grey
+        if catTitle == "Unlearned" then
+            color = "|cff808080" -- grey for unlearned
         else
+            -- Learned recipes: color by skill level
             color = Common.GetRecipeColor and Common:GetRecipeColor(playerSkill, r.skill) or "|cffffffff"
         end
         local label = string.format("%s%s|r", color, r.name)
@@ -341,12 +477,38 @@ function ProfessionSheet:PopulateRecipes(prof)
         knownSet[id] = true
     end
 
-    -- Build categories
+    -- Build categories for LEARNED recipes only
     for cat, items in pairs(cats) do
-        table.sort(items, function(a, b)
+        -- Filter to only recipes the player knows
+        local learnedInCategory = {}
+        for _, r in ipairs(items) do
+            if knownSet[r.id] then
+                table.insert(learnedInCategory, r)
+            end
+        end
+        
+        -- Only display category if it has learned recipes
+        if #learnedInCategory > 0 then
+            table.sort(learnedInCategory, function(a, b)
+                return (a.name or a.id) < (b.name or b.id)
+            end)
+            self:_addCategory(self.recipeList, prof.id .. "_" .. cat, cat, learnedInCategory, prof, knownSet)
+        end
+    end
+
+    -- Build "Unlearned" category for recipes player doesn't know
+    local unlearnedRecipes = {}
+    for _, r in pairs(recipes) do
+        if not knownSet[r.id] then
+            table.insert(unlearnedRecipes, r)
+        end
+    end
+    
+    if #unlearnedRecipes > 0 then
+        table.sort(unlearnedRecipes, function(a, b)
             return (a.name or a.id) < (b.name or b.id)
         end)
-        self:_addCategory(self.recipeList, prof.id .. "_" .. cat, cat, items, prof, knownSet)
+        self:_addCategory(self.recipeList, prof.id .. "_Unlearned", "Unlearned", unlearnedRecipes, prof, knownSet)
     end
 
     self:_syncColumnHeights()
@@ -456,7 +618,8 @@ function ProfessionSheet:BuildCraftPanel(recipe)
         local outItem   = r:GetOutputItem()
         outIcon         = outItem and outItem.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
         outName         = outItem and outItem.name or r.outputItemId
-        outItemDef      = (ItemRegistry and (outItem and outItem.id or r.outputItemId)) and ItemRegistry:Get(outItem.id or r.outputItemId) or nil
+        -- Use outputItemId directly for registry lookup
+        outItemDef      = (ItemRegistry and r.outputItemId) and ItemRegistry:Get(r.outputItemId) or nil
         local qualKey   = r.quality or "common"
         outName         = (Common.ColorByQuality and Common:ColorByQuality(outName, qualKey)) or outName
     else
@@ -609,6 +772,11 @@ function ProfessionSheet:BuildCraftPanel(recipe)
             RPE.Core.Crafting:CraftRecipe(r, qty)
         end
     }); actionRow:Add(craftBtn)
+    
+    -- Disable craft button if not enough materials
+    if not self:_canCraftRecipe(r, self._craftQty or 1) then
+        craftBtn:Lock()
+    end
 
     local craftAllBtn = TextBtn:New("RPE_PS_Craft_DoCraftAll", {
         parent = actionRow, width = 50, height = 26, text = "All",
@@ -617,6 +785,11 @@ function ProfessionSheet:BuildCraftPanel(recipe)
             RPE.Core.Crafting:CraftRecipeAll(r)
         end
     }); actionRow:Add(craftAllBtn)
+    
+    -- Disable "All" button if can't craft at all
+    if not self:_canCraftRecipe(r, 1) then
+        craftAllBtn:Lock()
+    end
 
     -- lock both panes to the same fixed height
     if self.leftPane and self.leftPane.frame then self.leftPane.frame:SetHeight(self._paneH) end
@@ -628,12 +801,21 @@ function ProfessionSheet:Refresh()
     -- Ensure we always read the current active profile instance
     self.profile = RPE.Profile.DB.GetOrCreateActive()
 
+    -- Rebuild the icon row to reflect updated profession learned status
+    self:DrawIconRow()
+
     -- Rebuild the right panel for the current selection (or empty state)
     if self.selectedRecipe then
         self:BuildCraftPanel(self.selectedRecipe)
     else
         self:BuildCraftPanel(nil)
     end
+    
+    -- Update progress bar if a profession is currently selected
+    if self._currentProfession then
+        self:_updateProgressBar(self._currentProfession)
+    end
+    
     self:_syncColumnHeights()
 end
 

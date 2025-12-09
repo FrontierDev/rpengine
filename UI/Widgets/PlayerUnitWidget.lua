@@ -250,6 +250,50 @@ function PlayerUnitWidget:Refresh()
         if bar and bar.frame and bar.frame:IsShown() then
             local cur, max = Resources:Get(resId)
             bar:SetValue(cur, max)
+            
+            -- Show absorption on HEALTH bar
+            if resId == "HEALTH" then
+                local ev = RPE.Core.ActiveEvent
+                if ev and ev.units then
+                    local localPlayerKey = ev.localPlayerKey
+                    local playerUnit = localPlayerKey and ev.units[localPlayerKey]
+                    local totalAbsorption = 0
+                    
+                    if playerUnit then
+                        if RPE and RPE.Debug and RPE.Debug.Internal then
+                            RPE.Debug:Internal(string.format("[PlayerUnitWidget] Player unit found: %s, has absorption: %s", 
+                                playerUnit.name or "unknown", 
+                                playerUnit.absorption and "YES" or "NO"))
+                        end
+                        
+                        if playerUnit.absorption then
+                            for shieldId, shield in pairs(playerUnit.absorption) do
+                                if shield.amount then
+                                    totalAbsorption = totalAbsorption + shield.amount
+                                    if RPE and RPE.Debug and RPE.Debug.Internal then
+                                        RPE.Debug:Internal(string.format("[PlayerUnitWidget] Shield %s: amount=%d", shieldId, shield.amount))
+                                    end
+                                end
+                            end
+                        end
+                    else
+                        if RPE and RPE.Debug and RPE.Debug.Internal then
+                            RPE.Debug:Internal("[PlayerUnitWidget] Player unit NOT found")
+                        end
+                    end
+                    
+                    if RPE and RPE.Debug and RPE.Debug.Internal then
+                        RPE.Debug:Internal(string.format("[PlayerUnitWidget] Setting HEALTH absorption: %d / max %d", totalAbsorption, max))
+                    end
+                    
+                    bar:SetAbsorption(totalAbsorption, max)
+                else
+                    if RPE and RPE.Debug and RPE.Debug.Internal then
+                        RPE.Debug:Internal("[PlayerUnitWidget] No active event or units table")
+                    end
+                    bar:SetAbsorption(0, max)
+                end
+            end
         end
     end
     
@@ -608,6 +652,18 @@ function PlayerUnitWidget:SetTemporaryStats(unit)
             bar:Hide()
         else
             bar:SetValue(unit.hp or 0, unit.hpMax or 1)
+            
+            -- Show NPC absorption on health bar
+            local totalAbsorption = 0
+            if unit.absorption then
+                for _, shield in pairs(unit.absorption) do
+                    if shield.amount then
+                        totalAbsorption = totalAbsorption + shield.amount
+                    end
+                end
+            end
+            bar:SetAbsorption(totalAbsorption, unit.hpMax or 1)
+            
             bar:Show()
         end
     end

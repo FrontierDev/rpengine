@@ -679,7 +679,24 @@ function Event:OnStart(opts)
     -- Send health/max health update to everyone.
     local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
     local c, m = RPE.Core.Resources:Get("HEALTH")
-    if B and B.UpdateUnitHealth then B:UpdateUnitHealth(nil, RPE.Core.Resources:Get("HEALTH")) end
+    if B and B.UpdateUnitHealth then
+        -- Calculate total absorption from player's absorption shields
+        local totalAbsorption = 0
+        if self then
+            local localPlayerKey = self.localPlayerKey
+            if localPlayerKey and self.units and self.units[localPlayerKey] then
+                local playerUnit = self.units[localPlayerKey]
+                if playerUnit.absorption then
+                    for _, shield in pairs(playerUnit.absorption) do
+                        if shield.amount then
+                            totalAbsorption = totalAbsorption + shield.amount
+                        end
+                    end
+                end
+            end
+        end
+        B:UpdateUnitHealth(nil, c, m, totalAbsorption)
+    end
 
     -- Refresh action bar button states based on current equipment/inventory
     local actionBar = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
@@ -828,9 +845,47 @@ function Event:AdvanceClient(mode, units, subtext)
     end
 end
 
+--- Expire absorption shields that have reached their duration
+function Event:_ExpireAbsorptionShields()
+    if not (self and self.units) then return end
+    
+    for _, unit in pairs(self.units) do
+        if unit.absorption then
+            local expired = {}
+            
+            -- Check each shield for expiry
+            for shieldId, shield in pairs(unit.absorption) do
+                if shield.duration and shield.appliedTurn then
+                    local turnsElapsed = (self.turn or 0) - (shield.appliedTurn or 0)
+                    if turnsElapsed >= shield.duration then
+                        table.insert(expired, shieldId)
+                        if RPE and RPE.Debug and RPE.Debug.Internal then
+                            RPE.Debug:Internal(string.format(
+                                "[Event] Shield %s expired on %s (duration=%d, elapsed=%d turns)",
+                                shieldId, unit.name or tostring(unit.id), shield.duration, turnsElapsed
+                            ))
+                        end
+                    end
+                end
+            end
+            
+            -- Remove expired shields
+            for _, shieldId in ipairs(expired) do
+                unit.absorption[shieldId] = nil
+            end
+        end
+    end
+end
 
 function Event:OnTurn()
     self.turn = (self.turn or 0) + 1
+    
+    -- Reset help call flag at the start of each new turn
+    RPE.Core._helpCalledThisTurn = false
+    
+    -- Expire absorption shields at the start of each turn
+    self:_ExpireAbsorptionShields()
+    
     self.ticks = {}
     self.tickIndex = 0
 
@@ -896,6 +951,12 @@ function Event:OnTick()
         end
     end
 
+    -- Refresh action bar requirements at the start of each tick
+    local actionBar = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+    if actionBar and actionBar.RefreshRequirements then
+        actionBar:RefreshRequirements()
+    end
+
     if self.localPlayerKey then
         -- End the player's current turn if it was their turn last turn.
         if isPlayerTurn then self:OnPlayerTickEnd() end
@@ -921,6 +982,12 @@ end
 --- Called locally when the player's turn starts.
 function Event:OnPlayerTickStart()
     if not isPlayerTurn then isPlayerTurn = true end
+
+    -- Reset help flag for new turn
+    local prWidget = RPE.Core.Windows and RPE.Core.Windows.PlayerReactionWidget
+    if prWidget and prWidget._helpUsedThisTurn ~= nil then
+        prWidget._helpUsedThisTurn = false
+    end
 
     -- Ping the player and alert them that their turn started.
     local icon = (RPE.Common and RPE.Common.InlineIcons and RPE.Common.InlineIcons.Warning) or ""
@@ -999,6 +1066,12 @@ function Event:OnPlayerTickEnd()
     if RPE.Core.Resources:Has("ACTION") and RPE.Core.Resources:Has("BONUS_ACTION") then
         Resources:Set("ACTION", 0)
         Resources:Set("BONUS_ACTION", 0)
+    end
+
+    -- Refresh action bar requirements at the start of each tick
+    local actionBar = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+    if actionBar and actionBar.RefreshRequirements then
+        actionBar:RefreshRequirements()
     end
 
     self._auraManager:OnOwnerTurnEnd(self.localPlayerKey, self.turn)

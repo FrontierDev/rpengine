@@ -19,6 +19,10 @@ local CharacterStat = (RPE.Stats and RPE.Stats.CharacterStat) or error("Characte
 ---@field items table<number, {id:string, qty:number, mods:table|nil}>
 ---@field equipment table<string, string>      -- equipment: keyed by slot, value = item id
 ---@field traits string[]                      -- list of trait (aura) IDs
+---@field race string|nil                      -- selected race id
+---@field raceTraits string[]|nil              -- list of racial trait IDs
+---@field class string|nil                     -- selected class id
+---@field classTraits string[]|nil             -- list of class trait IDs
 ---@field notes string|nil
 ---@field createdAt number
 ---@field updatedAt number
@@ -27,9 +31,7 @@ local CharacterStat = (RPE.Stats and RPE.Stats.CharacterStat) or error("Characte
 ---@field professions {                       -- always present
 ---   cooking: CharacterProfession,
 ---   fishing: CharacterProfession,
----   firstaid: CharacterProfession,
----   profession1: CharacterProfession,       -- player-chosen
----   profession2: CharacterProfession }        -- player-chosen
+---   firstaid: CharacterProfession }        -- player-chosen
 local CharacterProfile = {}
 CharacterProfile.__index = CharacterProfile
 RPE.Profile.CharacterProfile = CharacterProfile
@@ -57,6 +59,7 @@ local function normalizeProfessions(profIn)
         return {
             id     = id or (existing and existing.id) or "",
             level  = (existing and tonumber(existing.level)) or 0,
+            learned = (existing and existing.learned) or (id and id ~= "" or false),
             spec   = (existing and existing.spec) or "",
             recipes= (existing and type(existing.recipes)=="table") and existing.recipes or {},
         }
@@ -64,11 +67,23 @@ local function normalizeProfessions(profIn)
 
     local out = {}
     local p = type(profIn)=="table" and profIn or {}
-    out.cooking     = makeProf("Cooking", p.cooking)
-    out.fishing     = makeProf("Fishing", p.fishing)
-    out.firstaid    = makeProf("First Aid", p.firstaid)
-    out.profession1 = makeProf(p.profession1 and p.profession1.id or "", p.profession1)
-    out.profession2 = makeProf(p.profession2 and p.profession2.id or "", p.profession2)
+    
+    -- Preserve all existing professions from profIn
+    for key, prof in pairs(p) do
+        out[key] = makeProf(prof.id, prof)
+    end
+    
+    -- Ensure utility professions exist (but don't overwrite if already present)
+    if not out.cooking then
+        out.cooking = makeProf("Cooking", p.cooking)
+    end
+    if not out.fishing then
+        out.fishing = makeProf("Fishing", p.fishing)
+    end
+    if not out.firstaid then
+        out.firstaid = makeProf("First Aid", p.firstaid)
+    end
+    
     return out
 end
 
@@ -127,6 +142,8 @@ function CharacterProfile:New(name, opts)
         equipment   = opts.equipment or {},  -- slot → itemId
         traits      = opts.traits or {},     -- list of trait aura IDs
         languages   = opts.languages or {},  -- language name → skill level (1-300)
+        race        = opts.race or nil,      -- selected race id
+        class       = opts.class or nil,     -- selected class id
         notes       = opts.notes or nil,
         createdAt   = opts.createdAt or now,
         updatedAt   = opts.updatedAt or now,
@@ -985,6 +1002,13 @@ function CharacterProfile:GetSpellRank(spellId)
     return tonumber(self.spells[spellId]) or 0
 end
 
+function CharacterProfile:ClearSpells()
+    self.spells = {}
+    touch(self)
+    RPE.Profile.DB.SaveProfile(self)
+    RPE.Debug:Print("Cleared all spells")
+end
+
 
 -------------------------------------------------------------------------------
 -- Profession / Recipe Knowledge API
@@ -1069,6 +1093,11 @@ function CharacterProfile:GetKnownRecipes(profession)
     return prof.recipes
 end
 
+--- Clear all professions from the character.
+function CharacterProfile:ClearProfessions()
+    self.professions = {}
+end
+
 -- --- Action Bar Handling. ----------------------------------------------------------
 
 function CharacterProfile:SetActionBarSlot(index, spellId, rank)
@@ -1123,6 +1152,8 @@ function CharacterProfile:ToTable()
         equipment = equipOut,
         traits    = self.traits or {},
         languages = self.languages or {},
+        race      = self.race,
+        class     = self.class,
         notes     = self.notes,
         createdAt = self.createdAt,
         updatedAt = self.updatedAt,
@@ -1142,6 +1173,8 @@ function CharacterProfile.FromTable(t)
         equipment = type(t.equipment) == "table" and t.equipment or {},
         traits    = type(t.traits) == "table" and t.traits or {},
         languages = type(t.languages) == "table" and t.languages or {},
+        race      = t.race,
+        class     = t.class,
         notes     = t.notes,
         createdAt = t.createdAt,
         updatedAt = t.updatedAt,

@@ -177,19 +177,3 @@ end
 C.RegisterPalette("Default", DEFAULT)
 
 -- Optional: a tiny slash helper to switch quickly: /rpepal <name>
-SLASH_RPEPALETTE1 = "/rpepal"
-SlashCmdList.RPEPALETTE = function(msg)
-    msg = (msg or ""):match("^%s*(.-)%s*$")
-    if msg == "" then
-        local list = table.concat(C.ListPalettes(), ", ")
-        return
-    end
-    if C.ApplyPalette(msg) then
-        -- If a profile exists, persist the choice immediately.
-        local prof = RPE and RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
-        if prof and prof.SetPaletteName then
-            prof:SetPaletteName(msg)
-        end
-    else
-    end
-end

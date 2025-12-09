@@ -381,6 +381,19 @@ function TargetWindow:_RebuildGrid()
                 if u.hp and u.hpMax then
                     portrait:SetHealth(u.hp, u.hpMax)
                 end
+                
+                -- Display absorption
+                if portrait.SetAbsorption then
+                    local totalAbsorption = 0
+                    if u.absorption then
+                        for _, shield in pairs(u.absorption) do
+                            if shield.amount then
+                                totalAbsorption = totalAbsorption + shield.amount
+                            end
+                        end
+                    end
+                    portrait:SetAbsorption(totalAbsorption)
+                end
 
                 if not isValid(u) then
                     portrait:SetDisabled(true)

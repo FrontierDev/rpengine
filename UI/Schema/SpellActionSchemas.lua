@@ -82,6 +82,14 @@ Schemas.SUMMON = {
     },
 }
 
+-- HIDE -----------------------------------------------------------------------
+Schemas.HIDE = {
+    key    = "HIDE",
+    fields = {
+        -- HIDE has no arguments; it hides the caster unit
+    },
+}
+
 -- REMOVE_AURA ----------------------------------------------------------------
 Schemas.REMOVE_AURA = {
     key    = "REMOVE_AURA",
@@ -96,6 +104,7 @@ Schemas.SHIELD = {
     fields = {
         { id="amount",  label="Amount",  type="input",  required=true, placeholder="e.g. 10 or 1d10+PROF" },
         { id="perRank", label="Per Rank", type="number", required=false, min=0, max=9999, step=1, default=0 },
+        { id="duration", label="Duration (turns)", type="number", required=false, min=1, max=100, step=1, default=1 },
     },
 }
 

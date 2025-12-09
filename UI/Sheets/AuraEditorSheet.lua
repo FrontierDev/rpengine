@@ -129,6 +129,15 @@ local function _buildAuraSchema(entryId, auraData, isEdit)
             ids         = _toCSV(auraData.immunity and auraData.immunity.ids),
             helpful     = auraData.immunity and auraData.immunity.helpful or false,
             harmful     = auraData.immunity and auraData.immunity.harmful or false,
+            damageSchools = _toCSV(auraData.immunity and auraData.immunity.damageSchools),
+        },
+
+        crowdControl = {
+            blockAllActions = auraData.crowdControl and auraData.crowdControl.blockAllActions or false,
+            blockActionsByTag = _toCSV(auraData.crowdControl and auraData.crowdControl.blockActionsByTag),
+            failAllDefences = auraData.crowdControl and auraData.crowdControl.failAllDefences or false,
+            failDefencesByStats = _toCSV(auraData.crowdControl and auraData.crowdControl.failDefencesByStats),
+            slowMovement = tonumber(auraData.crowdControl and auraData.crowdControl.slowMovement) or 0,
         },
 
         triggers = (function()
@@ -174,6 +183,7 @@ local function _buildAuraSchema(entryId, auraData, isEdit)
                     { id="hidden",      label="Hidden",       type="checkbox", default = auraData.hidden or false },
                     { id="unpurgable",  label="Unpurgable",   type="checkbox", default = auraData.unpurgable or false },
                     { id="uniqueByCaster", label="Unique Per Caster", type="checkbox", default = auraData.uniqueByCaster or false },
+                    { id="removeOnDamageTaken", label="Remove on Damage Taken", type="checkbox", default = auraData.removeOnDamageTaken or false },
                 }
             },
             {
@@ -217,11 +227,18 @@ local function _buildAuraSchema(entryId, auraData, isEdit)
             {
                 title = "Immunity",
                 elements = {
-                    { id="immunity.dispelTypes", label="Dispel Types (CSV)", type="input", default = defaults.immunity.dispelTypes },
-                    { id="immunity.tags",        label="Tags (CSV)",         type="input", default = defaults.immunity.tags },
-                    { id="immunity.ids",         label="IDs (CSV)",          type="input", default = defaults.immunity.ids },
+                    { id="immunity.damageSchools", label="Damage Schools", type="input", default = defaults.immunity.damageSchools },
+                    { id="immunity.dispelTypes", label="Aura Types", type="input", default = defaults.immunity.dispelTypes },
+                    { id="immunity.tags",        label="Aura Tags",         type="input", default = defaults.immunity.tags },
+                    { id="immunity.ids",         label="Aura IDs",          type="input", default = defaults.immunity.ids },
                     { id="immunity.helpful",     label="Block Helpful", type="checkbox", default = defaults.immunity.helpful },
                     { id="immunity.harmful",     label="Block Harmful", type="checkbox", default = defaults.immunity.harmful },
+                    { id="ccHeader",     label="Crowd Control",     type="label" },
+                    { id="crowdControl.blockAllActions", label="Block All Actions", type="checkbox", default = defaults.crowdControl.blockAllActions },
+                    { id="crowdControl.blockActionsByTag", label="Block by Tag", type="input", default = defaults.crowdControl.blockActionsByTag },
+                    { id="crowdControl.failAllDefences", label="Fail All Defences", type="checkbox", default = defaults.crowdControl.failAllDefences },
+                    { id="crowdControl.failDefencesByStats", label="Fail by Stat", type="input", default = defaults.crowdControl.failDefencesByStats },
+                    { id="crowdControl.slowMovement", label="Slow Movement (%)", type="number", default = defaults.crowdControl.slowMovement, min=0, max=100, step=5 },
                 }
             },
             {
@@ -295,6 +312,7 @@ local function _saveAuraValues(ds, targetId, v, isEdit, oldId)
         hidden      = not not v.hidden,
         unpurgable  = not not v.unpurgable,
         uniqueByCaster = not not v.uniqueByCaster,
+        removeOnDamageTaken = not not v.removeOnDamageTaken,
 
         duration    = duration,
         tick        = tick,
@@ -312,6 +330,15 @@ local function _saveAuraValues(ds, targetId, v, isEdit, oldId)
             ids         = _parseCSV(v["immunity.ids"]),
             helpful     = v["immunity.helpful"] or false,
             harmful     = v["immunity.harmful"] or false,
+            damageSchools = _parseCSV(v["immunity.damageSchools"]),
+        },
+
+        crowdControl = {
+            blockAllActions = not not v["crowdControl.blockAllActions"],
+            blockActionsByTag = _parseCSV(v["crowdControl.blockActionsByTag"]),
+            failAllDefences = not not v["crowdControl.failAllDefences"],
+            failDefencesByStats = _parseCSV(v["crowdControl.failDefencesByStats"]),
+            slowMovement = tonumber(v["crowdControl.slowMovement"]) or 0,
         },
 
         triggers    = (function()

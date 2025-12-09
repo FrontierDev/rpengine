@@ -127,13 +127,20 @@ local function evalGroupRequirements(ctx, cast, group)
     return false, "invalid logic", "REQ_INVALID_LOGIC"
 end
 
-local function runActions(ctx, cast, actions)
+local function runActions(ctx, cast, actions, groupId)
     -- Pre-compute hit checks for all targets across all actions in this group
     -- We'll cache hit results by (action, target) pair, AND cache the resolved targets
     local hitCache = {}  -- { [action] = { [targetRef] = {hit=bool, roll=num, ...} } }
     local targetCache = {}  -- { [action] = {targets} } - cache resolved targets to avoid double resolution
     
     local aggregatedPlayerTargets = {}  -- { [playerUnitId] = { unit, hitSystem, thresholdIds, attackRoll, isCrit, damageBySchool={}, auraEffects={} } }
+    local aggregatedNPCTargets = {}  -- { [npcUnitId] = { unit, damageBySchool={}, auraEffects={} } } - for NPC-to-NPC attacks
+    
+    -- Store groupId in cast for DAMAGE action to use
+    if groupId then
+        cast._currentGroupPhase = groupId
+        cast._groupId = groupId  -- Pass the exact groupId to use for pending damage
+    end
     
     for _, act in ipairs(actions or {}) do
         local targets = resolveActionTargets(cast, ctx, act)
@@ -186,6 +193,38 @@ local function runActions(ctx, cast, actions)
                 end
             end
         end
+        
+        -- Aggregate NPC target damage and aura effects across actions
+        if (act.key == "DAMAGE" or act.key == "APPLY_AURA") and act.key ~= "APPLY_AURA" then
+            -- Track DAMAGE actions for NPC targets
+            if hitTargets then
+                for _, tgt in ipairs(hitTargets) do
+                    local tgtUnit = RPE.Common:FindUnitByKey(tgt)
+                    if tgtUnit and tgtUnit.isNPC then
+                        local unitId = tgtUnit.id
+                        if not aggregatedNPCTargets[unitId] then
+                            aggregatedNPCTargets[unitId] = {
+                                unit = tgtUnit,
+                                damageBySchool = {},
+                                auraEffects = {},
+                            }
+                        end
+                        
+                        -- For DAMAGE, merge the damage
+                        if act.key == "DAMAGE" and playerTargetData then
+                            -- Find damage for this NPC target in playerTargetData
+                            for _, ptgtData in ipairs(playerTargetData) do
+                                if ptgtData.unit.id == unitId then
+                                    for school, amount in pairs(ptgtData.damageBySchool or {}) do
+                                        aggregatedNPCTargets[unitId].damageBySchool[school] = (aggregatedNPCTargets[unitId].damageBySchool[school] or 0) + amount
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end
     
     -- Now run actions, using cached hit results and cached targets
@@ -194,8 +233,9 @@ local function runActions(ctx, cast, actions)
         
         -- Filter out player targets for DAMAGE and APPLY_AURA actions
         -- (they're handled via broadcast/reaction system)
+        -- Also defer APPLY_AURA for NPC targets to apply after damage
         local applyTargets = targets
-        if act.key == "DAMAGE" or (act.key == "APPLY_AURA" and act.requiresHit) then
+        if act.key == "DAMAGE" or act.key == "APPLY_AURA" then
             applyTargets = {}
             
             for _, tgt in ipairs(targets) do
@@ -203,42 +243,116 @@ local function runActions(ctx, cast, actions)
                 local isNPC = tgtUnit and tgtUnit.isNPC
                 
                 if isNPC then
-                    -- NPC: include if it hit
-                    if hitCache[act.key] and hitCache[act.key][tgt] == true then
+                    -- NPC: include if it hit (for actions that requiresHit)
+                    if not act.requiresHit then
+                        -- No hit check required, apply to all targets
                         table.insert(applyTargets, tgt)
+                    elseif act.key == "DAMAGE" then
+                        -- DAMAGE always includes hits
+                        if hitCache[act.key] and hitCache[act.key][tgt] == true then
+                            table.insert(applyTargets, tgt)
+                        end
+                    elseif act.key == "APPLY_AURA" then
+                        -- For APPLY_AURA, check DAMAGE hit results
+                        local damageAct = nil
+                        for j = 1, i - 1 do
+                            if actions[j].key == "DAMAGE" then
+                                damageAct = actions[j]
+                                break
+                            end
+                        end
+                        
+                        if damageAct and hitCache[damageAct.key] and hitCache[damageAct.key][tgt] == true then
+                            table.insert(applyTargets, tgt)
+                        end
                     end
                 end
                 -- Player targets: skip entirely (handled via broadcast/reaction system)
             end
             
-            if act.key == "APPLY_AURA" and act.requiresHit then
-                -- Also need to use DAMAGE hit results
-                local damageAct = nil
-                for j = 1, i - 1 do
-                    if actions[j].key == "DAMAGE" then
-                        damageAct = actions[j]
-                        break
+            if act.key == "APPLY_AURA" then
+                -- Defer BOTH player and NPC aura applications
+                -- Collect them instead of running immediately
+                for _, tgt in ipairs(targets) do
+                    local tgtUnit = RPE.Common:FindUnitByKey(tgt)
+                    if tgtUnit and tgtUnit.isNPC then
+                        -- Collect NPC aura effect for deferred application after damage
+                        local unitId = tgtUnit.id
+                        if not aggregatedNPCTargets[unitId] then
+                            aggregatedNPCTargets[unitId] = {
+                                unit = tgtUnit,
+                                damageBySchool = {},
+                                auraEffects = {},
+                            }
+                        end
+                        
+                        -- Check if this aura should be applied (hit requirement)
+                        local shouldApply = false
+                        if not act.requiresHit then
+                            shouldApply = true
+                        else
+                            -- Check DAMAGE hit results
+                            local damageAct = nil
+                            for j = 1, i - 1 do
+                                if actions[j].key == "DAMAGE" then
+                                    damageAct = actions[j]
+                                    break
+                                end
+                            end
+                            if damageAct and hitCache[damageAct.key] and hitCache[damageAct.key][tgt] then
+                                shouldApply = hitCache[damageAct.key][tgt] == true
+                            end
+                        end
+                        
+                        if shouldApply then
+                            local effectData = {
+                                auraId = (act.args and act.args.auraId) or "unknown",
+                                actionKey = "APPLY_AURA",
+                                argsJSON = act.args and serializeArgs(act.args) or "",
+                            }
+                            table.insert(aggregatedNPCTargets[unitId].auraEffects, effectData)
+                            
+                            if RPE and RPE.Debug and RPE.Debug.Print then
+                                RPE.Debug:Internal(('[SpellCast] Deferring APPLY_AURA \'%s\' for NPC %d'):format(
+                                    act.args and act.args.auraId or "?",
+                                    unitId
+                                ))
+                            end
+                        end
+                    elseif tgtUnit and not tgtUnit.isNPC then
+                        -- For players, defer aura application via broadcast
+                        -- Collect aura effect for inclusion in AttackSpell broadcast
+                        local unitId = tgtUnit.id
+                        if not aggregatedPlayerTargets[unitId] then
+                            aggregatedPlayerTargets[unitId] = {
+                                unit = tgtUnit,
+                                hitSystem = "complex",  -- Default, will be overwritten by DAMAGE
+                                thresholdIds = {},
+                                attackRoll = 0,
+                                isCrit = false,
+                                damageBySchool = {},
+                                auraEffects = {},
+                            }
+                        end
+                        
+                        local effectData = {
+                            auraId = (act.args and act.args.auraId) or "unknown",
+                            actionKey = "APPLY_AURA",
+                            argsJSON = act.args and serializeArgs(act.args) or "",
+                        }
+                        table.insert(aggregatedPlayerTargets[unitId].auraEffects, effectData)
+                        
+                        if RPE and RPE.Debug and RPE.Debug.Print then
+                            RPE.Debug:Internal(('[SpellCast] Deferring APPLY_AURA \'%s\' for player %d (via broadcast)'):format(
+                                act.args and act.args.auraId or "?",
+                                unitId
+                            ))
+                        end
                     end
                 end
                 
-                if damageAct and hitCache[damageAct.key] then
-                    -- Filter to only targets that hit on the DAMAGE action
-                    applyTargets = {}
-                    for _, tgt in ipairs(targets) do
-                        local tgtUnit = RPE.Common:FindUnitByKey(tgt)
-                        local isNPC = tgtUnit and tgtUnit.isNPC
-                        
-                        if isNPC and hitCache[damageAct.key][tgt] == true then
-                            table.insert(applyTargets, tgt)
-                        end
-                    end
-                    if RPE and RPE.Debug and RPE.Debug.Print then
-                        RPE.Debug:Internal(('[SpellCast] APPLY_AURA \'%s\' uses DAMAGE hit results: %d NPC targets'):format(
-                            act.args and act.args.auraId or "?",
-                            #applyTargets
-                        ))
-                    end
-                end
+                -- Skip running APPLY_AURA immediately for all targets
+                applyTargets = {}
             end
         end
 
@@ -258,23 +372,117 @@ local function runActions(ctx, cast, actions)
         end
     end
     
+    -- Flush pending damage for this group (aggregate all DAMAGE actions and broadcast once)
+    if groupId then
+        local SpellActions = RPE.Core and RPE.Core.SpellActions
+        if SpellActions and SpellActions.FlushDamageForGroup then
+            SpellActions:FlushDamageForGroup(groupId)
+        end
+    end
+    
     -- Broadcast aggregated player target attacks (after all DAMAGE actions processed)
+    -- Only broadcast if there's actual damage (don't broadcast pure APPLY_AURA with no damage)
     if next(aggregatedPlayerTargets) then
         local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
         if Broadcast and Broadcast.AttackSpell then
             for unitId, ptgtData in pairs(aggregatedPlayerTargets) do
                 if ptgtData.unit then
-                    Broadcast:AttackSpell(
-                        cast.caster,
-                        ptgtData.unit.id,
-                        cast.def.id or "UNKNOWN",
-                        cast.def.name or "Unknown Spell",
-                        ptgtData.hitSystem,
-                        ptgtData.attackRoll,
-                        ptgtData.thresholdIds,
-                        ptgtData.damageBySchool,
-                        ptgtData.auraEffects or {}
-                    )
+                    -- Check if there's actual damage to report
+                    local hasDamage = false
+                    if ptgtData.damageBySchool and type(ptgtData.damageBySchool) == "table" then
+                        for school, amount in pairs(ptgtData.damageBySchool) do
+                            if tonumber(amount) and tonumber(amount) > 0 then
+                                hasDamage = true
+                                break
+                            end
+                        end
+                    end
+                    
+                    if hasDamage then
+                        -- Has damage: broadcast as attack spell (with aura effects if any)
+                        Broadcast:AttackSpell(
+                            cast.caster,
+                            ptgtData.unit.id,
+                            cast.def.id or "UNKNOWN",
+                            cast.def.name or "Unknown Spell",
+                            ptgtData.hitSystem,
+                            ptgtData.attackRoll,
+                            ptgtData.thresholdIds,
+                            ptgtData.damageBySchool,
+                            ptgtData.auraEffects or {}
+                        )
+                    else
+                        -- No damage: apply auras directly without triggering player reaction
+                        if ptgtData.auraEffects and #ptgtData.auraEffects > 0 then
+                            local SpellActions = RPE.Core and RPE.Core.SpellActions
+                            for _, effect in ipairs(ptgtData.auraEffects) do
+                                if SpellActions and effect.auraId then
+                                    -- Parse args back from JSON if needed
+                                    local args = {}
+                                    if effect.argsJSON and effect.argsJSON ~= "" then
+                                        for pair in effect.argsJSON:gmatch("[^,]+") do
+                                            local k, v = pair:match("([^=]+)=(.+)")
+                                            if k then args[k] = v end
+                                        end
+                                    end
+                                    args.auraId = effect.auraId
+                                    
+                                    if RPE and RPE.Debug and RPE.Debug.Internal then
+                                        RPE.Debug:Internal(("[SpellCast] Applying aura \'%s\' to player %d (no damage)"):format(
+                                            effect.auraId, ptgtData.unit.id))
+                                    end
+                                    
+                                    -- Apply the aura via broadcast
+                                    if Broadcast and Broadcast.AuraApply then
+                                        local AuraRegistry = RPE.Core and RPE.Core.AuraRegistry
+                                        local auraDef = AuraRegistry and AuraRegistry:Get(effect.auraId)
+                                        local desc = auraDef and auraDef.description or "Applied aura"
+                                        Broadcast:AuraApply(cast.caster, ptgtData.unit.id, effect.auraId, desc)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Apply NPC-to-NPC attack aura effects (which were deferred)
+    if next(aggregatedNPCTargets) then
+        local SpellActions = RPE.Core and RPE.Core.SpellActions
+        if SpellActions then
+            for unitId, npcData in pairs(aggregatedNPCTargets) do
+                if npcData.unit and #npcData.auraEffects > 0 then
+                    if RPE and RPE.Debug and RPE.Debug.Print then
+                        RPE.Debug:Internal(('[SpellCast] Applying %d deferred auras to NPC %d'):format(
+                            #npcData.auraEffects, unitId))
+                    end
+                    
+                    for _, effect in ipairs(npcData.auraEffects) do
+                        -- Parse args from JSON if present
+                        local effectArgs = {}
+                        if effect.argsJSON and effect.argsJSON ~= "" then
+                            -- Simple JSON parsing for args
+                            for key, val in string.gmatch(effect.argsJSON, '([%w_]+)=([^,}]+)') do
+                                effectArgs[key] = val
+                            end
+                        end
+                        
+                        if RPE and RPE.Debug and RPE.Debug.Print then
+                            RPE.Debug:Internal(('[SpellCast] Applying aura: auraId=%s, action=%s'):format(
+                                effect.auraId, effect.actionKey))
+                        end
+                        
+                        -- Execute the action on target
+                        local ok, err = pcall(function()
+                            SpellActions:Run(effect.actionKey, ctx or {}, { caster = cast.caster }, { unitId }, effectArgs)
+                        end)
+                        
+                        if not ok and RPE.Debug and RPE.Debug.Print then
+                            RPE.Debug:Internal("|cffff5555[SpellCast] Aura application error:|r " .. tostring(err))
+                        end
+                    end
                 end
             end
         end
@@ -475,17 +683,36 @@ end
 function SpellCast:Validate(ctx)
     self._costSnapshot = (self.def.costs or {})
 
-    -- Skip all requirement checks for NPC units
     local casterUnit = RPE.Common:FindUnitById(self.caster)
+    
+    -- Check crowd control blocking for ALL units (including NPCs)
+    local ev = RPE.Core.ActiveEvent
+    if ev and ev._auraManager then
+        -- Check if caster is blocked from all actions
+        if ev._auraManager:IsBlockedFromActions(self.caster) then
+            return false, "Blocked from casting actions", "CC_BLOCKED"
+        end
+        
+        -- Check if this specific spell is blocked by tag
+        if self.def.tags then
+            for _, tag in ipairs(self.def.tags) do
+                if ev._auraManager:IsActionBlockedByTag(self.caster, tag) then
+                    return false, "Action blocked by tag: " .. tag, "CC_TAG_BLOCKED"
+                end
+            end
+        end
+    end
+
+    -- Skip all other requirement checks for NPC units
     if casterUnit and casterUnit.isNPC then
-        return true  -- NPCs bypass all validation
+        return true  -- NPCs bypass non-CC validation
     end
 
     for _, g in ipairs(self.def.groups or {}) do
         if g.phase == "validate" then
             local ok, reason, code = evalGroupRequirements(ctx, self, g)
             if not ok then return false, reason, code end
-            runActions(ctx, self, g.actions)
+            runActions(ctx, self, g.actions, "validate")
         end
     end
 
@@ -508,7 +735,7 @@ function SpellCast:PreCast(ctx, selectedTargets)
     for _, g in ipairs(self.def.groups or {}) do
         if g.phase == "precast" then
             local gok, greason = evalGroupRequirements(ctx, self, g)
-            if gok then runActions(ctx, self, g.actions) else return false, greason end
+            if gok then runActions(ctx, self, g.actions, "precast") else return false, greason end
         end
     end
     return true
@@ -529,7 +756,7 @@ function SpellCast:Start(ctx, currentTurn)
     for _, g in ipairs(self.def.groups or {}) do
         if g.phase == "onStart" then
             local ok, reason = evalGroupRequirements(ctx, self, g)
-            if ok then runActions(ctx, self, g.actions) else return false, reason end
+            if ok then runActions(ctx, self, g.actions, "onStart") else return false, reason end
         end
     end
 
@@ -587,7 +814,7 @@ function SpellCast:Tick(ctx, currentTurn)
         for _, g in ipairs(self.def.groups or {}) do
             if g.phase == "onTick" then
                 local ok = (select(1, evalGroupRequirements(ctx, self, g)))
-                if ok then runActions(ctx, self, g.actions) end
+                if ok then runActions(ctx, self, g.actions, "onTick") end
             end
         end
         self.nextTickTurn = currentTurn + (tonumber(ct.tickIntervalTurns) or 1)
@@ -639,12 +866,28 @@ function SpellCast:Resolve(ctx, currentTurn)
             local ok, reason, code = evalGroupRequirements(ctx, self, g)
             if ok then
                 RPE.Debug:Internal(("→ Running group %d (onResolve)"):format(i))
-                runActions(ctx, self, g.actions)
+                runActions(ctx, self, g.actions, "onResolve")
             else
                 RPE.Debug:Warning(("→ Skipped group %d (onResolve): %s [%s]"):format(
                     i, tostring(reason or "unknown"), tostring(code or "???")
                 ))
             end
+        end
+    end
+
+    -- Unhide the caster if they are currently hidden
+    local casterUnit = RPE.Common:FindUnitById(self.caster)
+    if casterUnit and casterUnit.hidden then
+        casterUnit.hidden = false
+        
+        -- Broadcast unhide to all players
+        local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+        if Broadcast and Broadcast.Unhide then
+            Broadcast:Unhide(self.caster)
+        end
+        
+        if RPE and RPE.Debug and RPE.Debug.Print then
+            RPE.Debug:Internal(('[SpellCast:Resolve] Unhiding caster (unitId=%d) after spell cast'):format(self.caster))
         end
     end
 
@@ -670,7 +913,7 @@ function SpellCast:Interrupt(ctx, reason)
     for _, g in ipairs(self.def.groups or {}) do
         if g.phase == "onInterrupt" then
             local ok = (select(1, evalGroupRequirements(ctx, self, g)))
-            if ok then runActions(ctx, self, g.actions) end
+            if ok then runActions(ctx, self, g.actions, "onInterrupt") end
         end
     end
 
@@ -864,6 +1107,13 @@ local function _checkHitVsNPC(tgtUnit, casterUnit, hitSystem, rollSpec, baseThre
     if RPE and RPE.Debug and RPE.Debug.Print then
         RPE.Debug:Internal(("  Crit check (NPC): roll=%d >= threshold=%.1f → %s"):format(roll, critThreshold, isCrit and "CRIT" or "normal"))
     end
+    
+    -- Check if target is failing all defences due to crowd control
+    local ev = RPE.Core.ActiveEvent
+    if ev and ev._auraManager and ev._auraManager:IsFailingAllDefences(tgtUnit.id) then
+        return true, roll, lhs, 0, isCrit  -- Always hits when target fails all defences
+    end
+    
     if hitSystem == "simple" then
         -- Simple: always use DEFENCE stat
         if tgtUnit and tgtUnit.stats then
@@ -884,6 +1134,10 @@ local function _checkHitVsNPC(tgtUnit, casterUnit, hitSystem, rollSpec, baseThre
             -- NPC: choose the highest stat
             for _, id in ipairs(thresholdIds) do
                 local val = tonumber(tgtUnit.stats[id]) or 0
+                -- Check if this specific defence stat is failing due to crowd control
+                if ev and ev._auraManager and ev._auraManager:IsDefenceStatFailing(tgtUnit.id, id) then
+                    val = 0  -- Defence stat is disabled by crowd control
+                end
                 if RPE and RPE.Debug and RPE.Debug.Print then
                     RPE.Debug:Internal(("[SpellCast] Threshold stat " .. tostring(id) .. " = " .. tostring(val)))
                 end
@@ -1119,21 +1373,24 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
 
     -- Prepare player target data for aggregation (broadcast happens in runActions after all DAMAGE actions)
     local playerTargetDataArray = {}
-    if #playerTargets > 0 then
-        -- Get caster's stats: use NPC's stats if caster is an NPC, otherwise use player profile
-        local profile = cast and cast.profile
-        if not profile and cast and cast.caster then
-            -- Find the caster unit to check if it's an NPC
-            if casterUnit and casterUnit.isNPC and casterUnit.stats then
-                -- For NPCs, create a wrapper that acts like a profile with their stats
-                profile = {
-                    GetStatValue = function(self, statId)
-                        return tonumber(casterUnit.stats[statId] or 1) or 1
-                    end
-                }
-            end
+    
+    -- Get caster's stats: use NPC's stats if caster is an NPC, otherwise use player profile
+    -- This needs to happen BEFORE damage calculation, regardless of target type
+    local profile = cast and cast.profile
+    if not profile and cast and cast.caster then
+        -- Find the caster unit to check if it's an NPC
+        local casterUnit = RPE.Common:FindUnitById(cast.caster)
+        if casterUnit and casterUnit.isNPC and casterUnit.stats then
+            -- For NPCs, create a wrapper that acts like a profile with their stats
+            profile = {
+                GetStatValue = function(self, statId)
+                    return tonumber(casterUnit.stats[statId] or 1) or 1
+                end
+            }
         end
-        
+    end
+    
+    if #playerTargets > 0 then
         -- Calculate total predicted damage including base spell damage + on-hit aura effects
         -- Damage is tracked per school: { [school] = amount, ... }
         local damageBySchool = {}

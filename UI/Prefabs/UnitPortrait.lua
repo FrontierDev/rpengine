@@ -129,11 +129,16 @@ function UnitPortrait:New(name, opts)
     box:SetSize(size, size)
     box:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
 
-    -- Overlay for hidden units (semi-transparent grey)
-    local hiddenOverlay = box:CreateTexture(nil, "OVERLAY")
-    hiddenOverlay:SetAllPoints()
-    hiddenOverlay:SetTexture("Interface\\AddOns\\RPEngine\\UI\\Textures\\hidden_overlay.png")
-    hiddenOverlay:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    -- Overlay for hidden units (semi-transparent grey) - create on top-level frame
+    local hiddenOverlay = CreateFrame("Frame", nil, f)
+    hiddenOverlay:SetAllPoints(box)
+    hiddenOverlay:SetFrameLevel(box:GetFrameLevel() + 100)  -- Ensure it's well above everything
+    
+    local overlayTexture = hiddenOverlay:CreateTexture(nil, "BACKGROUND")
+    overlayTexture:SetAllPoints()
+    overlayTexture:SetTexture("Interface\\AddOns\\RPEngine\\UI\\Textures\\hidden_overlay.png")
+    overlayTexture:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    
     hiddenOverlay:Hide()
 
     -- Soft square background in the box - set to low frame level so it doesn't dim the model
@@ -527,7 +532,7 @@ function UnitPortrait:SetHealth(cur, max)
     cur = tonumber(cur)
     max = tonumber(max)
     self._hpCur, self._hpMax = cur, max
-
+    
     if not (cur and max and max > 0) then
         self.hp:Hide()
         return
@@ -539,16 +544,83 @@ function UnitPortrait:SetHealth(cur, max)
         C_Timer.After(0, function()
             if self.hp and self.hp:GetWidth() > 0 then
                 self.hpFill:SetWidth(self.hp:GetWidth() * pct)
+                -- Do NOT refresh absorption here - it was already set separately
             end
         end)
     else
         self.hpFill:SetWidth(w * pct)
+        -- Do NOT refresh absorption here - it was already set separately
     end
 
     if cur ~= 0 then
         self.hp:Show()
     else
         self.hp:Hide()
+    end
+end
+
+--- Set absorption value for the health bar overlay
+function UnitPortrait:SetAbsorption(absorbAmount)
+    absorbAmount = math.max(0, absorbAmount or 0)
+    self._lastAbsorbAmount = absorbAmount  -- Store for refresh
+    
+    if not self.hpAbsorption then
+        -- Create absorption texture if it doesn't exist
+        self.hpAbsorption = self.hp:CreateTexture(nil, "ARTWORK")
+        self.hpAbsorption:SetColorTexture(1, 1, 1, 0.6)  -- white, semi-transparent
+    end
+
+    
+    if absorbAmount > 0 and self._hpMax and self._hpMax > 0 then
+        -- Health and absorption both scale proportionally to max
+        local healthValue = self._hpCur or 0
+        local totalValue = healthValue + absorbAmount
+        local totalPct = math.min(totalValue / self._hpMax, 1.0)
+        
+        -- Health proportion: what fraction of total is health?
+        local healthPct
+        if totalValue > 0 then
+            healthPct = healthValue / totalValue
+        else
+            healthPct = 1.0
+        end
+        
+        -- Health width is proportional to its share of the total capped value
+        local barWidth = self.hp:GetWidth()
+        
+        -- If bar width is not yet set (layout not complete), defer calculation
+        if barWidth <= 0 then
+            if RPE and RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal("[UnitPortrait:SetAbsorption] Bar width not ready, deferring...")
+            end
+            C_Timer.After(0, function()
+                if self.hp and self.hp:GetWidth() > 0 then
+                    self:SetAbsorption(absorbAmount)
+                end
+            end)
+            return
+        end
+        
+        local healthW = barWidth * totalPct * healthPct
+        local absorbW = barWidth * totalPct * (1 - healthPct)
+        
+        -- Update health fill width (was set in SetHealth, now update with absorption)
+        self.hpFill:SetWidth(healthW)
+        
+        -- Position and size absorption segment
+        self.hpAbsorption:SetHeight(self.hp:GetHeight())
+        self.hpAbsorption:SetWidth(math.max(0, absorbW))
+        self.hpAbsorption:SetPoint("LEFT", self.hp, "LEFT", healthW, 0)
+        if absorbW > 0 then
+            self.hpAbsorption:Show()
+        else
+            self.hpAbsorption:Hide()
+        end
+    else
+        if self.hpAbsorption then
+            self.hpAbsorption:SetWidth(0)
+            self.hpAbsorption:Hide()
+        end
     end
 end
 
@@ -627,9 +699,9 @@ function UnitPortrait:Refresh()
         ev.units[localPlayerKey] and 
         ev.units[localPlayerKey].team == self.unit.team
 
-    -- Show hidden overlay only for hidden ENEMIES (not allies)
+    -- Show hidden overlay for all hidden units (including allies)
     if self.hiddenOverlay then
-        local showOverlay = self.unit.hidden and not isAlly
+        local showOverlay = self.unit.hidden
         self.hiddenOverlay:SetShown(showOverlay)
     end
 
@@ -652,10 +724,10 @@ function UnitPortrait:Refresh()
         end
     end
 
-    -- Apply question mark portrait for masked units
+    -- Apply hidden portrait for masked units
     if isMasked then
         self.model:Hide()
-        self.texture:SetTexture("Interface\\ICONS\\INV_Misc_QuestionMark")
+        self.texture:SetTexture("Interface\\AddOns\\RPEngine\\UI\\Textures\\hidden.png")
         self.texture:SetDrawLayer("ARTWORK", 1)
         self.texture:Show()
 

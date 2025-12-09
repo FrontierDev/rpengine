@@ -40,11 +40,11 @@ function TextButton:New(name, opts)
     f:RegisterForClicks("LeftButtonUp")
     f:SetMotionScriptsWhileDisabled(true)
 
-    -- Background (slightly darker shade of background color)
+    -- Background (full background color)
     local bgR, bgG, bgB, bgA = C.Get("background")
     local bg = f:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(bgR * 0.8, bgG * 0.8, bgB * 0.8, bgA * 0.95)
+    bg:SetColorTexture(bgR, bgG, bgB, bgA)
 
     -- Borders (based on divider color)
     local divR, divG, divB, divA = C.Get("divider")
@@ -57,8 +57,8 @@ function TextButton:New(name, opts)
         top:SetColorTexture(divR * 0.6, divG * 0.6, divB * 0.6, divA * 0.8)
 
         bottom = f:CreateTexture(nil, "BORDER")
-        bottom:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 1, 1)
-        bottom:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+        bottom:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 1, -1)
+        bottom:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, -1)
         bottom:SetHeight(1)
         bottom:SetColorTexture(divR * 0.2, divG * 0.2, divB * 0.2, divA * 0.7)
     end
@@ -78,7 +78,7 @@ function TextButton:New(name, opts)
     o._locked = false
 
     -- Cache base colors for later use (e.g., highlight/unhighlight)
-    o._baseR, o._baseG, o._baseB, o._baseA = bgR * 0.8, bgG * 0.8, bgB * 0.8, bgA * 0.95
+    o._baseR, o._baseG, o._baseB, o._baseA = bgR, bgG, bgB, bgA
     
     -- Cache hover colors
     o._hoverR, o._hoverG, o._hoverB, o._hoverA = C.Get("background")
@@ -86,20 +86,20 @@ function TextButton:New(name, opts)
     -- Cache text colors
     o._textR, o._textG, o._textB, o._textA = C.Get("text")
 
-    -- Hover handlers (brighten bg and border based on palette colors)
+    -- Hover handlers (darken bg and border on hover)
     f:SetScript("OnEnter", function()
         if not o._locked then 
             local hBgR, hBgG, hBgB, hBgA = C.Get("background")
-            o.bg:SetColorTexture(hBgR, hBgG, hBgB, hBgA)
+            o.bg:SetColorTexture(hBgR * 0.6, hBgG * 0.6, hBgB * 0.6, hBgA * 0.9)
             if o.topBorder then 
                 local hDivR, hDivG, hDivB, hDivA = C.Get("divider")
-                o.topBorder:SetColorTexture(hDivR * 0.8, hDivG * 0.8, hDivB * 0.8, hDivA)
+                o.topBorder:SetColorTexture(hDivR * 0.4, hDivG * 0.4, hDivB * 0.4, hDivA * 0.6)
             end
         end
     end)
     f:SetScript("OnLeave", function()
         local bgR2, bgG2, bgB2, bgA2 = C.Get("background")
-        o.bg:SetColorTexture(bgR2 * 0.8, bgG2 * 0.8, bgB2 * 0.8, bgA2 * 0.95)
+        o.bg:SetColorTexture(bgR2, bgG2, bgB2, bgA2)
         if o.topBorder then 
             local divR2, divG2, divB2, divA2 = C.Get("divider")
             o.topBorder:SetColorTexture(divR2 * 0.6, divG2 * 0.6, divB2 * 0.6, divA2 * 0.8)
@@ -133,7 +133,7 @@ function TextButton:ApplyPalette()
     -- Update background and borders from palette
     if not self._locked then
         local bgR, bgG, bgB, bgA = C.Get("background")
-        self.bg:SetColorTexture(bgR * 0.8, bgG * 0.8, bgB * 0.8, bgA * 0.95)
+        self.bg:SetColorTexture(bgR, bgG, bgB, bgA)
         
         if self.topBorder then
             local divR, divG, divB, divA = C.Get("divider")
@@ -191,7 +191,7 @@ function TextButton:Unlock()
     
     -- Restore normal bg from palette
     local bgR, bgG, bgB, bgA = C.Get("background")
-    self.bg:SetColorTexture(bgR * 0.8, bgG * 0.8, bgB * 0.8, bgA * 0.95)
+    self.bg:SetColorTexture(bgR, bgG, bgB, bgA)
 
     -- Restore normal borders from palette
     if self.topBorder then

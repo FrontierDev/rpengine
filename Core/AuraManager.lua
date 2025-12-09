@@ -353,6 +353,46 @@ local function forSource(self, sourceId, create)
     return map
 end
 
+-- ===== Crowd Control helpers =====
+local function _parseCSVList(csvStr)
+    local out = {}
+    if type(csvStr) ~= "string" or csvStr == "" then return out end
+    for token in string.gmatch(csvStr, "[^,]+") do
+        local t = token:gsub("^%s+",""):gsub("%s+$","")
+        if t ~= "" then table.insert(out, t) end
+    end
+    return out
+end
+
+-- Normalize crowdControl from definition into structured format with parsed lists
+local function _normalizeCrowdControl(def)
+    if not def or not def.crowdControl then return nil end
+    local cc = def.crowdControl
+    
+    -- Parse CSV strings into tables if they're strings
+    local blockActionsByTag = {}
+    if type(cc.blockActionsByTag) == "string" then
+        blockActionsByTag = _parseCSVList(cc.blockActionsByTag)
+    elseif type(cc.blockActionsByTag) == "table" then
+        blockActionsByTag = cc.blockActionsByTag
+    end
+    
+    local failDefencesByStats = {}
+    if type(cc.failDefencesByStats) == "string" then
+        failDefencesByStats = _parseCSVList(cc.failDefencesByStats)
+    elseif type(cc.failDefencesByStats) == "table" then
+        failDefencesByStats = cc.failDefencesByStats
+    end
+    
+    return {
+        blockAllActions = cc.blockAllActions or false,
+        blockActionsByTag = blockActionsByTag,
+        failAllDefences = cc.failAllDefences or false,
+        failDefencesByStats = failDefencesByStats,
+        slowMovement = tonumber(cc.slowMovement) or 0,
+    }
+end
+
 ---Create a manager (usually per-Event).
 ---@param event table|nil
 function AuraManager.New(event)
@@ -419,6 +459,112 @@ function AuraManager:Has(unit, auraId, fromSource)
         end
     end
     return false, nil
+end
+
+-- ===== Crowd Control checking functions =====
+---Check if unit is blocked from taking all actions
+function AuraManager:IsBlockedFromActions(unit)
+    local uId = toUnitId(unit)
+    if not uId then return false end
+    
+    local list = self:All(uId)
+    for _, aura in ipairs(list) do
+        if aura.def and aura.def.crowdControl then
+            if aura.def.crowdControl.blockAllActions then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+---Check if unit is blocked from a specific action by tag
+function AuraManager:IsActionBlockedByTag(unit, actionTag)
+    if not actionTag then return false end
+    local uId = toUnitId(unit)
+    if not uId then return false end
+    
+    local list = self:All(uId)
+    for _, aura in ipairs(list) do
+        if aura.def and aura.def.crowdControl then
+            local cc = aura.def.crowdControl
+            if cc.blockActionsByTag then
+                -- Handle both string CSV and table formats
+                local tags = cc.blockActionsByTag
+                if type(tags) == "string" then
+                    tags = _parseCSVList(tags)
+                end
+                for _, tag in ipairs(tags) do
+                    if tag == actionTag then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+---Check if unit is failing all defences
+function AuraManager:IsFailingAllDefences(unit)
+    local uId = toUnitId(unit)
+    if not uId then return false end
+    
+    local list = self:All(uId)
+    for _, aura in ipairs(list) do
+        if aura.def and aura.def.crowdControl then
+            if aura.def.crowdControl.failAllDefences then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+---Check if unit is failing a specific defence stat
+function AuraManager:IsDefenceStatFailing(unit, defenceStat)
+    if not defenceStat then return false end
+    local uId = toUnitId(unit)
+    if not uId then return false end
+    
+    local list = self:All(uId)
+    for _, aura in ipairs(list) do
+        if aura.def and aura.def.crowdControl then
+            local cc = aura.def.crowdControl
+            if cc.failDefencesByStats then
+                -- Handle both string CSV and table formats
+                local stats = cc.failDefencesByStats
+                if type(stats) == "string" then
+                    stats = _parseCSVList(stats)
+                end
+                for _, stat in ipairs(stats) do
+                    if stat == defenceStat then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+---Get movement speed modifier from crowd control auras (0-1, where 1=100% speed)
+function AuraManager:GetMovementSpeedModifier(unit)
+    local speedMod = 1.0
+    local uId = toUnitId(unit)
+    if not uId then return speedMod end
+    
+    local list = self:All(uId)
+    for _, aura in ipairs(list) do
+        if aura.def and aura.def.crowdControl then
+            local slow = tonumber(aura.def.crowdControl.slowMovement) or 0
+            if slow > 0 then
+                -- Apply slowMovement as a percentage reduction (0-100)
+                speedMod = speedMod * (1 - (slow / 100))
+            end
+        end
+    end
+    return math.max(0, speedMod)  -- Ensure never goes below 0
 end
 
 -- ===== Conflict helpers =====

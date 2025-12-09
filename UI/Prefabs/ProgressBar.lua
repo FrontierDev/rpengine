@@ -10,9 +10,11 @@ local C            = RPE_UI.Colors
 ---@field frame Frame
 ---@field bg Texture
 ---@field fill Texture
+---@field absorption Texture|nil  -- absorption overlay (white segment on the right)
 ---@field label FontString|nil
 ---@field value number
 ---@field targetValue number
+---@field absorbValue number  -- current absorption amount
 ---@field max number
 ---@field styles table<string,string>|nil
 ---@field flash Texture|nil
@@ -43,6 +45,13 @@ function ProgressBar:New(name, opts)
     fill:SetPoint("LEFT", f, "LEFT", 0, 0)
     fill:SetHeight(f:GetHeight())
 
+    -- Absorption overlay (white segment on the right, positioned after fill)
+    local absorption = f:CreateTexture(nil, "ARTWORK")
+    absorption:SetPoint("LEFT", fill, "RIGHT", 0, 0)
+    absorption:SetHeight(f:GetHeight())
+    absorption:SetColorTexture(1, 1, 1, 0.6)  -- white, semi-transparent
+    absorption:SetWidth(0)
+
     -- Resolve initial color (style or custom fillColor)
     local fr, fg, fb, fa
     if opts.fillColor then
@@ -71,8 +80,10 @@ function ProgressBar:New(name, opts)
     ---@type ProgressBar
     local o = FrameElement.New(self, "ProgressBar", f, opts.parent)
     o.bg, o.fill, o.label, o.flash = bg, fill, label, flash
+    o.absorption = absorption
     o.value, o.max = 0, 1
     o.targetValue  = 0
+    o.absorbValue  = 0
     o._animSpeed   = opts.animSpeed or 10
     o.flashAlpha   = 0
 
@@ -102,6 +113,18 @@ function ProgressBar:SetValue(v, max)
     self.targetValue = v
 end
 
+--- Set absorption value (will display as white segment on the right)
+function ProgressBar:SetAbsorption(absorbAmount, max)
+    if max then self.max = max end
+    absorbAmount = math.max(0, absorbAmount or 0)
+    self.absorbValue = absorbAmount
+    
+    if RPE and RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(string.format("[ProgressBar] SetAbsorption called: amount=%d, max=%d, absorbValue=%d", 
+            absorbAmount, self.max or 0, self.absorbValue or 0))
+    end
+end
+
 --- Smooth animation update
 function ProgressBar:UpdateAnimation(elapsed)
     if not self.max then return end
@@ -116,9 +139,47 @@ function ProgressBar:UpdateAnimation(elapsed)
             self.value = self.targetValue
         end
 
-        local pct = self.value / self.max
-        local w   = self.frame:GetWidth() * pct
-        self.fill:SetWidth(w)
+        -- Health fill and absorption segment both scale proportionally to max
+        local healthValue = self.value
+        local absorbValue = self.absorbValue or 0
+        
+        -- Calculate what portion of bar each occupies
+        -- If health + absorption > max, cap total to 100% of bar
+        local totalValue = healthValue + absorbValue
+        local totalPct = math.min(totalValue / self.max, 1.0)
+        
+        -- Health proportion: what fraction of total is health?
+        local healthPct
+        if totalValue > 0 then
+            healthPct = healthValue / totalValue
+        else
+            healthPct = 1.0
+        end
+        
+        -- Health width is proportional to its share of the total capped value
+        local healthW = self.frame:GetWidth() * totalPct * healthPct
+        self.fill:SetWidth(healthW)
+
+        -- Absorption segment: remaining portion of the capped total
+        if self.absorption and absorbValue > 0 then
+            self.absorption:ClearAllPoints()
+            self.absorption:SetPoint("LEFT", self.fill, "RIGHT", 0, 0)
+            
+            local absorbPct = totalPct * (1 - healthPct)
+            local absorbW = self.frame:GetWidth() * absorbPct
+            
+            self.absorption:SetWidth(math.max(0, absorbW))
+            if absorbW > 0 then
+                self.absorption:Show()
+            else
+                self.absorption:Hide()
+            end
+        else
+            if self.absorption then
+                self.absorption:SetWidth(0)
+                self.absorption:Hide()
+            end
+        end
 
         -- auto style switching
         if self.value <= 0 and self.styles.empty then
@@ -131,6 +192,10 @@ function ProgressBar:UpdateAnimation(elapsed)
     else
         -- max is 0, set fill to 0 width
         self.fill:SetWidth(0)
+        if self.absorption then
+            self.absorption:SetWidth(0)
+            self.absorption:Hide()
+        end
         if self.styles.empty then
             self:SetStyle(self.styles.empty)
         end

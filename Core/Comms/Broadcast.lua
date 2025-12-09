@@ -745,35 +745,73 @@ function Broadcast:Damage(source, targets, amount, opts)
     local sId = _toUnitId(source) or 0
     local flat = { tostring(sId) }
 
-    local function push_one(tgt, amt, o)
+    local function push_one(tgt, damageInfo, o)
         local tId = _toUnitId(tgt) or 0
-        local a   = math.max(0, math.floor(tonumber(amt) or 0))
-        if tId == 0 or a <= 0 then return end
-        local school = tostring((o and o.school) or "")
-        local crit   = ((o and o.crit) and "1") or "0"
-        local tDelta = (o and o.threat ~= nil) and tostring(math.floor(tonumber(o.threat) or 0)) or ""
+        if tId == 0 then return end
+        
+        local school = ""
+        local totalAmount = 0
+        local crit   = false
+        
+        -- damageInfo can be either:
+        -- 1. A number (old format): single amount for school in opts.school
+        -- 2. A table with damageBySchool: multiple schools aggregated
+        if type(damageInfo) == "number" then
+            -- Old single-amount format
+            totalAmount = math.max(0, math.floor(tonumber(damageInfo) or 0))
+            school = tostring((o and o.school) or "")
+            crit = (o and o.crit) and true or false
+        elseif type(damageInfo) == "table" then
+            -- New aggregated multi-school format
+            -- Build CSV: school1:amount1,school2:amount2,...
+            local schools = {}
+            for sch, amt in pairs(damageInfo.damageBySchool or {}) do
+                local a = math.max(0, math.floor(tonumber(amt) or 0))
+                if a > 0 then
+                    totalAmount = totalAmount + a
+                    table.insert(schools, sch .. ":" .. a)
+                end
+            end
+            school = table.concat(schools, ",")
+            crit = (damageInfo.crit and true) or false
+        end
+        
+        if totalAmount <= 0 then return end
+        
+        local tDelta = (o and o.threat ~= nil) and tostring(math.floor(tonumber(o.threat) or 0)) or tostring(totalAmount)
         flat[#flat+1] = tostring(tId)
-        flat[#flat+1] = tostring(a)
-        flat[#flat+1] = school
-        flat[#flat+1] = crit
+        flat[#flat+1] = tostring(totalAmount)  -- Total damage (for historical reasons)
+        flat[#flat+1] = school                  -- Single school or CSV of schools:amounts
+        flat[#flat+1] = crit and "1" or "0"
         flat[#flat+1] = tDelta
     end
 
     local is_tbl = type(targets) == "table"
-    local looks_like_entry_list = is_tbl and ((type(targets[1]) == "table") or (targets.target ~= nil and targets.amount ~= nil))
+    local looks_like_entry_list = is_tbl and ((type(targets[1]) == "table") or (targets.target ~= nil and (targets.amount ~= nil or targets.damageBySchool ~= nil)))
 
     if looks_like_entry_list then
         local list = targets
-        if (list.target ~= nil and list.amount ~= nil) then list = { list } end
+        if (list.target ~= nil and (list.amount ~= nil or list.damageBySchool ~= nil)) then list = { list } end
         for _, e in ipairs(list) do
             local tgt = (e.target ~= nil) and e.target or e[1]
-            local amt = (e.amount ~= nil) and e.amount or e[2]
-            local o = {
-                school = (e.school ~= nil) and e.school or e[3],
-                crit   = (e.crit   ~= nil) and e.crit   or e[4],
-                threat = (e.threat ~= nil) and e.threat or e[5],
-            }
-            push_one(tgt, amt, o)
+            -- Support both old single-amount and new multi-school format
+            local damageInfo = nil
+            local opts_here = {}
+            
+            if e.damageBySchool ~= nil then
+                -- New format: pass the whole table with damageBySchool
+                damageInfo = e
+                opts_here = { crit = e.crit, threat = e.threat }
+            else
+                -- Old format: single amount
+                damageInfo = (e.amount ~= nil) and e.amount or e[2]
+                opts_here = {
+                    school = (e.school ~= nil) and e.school or e[3],
+                    crit   = (e.crit   ~= nil) and e.crit   or e[4],
+                    threat = (e.threat ~= nil) and e.threat or e[5],
+                }
+            end
+            push_one(tgt, damageInfo, opts_here)
         end
     else
         -- Back-compat single-target path
@@ -838,7 +876,8 @@ end
 ---@param unitId integer|nil Unit ID to update health for (nil = local player)
 ---@param hp number|nil Current health (nil for player = Resources:Get("HEALTH"))
 ---@param hpMax number|nil Maximum health (nil for player = Resources:Get("HEALTH"))
-function Broadcast:UpdateUnitHealth(unitId, hp, hpMax)
+---@param absorbAmount number|nil Absorption amount (optional, defaults to 0)
+function Broadcast:UpdateUnitHealth(unitId, hp, hpMax, absorbAmount)
     local tId
     
     if not unitId then
@@ -865,10 +904,14 @@ function Broadcast:UpdateUnitHealth(unitId, hp, hpMax)
         hpMax = tonumber(hpMax) or 0
     end
     
+    -- Absorption amount (default to 0)
+    absorbAmount = math.max(0, tonumber(absorbAmount) or 0)
+    
     local flat = {
         tostring(tId),
         tostring(hp),
         tostring(hpMax),
+        tostring(absorbAmount),
     }
     
     _sendAll("UNIT_HEALTH", flat)
@@ -1028,4 +1071,120 @@ function Broadcast:Summon(npcId, summonerUnitId, summonerTeam)
         RPE.Debug:Internal(("[Broadcast] SUMMON: Broadcasting summon for " .. npcId))
     end
     _sendAll("SUMMON", flat)
+end
+
+--- Broadcast shield application to one or many targets in a single message (no text field).
+--- Back-compat single-target:
+---   Broadcast:ApplyShield(source, target, amount, duration)
+--- New multi-target:
+---   Broadcast:ApplyShield(source, {
+---       { target=t1, amount=12, duration=2 },
+---       { t2, 7, 3 }, -- tuple-style also allowed
+---   })
+function Broadcast:ApplyShield(source, targets, amount, duration)
+    local sId = _toUnitId(source) or 0
+    RPE.Debug:Internal(string.format("[Broadcast:ApplyShield] Source: %d", sId))
+    local flat = { tostring(sId) }
+
+    local function push_one(tgt, amt, dur)
+        local tId = _toUnitId(tgt) or 0
+        local a   = math.max(0, math.floor(tonumber(amt) or 0))
+        local d   = math.max(1, math.floor(tonumber(dur) or 1))
+        if tId == 0 or a <= 0 then 
+            RPE.Debug:Internal(string.format("[Broadcast:ApplyShield] Skipping invalid target: tId=%d, a=%d", tId, a))
+            return 
+        end
+        RPE.Debug:Internal(string.format("[Broadcast:ApplyShield] Adding target: %d, amount: %d, duration: %d", tId, a, d))
+        flat[#flat+1] = tostring(tId)
+        flat[#flat+1] = tostring(a)
+        flat[#flat+1] = tostring(d)
+    end
+
+    local is_tbl = type(targets) == "table"
+    local looks_like_entry_list = is_tbl and ((type(targets[1]) == "table") or (targets.target ~= nil and targets.amount ~= nil))
+
+    if looks_like_entry_list then
+        local list = targets
+        if (list.target ~= nil and list.amount ~= nil) then list = { list } end
+        for _, e in ipairs(list) do
+            local tgt = (e.target ~= nil) and e.target or e[1]
+            local amt = (e.amount ~= nil) and e.amount or e[2]
+            local dur = (e.duration ~= nil) and e.duration or e[3]
+            push_one(tgt, amt, dur)
+        end
+    else
+        -- Back-compat single-target path
+        push_one(targets, amount, duration)
+    end
+
+    if #flat > 1 then
+        RPE.Debug:Internal(string.format("[Broadcast:ApplyShield] Sending SHIELD message with %d entries", (#flat - 1) / 3))
+        _sendAll("SHIELD", flat)
+    else
+        RPE.Debug:Internal("[Broadcast:ApplyShield] No valid targets to shield")
+    end
+end
+
+--- Broadcast hide/visibility change for a unit.
+--- Broadcast:Hide(unitId) - hides the unit
+function Broadcast:Hide(unitId)
+    local tId = _toUnitId(unitId) or 0
+    if tId == 0 then return end
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(string.format("[Broadcast] HIDE: Broadcasting hide for unit %d", tId))
+    end
+    
+    _sendAll("HIDE", { tostring(tId) })
+end
+
+--- Broadcast unhide for a unit.
+--- Broadcast:Unhide(unitId) - unhides the unit
+function Broadcast:Unhide(unitId)
+    local tId = _toUnitId(unitId) or 0
+    if tId == 0 then return end
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(string.format("[Broadcast] UNHIDE: Broadcasting unhide for unit %d", tId))
+    end
+    
+    _sendAll("UNHIDE", { tostring(tId) })
+end
+
+--- Broadcast a help call from a teammate who needs assistance
+--- Teammates can use assist-tagged abilities even when it's not their turn
+---@param unitId integer Unit ID of the player calling for help
+---@param unitName string Display name of the player
+function Broadcast:CallHelp(unitId, unitName)
+    local tId = _toUnitId(unitId) or 0
+    if tId == 0 or not unitName then return end
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(string.format("[Broadcast] CALL_HELP: %s (ID %d) needs help", unitName, tId))
+    end
+    
+    _sendAll("CALL_HELP", { tostring(tId), tostring(unitName) })
+end
+
+--- Broadcast end of help call (teammate took action)
+--- Resets assist spell glow and allows normal turn restrictions
+---@param unitId integer Unit ID of the player ending the help call
+function Broadcast:CallHelpEnd(unitId)
+    local tId = _toUnitId(unitId) or 0
+    if tId == 0 then return end
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(string.format("[Broadcast] CALL_HELP_END: Unit %d responded", tId))
+    end
+    
+    _sendAll("CALL_HELP_END", { tostring(tId) })
+end
+
+
+--- Announce the player's TRP3 display name to the supergroup.
+--- The payload is a single string (display name/title). Recipients who are leaders
+--- will apply the name to the corresponding EventUnit for that sender.
+function Broadcast:AnnounceTRPName(name)
+    if not name or name == "" then return end
+    _sendAll("TRP_NAME", { tostring(name) })
 end

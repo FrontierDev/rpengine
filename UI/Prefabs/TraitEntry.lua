@@ -11,6 +11,7 @@ local Text                  = RPE_UI.Elements.Text
 ---@field icon Texture
 ---@field name Text
 ---@field auraId string|nil
+---@field _selectedOverlay Texture
 local TraitEntry = setmetatable({}, { __index = FrameElement })
 TraitEntry.__index = TraitEntry
 RPE_UI.Prefabs.TraitEntry = TraitEntry
@@ -33,6 +34,12 @@ function TraitEntry:New(name, opts)
     hl:SetAllPoints()
     hl:SetColorTexture(1, 1, 1, 0.08) -- white tint, 8% alpha
     hl:Hide()
+    
+    -- === Selected state texture (darker overlay) ===
+    local selectedOverlay = f:CreateTexture(nil, "BACKGROUND")
+    selectedOverlay:SetAllPoints()
+    selectedOverlay:SetColorTexture(0, 0, 0, 0.3) -- dark overlay, 30% alpha
+    selectedOverlay:Hide()
 
     f:SetScript("OnEnter", function() hl:Show() end)
     f:SetScript("OnLeave", function() hl:Hide() end)
@@ -40,6 +47,7 @@ function TraitEntry:New(name, opts)
     ---@type TraitEntry
     local o = FrameElement.New(self, "TraitEntry", f, opts.parent)
     o.auraId = auraId
+    o._selectedOverlay = selectedOverlay
 
     -- Horizontal layout
     local hGroup = HorizontalLayoutGroup:New(name .. "_HGroup", {
@@ -201,5 +209,13 @@ end
 
 function TraitEntry:SetIcon(path) if path then self.icon:SetTexture(path) end end
 function TraitEntry:SetLabel(t)   self.name:SetText(t or "") end
+
+function TraitEntry:SetSelected(selected)
+    if selected then
+        self._selectedOverlay:Show()
+    else
+        self._selectedOverlay:Hide()
+    end
+end
 
 return TraitEntry

@@ -20,6 +20,7 @@ local ItemRegistry = RPE.Core.ItemRegistry  -- optional at runtime
 ---@field reagents table[]|nil
 ---@field optional table[]|nil
 ---@field cost table<string, number>|nil   -- e.g. { Copper = 1345, ["i-3567"] = 1 }
+---@field tags string[]|nil   -- e.g. { "rare", "consumable", "food" }
 local Recipe = {}
 Recipe.__index = Recipe
 RPE.Core.Recipe = Recipe
@@ -69,8 +70,8 @@ function Recipe:New(id, name, profession, outputItemId, opts)
         id           = id,
         name         = name,
         profession   = profession,
-        category     = opts.category,
-        skill        = tonumber(opts.skill),
+        category     = opts.category or nil,
+        skill        = tonumber(opts.skill) or nil,
         quality      = _qualityKey(opts.quality),
         outputItemId = outputItemId,
         outputQty    = tonumber(opts.outputQty) or 1,
@@ -78,6 +79,7 @@ function Recipe:New(id, name, profession, outputItemId, opts)
         reagents     = _copyArray(opts.reagents or {}),
         optional     = _copyArray(opts.optional or {}),
         cost         = _copyTable(opts.cost or {}),   -- 💰 new cost table
+        tags         = _copyArray(opts.tags or {}),   -- 🏷️ recipe tags for categorization
     }, self)
     return o
 end
@@ -101,6 +103,7 @@ function Recipe.FromTable(t)
             reagents  = t.reagents or t.mats,
             optional  = t.optional or t.opt,
             cost      = t.cost, -- directly accept cost table
+            tags      = t.tags, -- recipe tags
         }
     )
 end
@@ -119,6 +122,7 @@ function Recipe:ToTable()
         reagents     = _copyArray(self.reagents),
         optional     = _copyArray(self.optional),
         cost         = _copyTable(self.cost),
+        tags         = _copyArray(self.tags),
     }
 end
 

@@ -24,7 +24,7 @@ RPE_UI.Prefabs.SpellGroups = SpellGroups
 -- ---------------------------------------------------------------------------
 local PHASES = { "onStart", "onResolve", "onTick" }
 local LOGIC  = { "ALL", "ANY", "NOT" }
-local ACTION_KEYS_FALLBACK = { "DAMAGE", "HEAL", "APPLY_AURA", "REDUCE_COOLDOWN" }
+local ACTION_KEYS_FALLBACK = { "DAMAGE", "HEAL", "APPLY_AURA", "REDUCE_COOLDOWN", "SUMMON", "HIDE" }
 
 -- ---------------------------------------------------------------------------
 -- Utilities

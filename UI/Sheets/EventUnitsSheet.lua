@@ -264,6 +264,57 @@ function EventUnitsSheet:BuildUI(opts)
 
         RPE_UI.Common:ContextMenu(rowFrame, function(level, _)
             if level == 1 then
+                -- NPC-only options at the top
+                if unit.isNPC then
+                    local speakInfo = UIDropDownMenu_CreateInfo()
+                    speakInfo.text = "Speak as Unit"
+                    speakInfo.func = function()
+                        -- Show speak dialog with unit's name
+                        local ABW = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+                        if ABW and ABW._ShowSpeakDialog then
+                            -- Temporarily set the controlled unit ID/name for the speak dialog
+                            ABW._controlledUnitId = unit.id
+                            ABW._controlledUnitName = unit.name
+                            ABW:_ShowSpeakDialog()
+                        end
+                    end
+                    UIDropDownMenu_AddButton(speakInfo, level)
+
+                    local controlInfo = UIDropDownMenu_CreateInfo()
+                    controlInfo.text = "Take Control"
+                    controlInfo.func = function()
+                        -- Switch action bar to this NPC's spells
+                        local ABW = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+                        if ABW and ABW.SetTemporaryActions then
+                            local SR = RPE.Core and RPE.Core.SpellRegistry
+                            if not SR then return end
+                            
+                            -- Build actions from the unit's spells
+                            local actions = {}
+                            if unit.spells and #unit.spells > 0 then
+                                for i, spellId in ipairs(unit.spells) do
+                                    local spell = SR:Get(spellId)
+                                    if spell then
+                                        actions[i] = {
+                                            spellId = spellId,
+                                            icon = spell.icon or "Interface\\Icons\\INV_Misc_QuestionMark",
+                                            isEnabled = true,
+                                        }
+                                    end
+                                end
+                            end
+                            
+                            -- Set temporary actions with brown tint and unit info
+                            local Common = RPE and RPE.Common
+                            local displayName = Common and Common.FormatUnitName and Common:FormatUnitName(unit) or unit.name
+                            ABW:SetTemporaryActions(actions, displayName, { 0.3, 0.2, 0.1, 0.95 }, unit.id, unit.name)
+                        end
+                    end
+                    UIDropDownMenu_AddButton(controlInfo, level)
+
+                    UIDropDownMenu_AddSeparator(level)
+                end
+
                 -- Team submenu
                 for t = 1, maxTeams do
                     local info = UIDropDownMenu_CreateInfo()

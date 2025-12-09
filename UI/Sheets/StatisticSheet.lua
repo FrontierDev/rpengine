@@ -81,13 +81,19 @@ local function getModSum(profile, statId)
     local pid        = profile and profile.name or nil
     local baseValue  = _resolveBaseForStat(profile, statId)
     local equipMods  = _equipFor(profile, statId)
+    
+    -- Include setupBonus as part of the total mods
+    local setupBonus = 0
+    if profile and profile.stats and profile.stats[statId] then
+        setupBonus = tonumber(profile.stats[statId].setupBonus) or 0
+    end
 
     local auraRaw    = (pid and StatMods.aura and StatMods.aura[pid] and StatMods.aura[pid][statId]) or 0
     local auraBucket = _asBucket(auraRaw)
     local auraDelta  = _auraDeltaFor(auraBucket, baseValue, equipMods)
 
-    -- Return TOTAL delta vs base (used only for color): equip + aura effect
-    return (equipMods or 0) + (auraDelta or 0)
+    -- Return TOTAL delta vs base (used only for color): setupBonus + equip + aura effect
+    return setupBonus + (equipMods or 0) + (auraDelta or 0)
 end
 
 

@@ -137,14 +137,37 @@ function PlayerReaction:Start(hitSystem, spell, action, caster, target, onComple
     local finalDamage = predictedDamage
     local thresholdStats = attackDetails and attackDetails.thresholdStats or {}
     
+    -- Calculate total absorption from shields (reduces damage taken)
+    local totalAbsorption = 0
+    if targetUnit and targetUnit.absorption then
+        for shieldId, shield in pairs(targetUnit.absorption) do
+            if shield.amount then
+                totalAbsorption = totalAbsorption + shield.amount
+            end
+        end
+    end
+    
     if RPE and RPE.Debug and RPE.Debug.Internal then
-        RPE.Debug:Internal(("[PlayerReaction.Start] predictedDamage=%d, isCritical=%s"):format(
-            predictedDamage, tostring(isCritical)))
+        RPE.Debug:Internal(("[PlayerReaction.Start] predictedDamage=%d, isCritical=%s, absorption=%d"):format(
+            predictedDamage, tostring(isCritical), totalAbsorption))
     end
     
     -- NOTE: finalDamage will be calculated in the defense handler based on which specific defense is chosen.
     -- We do NOT calculate it here to avoid incorrectly applying the first threshold stat's mitigation
     -- when the player might choose a different defense stat.
+
+    -- Check if all available defence stats are failing due to crowd control
+    local failingDefenceStats = attackDetails and attackDetails.failingDefenceStats or {}
+    local allDefencesFailing = #failingDefenceStats > 0 and #failingDefenceStats == #thresholdStats
+    
+    -- If all defences are failing (crowd control), auto-fail the defence immediately
+    if allDefencesFailing then
+        -- Immediately call the completion callback with failure (hitResult = false means defence failed)
+        if onComplete then
+            onComplete(false, 0, 0, predictedDamage)  -- Roll is 0, lhs is 0, rhs is full predicted damage
+        end
+        return
+    end
 
     local reaction = {
         hitSystem = hitSystem,
@@ -163,6 +186,8 @@ function PlayerReaction:Start(hitSystem, spell, action, caster, target, onComple
         turn = attackDetails and attackDetails.turn or nil,
         thresholdStats = attackDetails and attackDetails.thresholdStats or {},  -- Threshold stats for complex defense
         isCritical = isCritical,
+        totalAbsorption = totalAbsorption,  -- Total shield absorption that will reduce damage
+        failingDefenceStats = failingDefenceStats,  -- Track which defence stats are failing due to CC
     }
 
     -- Queue the reaction
@@ -204,6 +229,8 @@ function PlayerReaction:Complete(hitResult, roll, lhs, rhs)
             widget:ShowTick(ev.turn, ev.tickIndex, #ev.ticks, tickUnits)
         end
     end
+
+    RPE.Core._isDefendingThisTurn = false
 
     -- Show next queued reaction or hide widget
     _showNextReaction()

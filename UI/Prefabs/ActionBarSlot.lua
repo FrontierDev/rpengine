@@ -14,6 +14,7 @@ local FrameElement = RPE_UI.Elements.FrameElement
 ---@field hotkey FontString
 ---@field disabledOverlay Texture
 ---@field glow Texture
+---@field reactionGlow Texture    -- pulsing glow for reaction-castable spells
 ---@field cdOverlay Texture       -- dark overlay that shrinks
 ---@field cdLine Texture          -- bright line at overlay top edge
 ---@field cdText FontString|nil   -- centered cooldown text
@@ -24,6 +25,7 @@ local FrameElement = RPE_UI.Elements.FrameElement
 ---@field _cdAnimFrom number|nil
 ---@field _cdAnimTo number|nil
 ---@field _cdAnimDur number|nil
+---@field _reactionPulseStart number|nil -- animation start time for reaction glow
 local ActionBarSlot = setmetatable({}, { __index = FrameElement })
 ActionBarSlot.__index = ActionBarSlot
 RPE_UI.Prefabs.ActionBarSlot = ActionBarSlot
@@ -107,6 +109,17 @@ function ActionBarSlot:New(name, opts)
     glow:SetPoint("CENTER", btn, "CENTER")
     glow:Hide()
 
+    -- Reaction glow (pulsing glow when castable as reaction)
+    local reactionGlow = btn:CreateTexture(nil, "OVERLAY")
+    reactionGlow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    reactionGlow:SetBlendMode("ADD")
+    reactionGlow:SetAlpha(0.1)  -- matches pulse minimum so it's ready when shown
+    reactionGlow:SetDrawLayer("OVERLAY", 7)
+    reactionGlow:SetSize(size * 1.8, size * 1.8)
+    reactionGlow:SetPoint("CENTER", btn, "CENTER")
+    reactionGlow:SetVertexColor(0.2, 0.8, 1)  -- cyan-blue for reactions
+    reactionGlow:Hide()
+
     -- Turn-based cooldown overlay (sits over icon, shrinks from bottom)
     local cdOverlay = btn:CreateTexture(nil, "OVERLAY")
     cdOverlay:SetDrawLayer("OVERLAY", 6)
@@ -133,6 +146,7 @@ function ActionBarSlot:New(name, opts)
     o.cooldown        = cd
     o.disabledOverlay = dis
     o.glow            = glow
+    o.reactionGlow    = reactionGlow
     o.cdOverlay       = cdOverlay
     o.cdLine          = cdLine
     o.action          = nil
@@ -143,28 +157,53 @@ function ActionBarSlot:New(name, opts)
     o._cdAnimFrom     = nil
     o._cdAnimTo       = nil
     o._cdAnimDur      = 0.18
+    o._reactionPulseStart = nil
+    o._slotBaseSize = size  -- Store base size for glow animations
 
     -- Animation driver
     local function OnUpdateAnim(_, elapsed)
-        if not o._cdAnimStart then return end
-        local t0   = o._cdAnimStart
-        local dur  = o._cdAnimDur or 0.18
-        local prog = clamp((GetTime() - t0) / dur, 0, 1)
-        local from = o._cdAnimFrom or 0
-        local to   = o._cdAnimTo or 0
-        local h    = from + (to - from) * prog
+        -- Update cooldown animation
+        if o._cdAnimStart then
+            local t0   = o._cdAnimStart
+            local dur  = o._cdAnimDur or 0.18
+            local prog = clamp((GetTime() - t0) / dur, 0, 1)
+            local from = o._cdAnimFrom or 0
+            local to   = o._cdAnimTo or 0
+            local h    = from + (to - from) * prog
 
-        if o.cdOverlay and o.cdOverlay:IsShown() then
-            o.cdOverlay:SetHeight(h)
-            -- keep the bright line glued to the overlay's top edge
-            o.cdLine:ClearAllPoints()
-            o.cdLine:SetPoint("TOPLEFT", o.cdOverlay, "TOPLEFT", 0, 0)
-            o.cdLine:SetPoint("TOPRIGHT", o.cdOverlay, "TOPRIGHT", 0, 0)
-            o.cdLine:Show()
+            if o.cdOverlay and o.cdOverlay:IsShown() then
+                o.cdOverlay:SetHeight(h)
+                -- keep the bright line glued to the overlay's top edge
+                o.cdLine:ClearAllPoints()
+                o.cdLine:SetPoint("TOPLEFT", o.cdOverlay, "TOPLEFT", 0, 0)
+                o.cdLine:SetPoint("TOPRIGHT", o.cdOverlay, "TOPRIGHT", 0, 0)
+                o.cdLine:Show()
+            end
+
+            if prog >= 1 then
+                o._cdAnimStart = nil
+            end
         end
 
-        if prog >= 1 then
-            o._cdAnimStart = nil
+        -- Update reaction glow pulse animation (independent from cooldown animation)
+        if o.reactionGlow and o.reactionGlow:IsShown() and o._reactionPulseStart then
+            local pulseTime = GetTime() - o._reactionPulseStart
+            local pulseCycle = 0.8  -- 0.8 second pulse cycle (faster)
+            local pulseProgress = (pulseTime % pulseCycle) / pulseCycle
+            
+            -- Smooth sinusoidal pulse: affects both alpha and size for dramatic effect
+            local minAlpha = 0.1
+            local maxAlpha = 1.0
+            local baseSize = o._slotBaseSize or 48
+            local minSize = baseSize * 1.8      -- base size (slot size * 1.8)
+            local maxSize = baseSize * 2.0      -- expanded size (slot size * 2.8)
+            local pulseWave = 0.5 + 0.5 * math.sin((pulseProgress * math.pi * 2) - math.pi / 2)
+            
+            local alpha = minAlpha + (maxAlpha - minAlpha) * pulseWave
+            local currentSize = minSize + (maxSize - minSize) * pulseWave
+            
+            o.reactionGlow:SetAlpha(alpha)
+            o.reactionGlow:SetSize(currentSize, currentSize)
         end
     end
     btn:SetScript("OnUpdate", OnUpdateAnim)
@@ -225,6 +264,41 @@ function ActionBarSlot:New(name, opts)
         if not event then
             UIErrorsFrame:AddMessage("No active event.", 1, 0.2, 0.2)
             return
+        end
+
+        -- Only apply player turn logic for the local player, not for NPCs or controlled units
+        local skipTurnCheck = false
+        if o._ownerWidget and o._ownerWidget._controlledUnitId then
+            skipTurnCheck = true
+        end
+        if not skipTurnCheck then
+            local isPlayerTurn = false
+            if event and event.localPlayerKey and event.ticks and event.tickIndex and (#event.ticks > 0 and event.ticks[event.tickIndex]) then
+                local tickUnits = event.ticks[event.tickIndex]
+                if tickUnits then
+                    for _, u in ipairs(tickUnits) do
+                        if u.key == event.localPlayerKey then
+                            isPlayerTurn = true
+                            break
+                        end
+                    end
+                end
+            end
+            local canCastOffTurn = false
+            if not isPlayerTurn and (RPE.Core._helpRequestsThisTurn or 0) > 0 and spell.tags then
+                for _, tag in ipairs(spell.tags) do
+                    local lowerTag = tag:lower()
+                    if lowerTag == "assist" or lowerTag == "reaction" then
+                        canCastOffTurn = true
+                        break
+                    end
+                end
+            end
+
+            if not isPlayerTurn and not canCastOffTurn then
+                UIErrorsFrame:AddMessage("Not your turn.", 1, 0.2, 0.2)
+                return
+            end
         end
 
         -- Build casting context
@@ -328,19 +402,66 @@ function ActionBarSlot:SetSlotSize(size)
 end
 
 -- Internal: check if spell requirements are met
-local function checkSpellRequirements(spellId)
+
+--- Check if this slot's spell requirements are met and it is the player's turn
+function ActionBarSlot:MeetsAllRequirements()
+    if not self.action or not self.action.spellId then return false end
     local SR = RPE.Core.SpellRegistry
-    local spell = SR and SR:Get(spellId)
-    if not spell then return true end
-    
+    local spell = SR and SR:Get(self.action.spellId)
+    if not spell then return false end
+
+    -- Only apply player turn logic for the local player, not for NPCs or controlled units
+    local event = RPE.Core.ActiveEvent
+    local skipTurnCheck = false
+    if self._ownerWidget and self._ownerWidget._controlledUnitId then
+        skipTurnCheck = true
+    end
+
+    if not skipTurnCheck then
+        -- If player is defending, always allow reaction/assist spells
+        if RPE.Core._isDefendingThisTurn and (spell.tags or spell.flags) then
+            for _, tag in ipairs(spell.tags or spell.flags) do
+                local lowerTag = tag:lower()
+                if lowerTag == "assist" or lowerTag == "reaction" then
+                    return true
+                end
+            end
+        end
+
+        local isPlayerTurn = false
+        if event and event.localPlayerKey and event.ticks and event.tickIndex and (#event.ticks > 0 and event.ticks[event.tickIndex]) then
+            local tickUnits = event.ticks[event.tickIndex]
+            if tickUnits then
+                for _, u in ipairs(tickUnits) do
+                    if u.key == event.localPlayerKey then
+                        isPlayerTurn = true
+                        break
+                    end
+                end
+            end
+        end
+
+        local canCastOffTurn = false
+        if not isPlayerTurn and ((RPE.Core._helpRequestsThisTurn or 0) > 0 or RPE.Core._isDefendingThisTurn) and (spell.tags or spell.flags) then
+            for _, tag in ipairs(spell.tags or spell.flags) do
+                local lowerTag = tag:lower()
+                if lowerTag == "assist" or lowerTag == "reaction" then
+                    canCastOffTurn = true
+                    break
+                end
+            end
+        end
+
+        if not isPlayerTurn and not canCastOffTurn then
+            return false -- Not the player's turn, and not a reaction/assist spell with help called
+        end
+    end
+
     -- Check spell-level requirements
     if spell.requirements and #spell.requirements > 0 then
         local Requirements = RPE.Core.SpellRequirements
         if not Requirements then return false end
-        
-        -- Build minimal context for requirement checking
         local ctx = {}
-        
         for _, req in ipairs(spell.requirements) do
             local ok = Requirements:EvalRequirement(ctx, req)
             if not ok then
@@ -348,7 +469,7 @@ local function checkSpellRequirements(spellId)
             end
         end
     end
-    
+
     return true  -- all requirements met
 end
 
@@ -356,12 +477,7 @@ function ActionBarSlot:SetAction(action)
     self.action = action
     SafeTexture(self.icon, action and action.icon or nil)
     
-    -- Determine if action should be enabled: check both action.isEnabled and spell requirements
-    local shouldEnable = (not action or action.isEnabled ~= false)
-    if shouldEnable and action and action.spellId then
-        shouldEnable = checkSpellRequirements(action.spellId)
-    end
-    self:SetEnabled(shouldEnable)
+    -- Determine if action should be enabled: handled by ActionBarWidget:RefreshRequirements
     
     -- reset cd visuals
     self.cooldown:Clear()
@@ -370,6 +486,13 @@ function ActionBarSlot:SetAction(action)
     if self.cdText then self.cdText:Hide() end
     self._cdTotal  = nil
     self._cdRemain = 0
+    
+    -- Hide reaction glow by default (will be shown in ActionBarWidget if spell has assist/reaction tag)
+    if self.reactionGlow then
+        self.reactionGlow:Hide()
+        self._reactionPulseStart = nil
+    end
+    
     self:Show()
 end
 
@@ -383,6 +506,12 @@ function ActionBarSlot:Clear()
     if self.cdText then self.cdText:Hide() end
     self._cdTotal  = nil
     self._cdRemain = 0
+    
+    -- Hide reaction glow when slot is cleared
+    if self.reactionGlow then
+        self.reactionGlow:Hide()
+        self._reactionPulseStart = nil
+    end
 end
 
 -- Internal: animate overlay height towards target
@@ -545,6 +674,29 @@ function ActionBarSlot:Flash(duration)
     if not self.glow then return end
     self.glow:SetAlpha(0.9)
     FadeOutOnce(self.glow, duration or 0.35, 0.9)
+end
+
+--- Show the pulsing reaction glow (blue glow indicating spell can be cast as reaction)
+function ActionBarSlot:ShowReactionGlow()
+    if not self.reactionGlow then return end
+    self.reactionGlow:Show()
+    self._reactionPulseStart = GetTime()
+end
+
+--- Hide the pulsing reaction glow
+function ActionBarSlot:HideReactionGlow()
+    if not self.reactionGlow then return end
+    self.reactionGlow:Hide()
+    self._reactionPulseStart = nil
+end
+
+--- Set the color of the reaction glow (default: cyan-blue for reactions)
+---@param r number Red (0-1)
+---@param g number Green (0-1)
+---@param b number Blue (0-1)
+function ActionBarSlot:SetReactionGlowColor(r, g, b)
+    if not self.reactionGlow then return end
+    self.reactionGlow:SetVertexColor(r or 0.2, g or 0.8, b or 1)
 end
 
 return ActionBarSlot

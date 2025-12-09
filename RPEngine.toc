@@ -1,4 +1,4 @@
-## Interface: 110200
+## Interface: 110207
 ## Title: RPEngine
 ## Notes: Fully-integrated 5e-based roll system and associated RP event tools.
 ## Version: 0.0.0
@@ -88,6 +88,7 @@ UI/Palettes/Default.lua
 UI/Palettes/WarmAmber.lua
 UI/Palettes/Alliance.lua
 UI/Palettes/Horde.lua
+UI/Palettes/DarkIron.lua
 
 UI/Schema/SpellActionSchemas.lua
 
@@ -104,6 +105,7 @@ UI/Elements/Input.lua
 UI/Elements/Checkbox.lua
 UI/Elements/Slider.lua
 UI/Elements/Dropdown.lua
+UI/Elements/MultiSelectDropdown.lua
 UI/Elements/EditorTable.lua
 UI/Elements/InputArea.lua
 
@@ -122,6 +124,7 @@ UI/Prefabs/ActionBarSlot.lua
 UI/Prefabs/FloatingCombatText.lua
 UI/Prefabs/Popup.lua
 UI/Prefabs/SpellGroups.lua
+UI/Prefabs/SetupPages.lua
 UI/Prefabs/AuraSlot.lua
 UI/Prefabs/ModelEditPrefab.lua
 UI/Prefabs/NPCSpellbookPrefab.lua
@@ -165,6 +168,7 @@ UI/Sheets/ProfessionSheet.lua
 UI/Sheets/RecipeEditorSheet.lua
 UI/Sheets/SpellbookSheet.lua
 UI/Sheets/InteractionEditorSheet.lua
+UI/Sheets/SetupWizardEditorSheet.lua
 
 ## Windows
 ## UI/Windows/IntroWindow.lua
@@ -179,6 +183,7 @@ UI/Windows/ChanterSenderWindow.lua
 UI/Windows/ChanterReceiverWindow.lua
 UI/Windows/TrainerWindow.lua
 UI/Windows/ShopWindow.lua
+UI/Windows/SetupWindow.lua
 
 ## Test
 Test/TestStats.lua

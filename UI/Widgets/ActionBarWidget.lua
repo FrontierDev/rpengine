@@ -81,6 +81,37 @@ function ActionBarWidget:_UpdateSlotFromAction(index, action)
         local enabled = not (action and action.isEnabled == false)
         slot:SetEnabled(enabled)
     end
+
+    -- Show reaction glow only when help has been called (CALL_HELP broadcast received)
+    -- The glow indicates spells with "assist" or "reaction" tags that can be cast off-turn
+    if RPE.Core._helpCalledThisTurn then
+        if action and action.spellId then
+            local SR = RPE.Core and RPE.Core.SpellRegistry
+            local spell = SR and SR:Get(action.spellId)
+            if spell and spell.tags then
+                local isReactionSpell = false
+                for _, tag in ipairs(spell.tags) do
+                    local lowerTag = tag:lower()
+                    if lowerTag == "assist" or lowerTag == "reaction" then
+                        isReactionSpell = true
+                        break
+                    end
+                end
+                if isReactionSpell then
+                    slot:ShowReactionGlow()
+                else
+                    slot:HideReactionGlow()
+                end
+            else
+                slot:HideReactionGlow()
+            end
+        else
+            slot:HideReactionGlow()
+        end
+    else
+        -- Help not called: hide all reaction glows
+        slot:HideReactionGlow()
+    end
 end
 
 --- Helper: Get cooldown remaining for a spell, checking related spells and shared groups
@@ -306,34 +337,34 @@ end
 function ActionBarWidget:RefreshRequirements()
     local SR = RPE.Core and RPE.Core.SpellRegistry
     local Requirements = RPE.Core and RPE.Core.SpellRequirements
+    local AB = RPE.Core.Windows.ActionBarWidget
     if not (SR and Requirements) then return end
     
     -- Skip requirement checks if controlling an NPC
-    if self._controlledUnitId then
+    if RPE.Core.Windows.ActionBarWidget._controlledUnitId then
         return
     end
     
-    for i = 1, self.numSlots do
-        local a = self.actions[i]
-        if a and a.spellId then
-            local slot = self.slots[i]
-            if slot then
-                -- Check if spell requirements are met
-                local spell = SR:Get(a.spellId)
-                if spell and spell.requirements and #spell.requirements > 0 then
-                    local ctx = {}
-                    local allMet = true
-                    for _, req in ipairs(spell.requirements) do
-                        local ok = Requirements:EvalRequirement(ctx, req)
-                        if not ok then
-                            allMet = false
+    for i = 1, AB.numSlots do
+        local slot = AB.slots[i]
+        if slot and slot.action and slot.action.spellId then
+            if (AB.cooldownTurns[i] or 0) <= 0 then
+                slot:SetEnabled(slot:MeetsAllRequirements())
+            end
+
+            if ((RPE.Core._helpRequestsThisTurn or 0) > 0) or RPE.Core._isDefendingThisTurn then
+                local spell = SR:Get(slot.action.spellId)
+                if spell and spell.tags then
+                    local isReactionSpell = false
+                    for _, tag in ipairs(spell.tags) do
+                        local lowerTag = tag:lower()
+                        if lowerTag == "assist" or lowerTag == "reaction" then
+                            isReactionSpell = true
                             break
                         end
                     end
-                    
-                    -- If on cooldown, stay disabled; otherwise enable/disable based on requirements
-                    if (self.cooldownTurns[i] or 0) <= 0 then
-                        slot:SetEnabled(allMet)
+                    if isReactionSpell then
+                        slot:ShowReactionGlow()
                     end
                 end
             end
@@ -968,39 +999,39 @@ function ActionBarWidget:RestoreActions()
         self:SetActions(self._originalActions)
         self._originalActions = nil
     end
-    
+
     -- Manually restore cooldowns from the Cooldowns tracker
     if playerNumericId and CD then
         self:RestoreCooldowns(tostring(playerNumericId), (event and event.turn) or 0)
     end
-    
+
     -- Restore the cast bar to show the player's cast (if any)
     -- When we exit temp mode, we need to show the player's actual cast, not the NPC's cast
     local event = RPE.Core.ActiveEvent
-    
+
     local CB = RPE.Core.Windows and RPE.Core.Windows.CastBarWidget
-    
+
     if event and CB then
         local playerUnitId = event:GetLocalPlayerUnitId()
-        
+
         local playerCast = playerUnitId and event._activeCasts and event._activeCasts[playerUnitId]
-        
+
         -- Check if player has an active cast that's not yet complete
         local hasActiveCast = playerCast and playerCast.remainingTurns and playerCast.remainingTurns > 0
-        
+
         if hasActiveCast then
             -- Player has an ACTIVE cast, show it
             CB.currentCast = playerCast
-            
+
             -- Update the cast bar display
             local ct = (playerCast.def and playerCast.def.cast) or { type = "INSTANT" }
             CB.castType = ct.type or "INSTANT"
             CB.totalTurns = tonumber(ct.turns) or 0
-            
+
             if CB.icon and CB.icon.SetIcon then
                 CB.icon:SetIcon((playerCast.def and playerCast.def.icon) or 135274)
             end
-            
+
             if CB.castType == "INSTANT" then
                 CB.bar:SetValue(1, 1)
                 CB:Show()
@@ -1042,6 +1073,9 @@ function ActionBarWidget:RestoreActions()
     if PUW then
         PUW:RestoreStats()
     end
+
+    -- Ensure requirements are checked and slots are enabled/disabled correctly
+    RPE.Core.Windows.ActionBarWidget.RefreshRequirements()
 end
 
 -- ============ Boilerplate ============
@@ -1188,7 +1222,16 @@ function ActionBarWidget:_KillOrResurrect()
     -- Broadcast the health change
     local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
     if Broadcast and Broadcast.UpdateUnitHealth then
-        Broadcast:UpdateUnitHealth(unit.id, unit.hp, unit.hpMax)
+        -- Calculate total absorption for this unit
+        local totalAbsorption = 0
+        if unit.absorption then
+            for _, shield in pairs(unit.absorption) do
+                if shield.amount then
+                    totalAbsorption = totalAbsorption + shield.amount
+                end
+            end
+        end
+        Broadcast:UpdateUnitHealth(unit.id, unit.hp, unit.hpMax, totalAbsorption)
     end
 end
 
@@ -1274,7 +1317,16 @@ function ActionBarWidget:_ShowSetHealthDialog()
                 
                 local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
                 if Broadcast and Broadcast.UpdateUnitHealth then
-                    Broadcast:UpdateUnitHealth(u.id, u.hp, u.hpMax)
+                    -- Calculate total absorption for this unit
+                    local totalAbsorption = 0
+                    if u.absorption then
+                        for _, shield in pairs(u.absorption) do
+                            if shield.amount then
+                                totalAbsorption = totalAbsorption + shield.amount
+                            end
+                        end
+                    end
+                    Broadcast:UpdateUnitHealth(u.id, u.hp, u.hpMax, totalAbsorption)
                 end
             end
         end,

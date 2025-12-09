@@ -342,9 +342,9 @@ function Item:ShowTooltip()
     end
 
     -- Weapon damage + swing cost
-    if self.data and self.data.minDamage and self.data.maxDamage and self.data.damageSchool and self.data.swingCost then
+    if self.data and self.data.minDamage and self.data.maxDamage and self.data.damageSchool then
         local damageRange = string.format("%d - %d damage", self.data.minDamage, self.data.maxDamage)
-        table.insert(lines, { left = damageRange, right = tostring(self.data.swingCost), r = 1, g = 1, b = 1, wrap = false })
+        table.insert(lines, { left = damageRange, right = tostring(self.data.swingCost or ""), r = 1, g = 1, b = 1, wrap = false })
     end
 
     -- ==== Stats ====

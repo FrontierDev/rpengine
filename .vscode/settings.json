@@ -52,10 +52,12 @@
         "INT",
         "HISTORY",
         "ITEMS",
-        "UIDropDownMenu_SetSelectedValue"
+        "UIDropDownMenu_SetSelectedValue",
+        "RACES"
     ],
     "Lua.diagnostics.disable": [
         "assign-type-mismatch"
     ],
-    "Lua.type.weakUnionCheck": true
+    "Lua.type.weakUnionCheck": true,
+    "Lua.diagnostics.workspaceDelay": -1
 }

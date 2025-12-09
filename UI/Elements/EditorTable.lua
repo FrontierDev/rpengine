@@ -428,7 +428,7 @@ function EditorTable:BuildUI(name, opts)
             table.insert(self._hdrCols, hdr)
         end
         local addBtn = Button:New(_uname(self, "Add"), {
-            parent = self.header, width = 72, height = 22, text = "+ Add",
+            parent = self.header, width = 40, height = 22, text = "+ Add",
             onClick = function()
                 self:_addRow_structured({})
                 _fireChange(self)

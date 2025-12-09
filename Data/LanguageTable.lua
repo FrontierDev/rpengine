@@ -98,7 +98,7 @@ LanguageTable.Gnomish = {
     [5] = { "Algos", "Angor", "Dagem", "Frend", "Goten", "Haven", "Havis", "Mitta", "Modan", "Modor", "Nagin", "Tiras", "Thros", "Weird" },
 }
 
-LanguageTable.Taur_ahe = {
+LanguageTable.Taurahe = {
     [1] = { "A", "E", "I", "N", "O" },
     [2] = { "Ba", "Ki", "Lo", "Ne", "Ni", "No", "Po", "Ta", "Te", "Tu", "Wa" },
     [3] = { "Aki", "Alo", "Awa", "Chi", "Ich", "Ish", "Kee", "Owa", "Paw", "Rah", "Uku", "Zhi" },

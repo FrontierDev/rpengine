@@ -18,6 +18,8 @@ local AuraRegistry = assert(RPE.Core.AuraRegistry, "AuraRegistry required")
 ---@field snapshot table|nil -- author-defined values frozen at apply
 ---@field rngSeed integer|nil
 ---@field isTrait boolean|nil -- whether this aura is a permanent trait
+---@field removeOnDamageTaken boolean|nil -- remove aura if target takes damage
+---@field crowdControl table|nil -- crowd control effects: blockAllActions, blockActionsByTag[], failAllDefences, failDefencesByStats[], slowMovement
 local Aura = {}
 Aura.__index = Aura
 RPE.Core.Aura = Aura
@@ -48,6 +50,8 @@ function Aura.New(def, sourceId, targetId, nowTurn, opts)
         charges    = opts.charges,            -- optional
         rngSeed    = opts.rngSeed,
         snapshot   = opts.snapshot,           -- optional
+        removeOnDamageTaken = def.removeOnDamageTaken,  -- Copy from definition
+        crowdControl = def.crowdControl,      -- Copy crowd control settings from definition
     }
     -- Duration -> absolute expiry turn (if duration>0)
     if def.duration and def.duration.turns and def.duration.turns > 0 then
@@ -130,6 +134,8 @@ function Aura:ToState()
         rngSeed = self.rngSeed,
         snapshot = self.snapshot,
         isTrait = self.isTrait,
+        removeOnDamageTaken = self.removeOnDamageTaken,
+        crowdControl = self.crowdControl,
     }
 end
 

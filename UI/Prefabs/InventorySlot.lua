@@ -137,9 +137,11 @@ function InventorySlot:New(name, opts)
     -- Quantity label (bottom-right). Hidden until quantity > 1
     o.qty = Text:New(name .. "_Qty", {
         parent = o,
-        fontTemplate = "GameFontHighlightSmall",
+        fontTemplate = "NumberFontNormalYellow",
+        fontSize = 14,
         textPoint = "BOTTOMRIGHT",
-        textX = -2, textY = 2,
+        textPointRelative = "BOTTOMRIGHT",
+        textX = opts.width * 0.4, textY = opts.height * -0.4,
         text = nil,
     })
     o.qty:SetAllPoints(o.frame)

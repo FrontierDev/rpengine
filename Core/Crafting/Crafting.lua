@@ -81,6 +81,15 @@ local function _runCast(self, recipe, durationSec, onDone, onCancel)
             widget.title:SetText(name)
         end
         if widget.Show then widget:Show() end
+        
+        -- Reset bar to 0 instantly (skip animation)
+        if widget.bar then
+            widget.bar.value = 0
+            widget.bar.targetValue = 0
+            if widget.bar.SetValue then
+                widget.bar:SetValue(0, 1)
+            end
+        end
     end
 
     local start = GetTime()
@@ -100,8 +109,11 @@ local function _runCast(self, recipe, durationSec, onDone, onCancel)
             widget.bar:SetValue(total, total)
             if widget.bar.TriggerFlash then widget.bar:TriggerFlash() end
         end
-        if widget and widget.FadeOut then widget:FadeOut(0.8) end
         if onDone then onDone() end
+        -- Only fade out if there are no more items in the queue AFTER onDone processing
+        if widget and widget.FadeOut and (#(self._queue or {}) == 0) and not self._isCasting then
+            widget:FadeOut(0.8)
+        end
     end)
 
     return function(reason)
@@ -158,7 +170,62 @@ function Crafting:_performOnce(recipe)
         RPE.Debug:Warning("Recipe has no output item defined.")
     end
 
+    -- Skill up chance based on recipe difficulty
+    if recipe.profession and recipe.skill then
+        self:_trySkillUp(recipe, profile)
+    end
+
     return true
+end
+
+-- ---------------------------------------------------------------------------
+-- Skill up chance
+-- ---------------------------------------------------------------------------
+function Crafting:_trySkillUp(recipe, profile)
+    local profName = recipe.profession
+    local recipeSkill = tonumber(recipe.skill) or 0
+    
+    -- Get current profession data (normalize to lowercase key, remove spaces)
+    local profs = profile.professions or {}
+    local profKey = profName:lower():gsub(" ", "")
+    local profData = profs[profKey]
+    if not profData or not profData.level then 
+        return 
+    end
+    
+    local currentSkill = tonumber(profData.level) or 0
+    local MAX_SKILL = 300
+    
+    -- Don't level up past max
+    if currentSkill >= MAX_SKILL then return end
+    
+    -- Formula: (G - X) / (G - Y)
+    -- G = 45 (green threshold)
+    -- Y = 15 (yellow threshold)
+    -- X = skill difference
+    local G = 45
+    local Y = 15
+    local skillDiff = currentSkill - recipeSkill
+    
+    -- Only orange/yellow/green recipes can give skill ups
+    if skillDiff < 0 then return end    -- red (below requirement)
+    if skillDiff > 30 then return end   -- grey (too easy)
+    
+    -- Calculate odds
+    local odds = (G - skillDiff) / (G - Y)
+    odds = math.max(0, math.min(1, odds))  -- Clamp to [0, 1]
+    
+    -- Roll for skill up
+    if math.random() < odds then
+        profData.level = math.min(MAX_SKILL, currentSkill + 1)
+        RPE.Debug:Skill(string.format("Your skill in %s increased to %d", profName, profData.level))
+        
+        -- Refresh ProfessionSheet UI if available
+        local ProfessionSheet = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ProfessionSheet
+        if ProfessionSheet and ProfessionSheet.Refresh then
+            ProfessionSheet:Refresh()
+        end
+    end
 end
 
 
@@ -167,7 +234,7 @@ end
 -- ---------------------------------------------------------------------------
 function Crafting:_maxCraftable(recipe)
     if not recipe then return 0 end
-    local req = recipe.required or (recipe.GetRequired and recipe:GetRequired()) or {}
+    local req = recipe.reagents or (recipe.GetReagents and recipe:GetReagents()) or {}
     if #req == 0 then return 9999 end
     local profile = _profile()
     local maxCount = math.huge
@@ -178,6 +245,24 @@ function Crafting:_maxCraftable(recipe)
     end
     if maxCount == math.huge then maxCount = 0 end
     return math.max(0, maxCount)
+end
+
+-- Check if player has enough materials to craft qty times
+function Crafting:_canCraft(recipe, qty)
+    if not recipe then return false end
+    qty = math.max(1, tonumber(qty) or 1)
+    local profile = _profile()
+    if not profile then return false end
+    
+    -- Check required reagents for full quantity
+    local reagents = recipe.reagents or (recipe.GetReagents and recipe:GetReagents()) or {}
+    for _, mat in ipairs(reagents) do
+        local need = (tonumber(mat.qty) or 1) * qty
+        if not profile:HasItem(tostring(mat.id), need) then
+            return false
+        end
+    end
+    return true
 end
 
 -- ---------------------------------------------------------------------------
@@ -197,7 +282,17 @@ end
 function Crafting:CraftRecipe(recipeOrId, qty)
     local id = (type(recipeOrId) == "table" and recipeOrId.id) or tostring(recipeOrId)
     if not id then return end
-    self:_enqueue(id, math.max(1, tonumber(qty) or 1))
+    local r = _getRecipeById(id)
+    if not r then
+        RPE.Debug:Warning(("Unknown recipe id: %s"):format(tostring(id)))
+        return
+    end
+    qty = math.max(1, tonumber(qty) or 1)
+    if not self:_canCraft(r, qty) then
+        RPE.Debug:Warning(("Not enough materials to craft %s x%d"):format(r.name or id, qty))
+        return
+    end
+    self:_enqueue(id, qty)
     self:_pump()
 end
 
@@ -212,6 +307,10 @@ function Crafting:CraftRecipeAll(recipeOrId)
     local m = self:_maxCraftable(r)
     if m <= 0 then
         RPE.Debug:Warning(("No materials available to craft %s."):format(id))
+        return
+    end
+    if not self:_canCraft(r, m) then
+        RPE.Debug:Warning(("Not enough materials to craft %s x%d"):format(r.name or id, m))
         return
     end
     self:_enqueue(id, m)
@@ -278,6 +377,7 @@ function Crafting:_startOne(recipe)
         self:_pump()
     end
 
+    -- Determine if this is the last item in the queue
     self._cancelCast = _runCast(self, recipe, castTime, onDone, onCancel)
 end
 

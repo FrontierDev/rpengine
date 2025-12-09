@@ -44,6 +44,71 @@ local function clamp(x, a, b)
     if x < a then return a elseif x > b then return b else return x end
 end
 
+-- ============ Immunity Check ============
+local function _checkDamageSchoolImmunity(damageSchool)
+    -- Get player's unit and aura manager
+    local ev = RPE.Core and RPE.Core.ActiveEvent
+    if not (ev and ev._auraManager) then return false end
+    
+    local playerId = ev:GetLocalPlayerUnitId()
+    if not playerId then return false end
+    
+    -- Get all auras on the player
+    local auras = ev._auraManager:All(playerId)
+    if not auras or #auras == 0 then return false end
+    
+    -- Normalize damage school to lowercase for case-insensitive comparison
+    local normalizedSchool = damageSchool and damageSchool:lower() or ""
+    if normalizedSchool == "" then return false end
+    
+    -- Check each aura for immunity to this damage school
+    for _, aura in ipairs(auras) do
+        if aura.def and aura.def.immunity and aura.def.immunity.damageSchools then
+            local schools = aura.def.immunity.damageSchools
+            if type(schools) == "table" then
+                for _, school in ipairs(schools) do
+                    if school and school:lower() == normalizedSchool then
+                        return true  -- Found immunity to this damage school
+                    end
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+-- ============ Get All Immune Schools ============
+local function _getImmuneSchools()
+    -- Get player's unit and aura manager
+    local ev = RPE.Core and RPE.Core.ActiveEvent
+    if not (ev and ev._auraManager) then return {} end
+    
+    local playerId = ev:GetLocalPlayerUnitId()
+    if not playerId then return {} end
+    
+    -- Get all auras on the player
+    local auras = ev._auraManager:All(playerId)
+    if not auras or #auras == 0 then return {} end
+    
+    -- Collect all immune damage schools
+    local immuneSchools = {}
+    for _, aura in ipairs(auras) do
+        if aura.def and aura.def.immunity and aura.def.immunity.damageSchools then
+            local schools = aura.def.immunity.damageSchools
+            if type(schools) == "table" then
+                for _, school in ipairs(schools) do
+                    if school then
+                        immuneSchools[school:lower()] = school  -- Store original case
+                    end
+                end
+            end
+        end
+    end
+    
+    return immuneSchools
+end
+
 -- ============ Button Management ============
 function PlayerReactionWidget:_EnsureButton(index)
     if self.buttons[index] and self.buttons[index].frame then
@@ -277,6 +342,7 @@ function PlayerReactionWidget:BuildUI(opts)
 
     self.buttons = {}
     self.reactions = {}
+    self._helpUsedThisTurn = false
 
     for i = 1, self.numSlots do
         local btn = self:_EnsureButton(i)
@@ -423,17 +489,25 @@ function PlayerReactionWidget:ShowReactions(reactions)
         if reactions.hitSystem == "simple" then
             -- Simple: always show Dodge (DEFENCE) option
             local icon = 132092  -- Default icon
-            local Stats = RPE and RPE.Stats
-            if Stats and Stats.Get then
-                local stat = Stats:Get("DEFENCE")
-                if stat and stat.icon then
-                    icon = stat.icon
+            local statName = "Defence"  -- Default name
+            if StatRegistry then
+                local stat = StatRegistry:Get("DEFENCE")
+                if stat then
+                    if stat.icon then
+                        icon = stat.icon
+                    end
+                    -- Priority: defenceName > name > default
+                    if stat.defenceName and stat.defenceName ~= "" then
+                        statName = stat.defenceName
+                    elseif stat.name then
+                        statName = stat.name
+                    end
                 end
             end
             table.insert(defenseOptions, {
                 icon = icon,
                 defenseType = "simple",
-                label = "Defence",
+                label = statName,
                 handler = function() self:_handleSimpleDefense(reactions) end,
             })
         elseif reactions.hitSystem == "complex" then
@@ -453,19 +527,28 @@ function PlayerReactionWidget:ShowReactions(reactions)
                         RPE.Debug:Internal(("PlayerReactionWidget - Threshold stat '%s' not found, skipping"):format(tostring(statId)))
                     end
                 else
-                    -- Get icon from stat definition if available
+                    -- Get icon and name from stat definition if available
                     local icon = 132093  -- Default icon
-                    if Stats and Stats.Get then
-                        local stat = Stats:Get(statId)
-                        if stat and stat.icon then
-                            icon = stat.icon
+                    local statName = statId  -- Fallback to ID
+                    if StatRegistry then
+                        local stat = StatRegistry:Get(statId)
+                        if stat then
+                            if stat.icon then
+                                icon = stat.icon
+                            end
+                            -- Priority: defenceName > name > ID
+                            if stat.defenceName and stat.defenceName ~= "" then
+                                statName = stat.defenceName
+                            elseif stat.name then
+                                statName = stat.name
+                            end
                         end
                     end
                     
                     table.insert(defenseOptions, {
                         icon = icon,
                         defenseType = "complex",
-                        label = statId,  -- Use the stat ID as label
+                        label = statName,  -- Use the stat name, not ID
                         statId = statId,
                         handler = function() self:_handleComplexDefense(reactions, statId) end,
                     })
@@ -482,6 +565,17 @@ function PlayerReactionWidget:ShowReactions(reactions)
                 handler = function() self:_handlePassDefense(reactions) end,
             })
         end
+        
+        -- Help button (available if not already used this turn)
+        if not self._helpUsedThisTurn then
+            table.insert(defenseOptions, {
+                icon = "Interface\\AddOns\\RPEngine\\UI\\Textures\\help.png",  -- Help icon
+                defenseType = "help",
+                label = "Help",
+                handler = function() self:_handleHelp() end,
+                buttonIndex = nil,  -- Will be set when button is created
+            })
+        end
     end
 
     -- Hide all buttons first
@@ -495,9 +589,21 @@ function PlayerReactionWidget:ShowReactions(reactions)
     for i, defense in ipairs(defenseOptions) do
         if i <= self.numSlots then
             local btn = self:_EnsureButton(i)
+            defense.buttonIndex = i  -- Store the button index for reference in tooltip
             btn:SetOnClick(function()
                 if defense.handler then
                     defense.handler()
+                end
+                -- Lock help button after it's clicked (disables click, hover, and desaturates)
+                if defense.defenseType == "help" and btn then
+                    btn:Lock()
+                else
+                    -- End help call if any other defense button is pressed
+                    local Broadcast = RPE and RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
+                    if Broadcast and Broadcast.CallHelpEnd and RPE.Core._helpCalledThisTurn then
+                        local playerId = RPE.Core and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent:GetLocalPlayerUnitId() or 0
+                        Broadcast:CallHelpEnd(playerId)
+                    end
                 end
             end)
             btn:SetIcon(defense.icon)
@@ -506,6 +612,9 @@ function PlayerReactionWidget:ShowReactions(reactions)
             -- Apply color tint to Pass button
             if defense.defenseType == "pass" then
                 btn:SetColor(0.95, 0.55, 0.55, 1.00)
+            -- Apply color tint to Help button
+            elseif defense.defenseType == "help" then
+                btn:SetColor(0.55, 0.75, 0.95, 1.00)
             end
             
             -- Add tooltip
@@ -515,8 +624,75 @@ function PlayerReactionWidget:ShowReactions(reactions)
                 -- Title: Action name
                 if defense.defenseType == "pass" then
                     spec.title = "Pass"
+                elseif defense.defenseType == "help" then
+                    spec.title = "Help"
                 else
                     spec.title = defense.label or "Defense"
+                end
+
+                -- Help button has simplified tooltip with just damage info
+                if defense.defenseType == "help" then
+                    -- Check if help button has been used (if it's locked)
+                    if defense.buttonIndex and self.buttons[defense.buttonIndex] and self.buttons[defense.buttonIndex]._locked then
+                        table.insert(spec.lines, {
+                            left = "You cannot call for help again this turn.",
+                            right = "",
+                            r = 0.95, g = 0.5, b = 0.5
+                        })
+                    else
+                        table.insert(spec.lines, {
+                            left = "Request assistance from allies",
+                            right = "",
+                            r = 0.9, g = 0.9, b = 0.9
+                        })
+                        
+                        -- Show expected damage if available
+                        if reactions and reactions.damages and next(reactions.damages) then
+                            table.insert(spec.lines, { left = "", right = "", r = 0, g = 0, b = 0 })  -- Blank line for spacing
+                            table.insert(spec.lines, {
+                                left = "Expected Damage Taken:",
+                                right = "",
+                                r = 0.7, g = 0.9, b = 0.7
+                            })
+                            
+                            local totalDamage = 0
+                            for school, amount in pairs(reactions.damages) do
+                                totalDamage = totalDamage + amount
+                                table.insert(spec.lines, {
+                                    left = "  " .. school .. ":",
+                                    right = tostring(amount),
+                                    r = 0.9, g = 0.9, b = 0.9
+                                })
+                            end
+                            
+                            table.insert(spec.lines, {
+                                left = "  Total:",
+                                right = tostring(totalDamage),
+                                r = 0.95, g = 0.5, b = 0.5
+                            })
+                        end
+                    end
+                else
+                    -- Defense button tooltip (original logic)
+                    
+                -- Get immune schools to display and filter damage
+                local immuneSchools = _getImmuneSchools()
+                
+                -- Show immunity info if player has immunities
+                if immuneSchools and next(immuneSchools) then
+                    local immuneList = {}
+                    for _, school in pairs(immuneSchools) do
+                        table.insert(immuneList, school)
+                    end
+                    table.sort(immuneList)
+                    local immuneText = table.concat(immuneList, ", ")
+                    local immuneColor = C and C.palette and C.palette.textModified or {0.55, 0.75, 0.95, 1.00}
+                    table.insert(spec.lines, {
+                        left = "You are immune to " .. immuneText,
+                        right = "",
+                        r = immuneColor[1], g = immuneColor[2], b = immuneColor[3]
+                    })
+                    table.insert(spec.lines, { left = "", right = "", r = 0, g = 0, b = 0 })  -- Blank line for spacing
                 end
 
                 -- Modifier line: show the player's stat modifier for this defense
@@ -524,26 +700,65 @@ function PlayerReactionWidget:ShowReactions(reactions)
                     local Stats = RPE and RPE.Stats
                     if Stats and Stats.GetValue then
                         local modValue = Stats:GetValue(defense.statId) or 0
-                        local color = C and C.palette and C.palette.textBonus or {0.9, 0.9, 0.9, 1}
+                        local statDef = StatRegistry and StatRegistry:Get(defense.statId)
+                        -- Use defenceName if available, otherwise use stat name, otherwise fall back to ID
+                        local statName = (statDef and statDef.defenceName and statDef.defenceName ~= "") and statDef.defenceName 
+                                      or (statDef and statDef.name) or defense.statId
+                        
+                        -- Use textMalus for negative, textBonus for positive
+                        local color = modValue >= 0 and (C.palette and C.palette.textBonus) or (C.palette and C.palette.textMalus)
+                        if not color then
+                            color = {0.9, 0.9, 0.9, 1}
+                        end
+                        
                         table.insert(spec.lines, {
-                            left = "Your Modifier:",
+                            left = statName .. " Modifier:",
                             right = string.format("%+d", modValue),
                             r = color[1], g = color[2], b = color[3]
                         })
+
+                        -- Show absorption from shields (check player's actual absorption)
+                        local playerUnitId = RPE.Core and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent:GetLocalPlayerUnitId()
+                        local playerUnit = nil
+                        if playerUnitId and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent.units then
+                            -- Find the unit with matching ID
+                            for _, u in pairs(RPE.Core.ActiveEvent.units) do
+                                if u.id == playerUnitId then
+                                    playerUnit = u
+                                    break
+                                end
+                            end
+                        end
+                        if playerUnit and playerUnit.absorption then
+                            local totalAbsorption = 0
+                            for shieldId, shield in pairs(playerUnit.absorption) do
+                                if shield.amount then
+                                    totalAbsorption = totalAbsorption + shield.amount
+                                end
+                            end
+                            if totalAbsorption > 0 then
+                                local absorbColor = C and C.palette and C.palette.textBonus or {0.9, 0.9, 0.9, 1}
+                                table.insert(spec.lines, {
+                                    left = "Shields Absorb:",
+                                    right = string.format("%d damage", totalAbsorption),
+                                    r = absorbColor[1], g = absorbColor[2], b = absorbColor[3]
+                                })
+                            end
+                        end
 
                         -- Show advantage/disadvantage level if present
                         local Advantage = RPE and RPE.Core and RPE.Core.Advantage
                         if Advantage then
                             local advLevel = Advantage:Get(defense.statId)
                             if advLevel > 0 then
-                                local advColor = C and C.palette and C.palette.textBonus or {0.3, 1, 0.3, 1}
+                                local advColor = C and C.palette and C.palette.textBonus or {0.55, 0.95, 0.65, 1.00}
                                 table.insert(spec.lines, {
                                     left = "Advantage:",
                                     right = string.format("x%d", advLevel),
                                     r = advColor[1], g = advColor[2], b = advColor[3]
                                 })
                             elseif advLevel < 0 then
-                                local disColor = C and C.palette and C.palette.textMalus or {1, 0.3, 0.3, 1}
+                                local disColor = C and C.palette and C.palette.textMalus or {0.95, 0.55, 0.55, 1.00}
                                 table.insert(spec.lines, {
                                     left = "Disadvantage:",
                                     right = string.format("x%d", math.abs(advLevel)),
@@ -558,26 +773,65 @@ function PlayerReactionWidget:ShowReactions(reactions)
                     local Stats = RPE and RPE.Stats
                     if Stats and Stats.GetValue then
                         local modValue = Stats:GetValue("DEFENCE") or 0
-                        local color = C and C.palette and C.palette.textBonus or {0.9, 0.9, 0.9, 1}
+                        local statDef = StatRegistry and StatRegistry:Get("DEFENCE")
+                        -- Use defenceName if available, otherwise use stat name, otherwise fall back to "Defence"
+                        local statName = (statDef and statDef.defenceName and statDef.defenceName ~= "") and statDef.defenceName 
+                                      or (statDef and statDef.name) or "Defence"
+                        
+                        -- Use textMalus for negative, textBonus for positive
+                        local color = modValue >= 0 and (C.palette and C.palette.textBonus) or (C.palette and C.palette.textMalus)
+                        if not color then
+                            color = {0.9, 0.9, 0.9, 1}
+                        end
+                        
                         table.insert(spec.lines, {
-                            left = "Your Modifier:",
+                            left = statName .. " Modifier:",
                             right = string.format("%+d", modValue),
                             r = color[1], g = color[2], b = color[3]
                         })
+
+                        -- Show absorption from shields (check player's actual absorption)
+                        local playerUnitId = RPE.Core and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent:GetLocalPlayerUnitId()
+                        local playerUnit = nil
+                        if playerUnitId and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent.units then
+                            -- Find the unit with matching ID
+                            for _, u in pairs(RPE.Core.ActiveEvent.units) do
+                                if u.id == playerUnitId then
+                                    playerUnit = u
+                                    break
+                                end
+                            end
+                        end
+                        if playerUnit and playerUnit.absorption then
+                            local totalAbsorption = 0
+                            for shieldId, shield in pairs(playerUnit.absorption) do
+                                if shield.amount then
+                                    totalAbsorption = totalAbsorption + shield.amount
+                                end
+                            end
+                            if totalAbsorption > 0 then
+                                local absorbColor = C and C.palette and C.palette.textBonus or {0.9, 0.9, 0.9, 1}
+                                table.insert(spec.lines, {
+                                    left = "Shields Absorb:",
+                                    right = string.format("%d damage", totalAbsorption),
+                                    r = absorbColor[1], g = absorbColor[2], b = absorbColor[3]
+                                })
+                            end
+                        end
 
                         -- Show advantage/disadvantage level for DEFENCE if present
                         local Advantage = RPE and RPE.Core and RPE.Core.Advantage
                         if Advantage then
                             local advLevel = Advantage:Get("DEFENCE")
                             if advLevel > 0 then
-                                local advColor = C and C.palette and C.palette.textBonus or {0.3, 1, 0.3, 1}
+                                local advColor = C and C.palette and C.palette.textBonus or {0.55, 0.95, 0.65, 1.00}
                                 table.insert(spec.lines, {
                                     left = "Advantage:",
-                                    right = string.format("+%d", advLevel),
+                                    right = string.format("x%d", advLevel),
                                     r = advColor[1], g = advColor[2], b = advColor[3]
                                 })
                             elseif advLevel < 0 then
-                                local disColor = C and C.palette and C.palette.textMalus or {1, 0.3, 0.3, 1}
+                                local disColor = C and C.palette and C.palette.textMalus or {0.95, 0.55, 0.55, 1.00}
                                 table.insert(spec.lines, {
                                     left = "Disadvantage:",
                                     right = string.format("x%d", math.abs(advLevel)),
@@ -593,30 +847,143 @@ function PlayerReactionWidget:ShowReactions(reactions)
                 -- Get attacker's roll to determine tooltip ranges
                 local attackerRoll = reactions and reactions.attackRoll or 50  -- Default to 50
                 
-                -- On Fail line: show minimum damage roll (1 to [N-1])
+                -- Add spacing before damage breakdown if we showed modifiers/advantages
+                local hasStats = (defense.statId and defense.defenseType == "complex") or defense.defenseType == "simple"
+                if hasStats and (#spec.lines > 0 and spec.lines[#spec.lines].left ~= "") then
+                    table.insert(spec.lines, { left = "", right = "", r = 0, g = 0, b = 0 })
+                end
+                
+                -- Get immune schools to avoid showing damage for them
+                local immuneSchools = _getImmuneSchools()
+                
+                -- On Fail line: show damage with fail mitigation applied (1 to [N-1])
                 -- Only show for non-pass defenses
                 if reactions and reactions.predictedDamage and defense.defenseType ~= "pass" then
                     local failLabel = "1-" .. tostring(math.max(1, attackerRoll - 1))
                     -- Show full damage breakdown by school if available
                     if reactions.damageBySchool then
                         for school, amount in pairs(reactions.damageBySchool) do
-                            if tonumber(amount) and tonumber(amount) > 0 then
-                                table.insert(spec.lines, {
-                                    left = failLabel,
-                                    right = string.format("Takes %d %s damage", math.floor(tonumber(amount)), school),
-                                    r = 1, g = 0.3, b = 0.3
-                                })
+                            -- Skip displaying damage for schools player is immune to
+                            if not immuneSchools[school:lower()] then
+                                if tonumber(amount) and tonumber(amount) > 0 then
+                                    local failDamage = amount
+                                    
+                                    -- Apply fail mitigation based on defense type
+                                    if defense.statId and defense.defenseType == "complex" then
+                                        -- Complex defense: get fail mitigation from the specific defense stat
+                                        local StatRegistry = RPE and RPE.Core and RPE.Core.StatRegistry
+                                        local statDef = StatRegistry and StatRegistry:Get(defense.statId)
+                                        
+                                        if statDef and statDef.mitigation and statDef.mitigation.fail then
+                                            local mitigationExpr = statDef.mitigation.fail
+                                            if mitigationExpr ~= 0 then
+                                                if type(mitigationExpr) == "number" then
+                                                    failDamage = math.max(0, amount - mitigationExpr)
+                                                elseif type(mitigationExpr) == "string" then
+                                                    local Formula = RPE and RPE.Core and RPE.Core.Formula
+                                                    if Formula and Formula.Roll then
+                                                        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB:GetOrCreateActive()
+                                                        local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(amount))
+                                                        local result = Formula:Roll(exprWithValue, profile)
+                                                        if result and type(result) == "number" then
+                                                            failDamage = math.max(0, result)
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    elseif defense.defenseType == "simple" then
+                                        -- Simple defense: get fail mitigation from DEFENCE stat
+                                        local StatRegistry = RPE and RPE.Core and RPE.Core.StatRegistry
+                                        local defenceStat_def = StatRegistry and StatRegistry:Get("DEFENCE")
+                                        
+                                        if defenceStat_def and defenceStat_def.mitigation and defenceStat_def.mitigation.fail then
+                                            local mitigationExpr = defenceStat_def.mitigation.fail
+                                            if mitigationExpr ~= 0 then
+                                                if type(mitigationExpr) == "number" then
+                                                    failDamage = math.max(0, amount - mitigationExpr)
+                                                elseif type(mitigationExpr) == "string" then
+                                                    local Formula = RPE and RPE.Core and RPE.Core.Formula
+                                                    if Formula and Formula.Roll then
+                                                        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB:GetOrCreateActive()
+                                                        local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(amount))
+                                                        local result = Formula:Roll(exprWithValue, profile)
+                                                        if result and type(result) == "number" then
+                                                            failDamage = math.max(0, result)
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                    
+                                    table.insert(spec.lines, {
+                                        left = failLabel,
+                                        right = string.format("Takes %d %s damage", math.floor(tonumber(failDamage)), school),
+                                        r = 1, g = 0.3, b = 0.3
+                                    })
+                                end
                             end
                         end
                     else
                         -- Fallback to single school display if breakdown not available
                         local damageAmount = reactions.predictedDamage or 0
                         local school = reactions.damageSchool or "Physical"
-                        table.insert(spec.lines, {
-                            left = failLabel,
-                            right = string.format("Takes %d %s damage", damageAmount, school),
-                            r = 1, g = 0.3, b = 0.3
-                        })
+                        
+                        -- Apply fail mitigation for single school fallback
+                        if defense.statId and defense.defenseType == "complex" then
+                            local StatRegistry = RPE and RPE.Core and RPE.Core.StatRegistry
+                            local statDef = StatRegistry and StatRegistry:Get(defense.statId)
+                            
+                            if statDef and statDef.mitigation and statDef.mitigation.fail then
+                                local mitigationExpr = statDef.mitigation.fail
+                                if mitigationExpr ~= 0 then
+                                    if type(mitigationExpr) == "number" then
+                                        damageAmount = math.max(0, damageAmount - mitigationExpr)
+                                    elseif type(mitigationExpr) == "string" then
+                                        local Formula = RPE and RPE.Core and RPE.Core.Formula
+                                        if Formula and Formula.Roll then
+                                            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB:GetOrCreateActive()
+                                            local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(damageAmount))
+                                            local result = Formula:Roll(exprWithValue, profile)
+                                            if result and type(result) == "number" then
+                                                damageAmount = math.max(0, result)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        elseif defense.defenseType == "simple" then
+                            local StatRegistry = RPE and RPE.Core and RPE.Core.StatRegistry
+                            local defenceStat_def = StatRegistry and StatRegistry:Get("DEFENCE")
+                            
+                            if defenceStat_def and defenceStat_def.mitigation and defenceStat_def.mitigation.fail then
+                                local mitigationExpr = defenceStat_def.mitigation.fail
+                                if mitigationExpr ~= 0 then
+                                    if type(mitigationExpr) == "number" then
+                                        damageAmount = math.max(0, damageAmount - mitigationExpr)
+                                    elseif type(mitigationExpr) == "string" then
+                                        local Formula = RPE and RPE.Core and RPE.Core.Formula
+                                        if Formula and Formula.Roll then
+                                            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB:GetOrCreateActive()
+                                            local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(damageAmount))
+                                            local result = Formula:Roll(exprWithValue, profile)
+                                            if result and type(result) == "number" then
+                                                damageAmount = math.max(0, result)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        
+                        if not immuneSchools[school:lower()] then
+                            table.insert(spec.lines, {
+                                left = failLabel,
+                                right = string.format("Takes %d %s damage", damageAmount, school),
+                                r = 1, g = 0.3, b = 0.3
+                            })
+                        end
                     end
                 end
                 
@@ -728,40 +1095,50 @@ function PlayerReactionWidget:ShowReactions(reactions)
                         end
                     end
                     
-                    -- Display success damage per school
+                    -- Display success damage per school (skip immune schools)
                     local labelColor = (defense.defenseType == "pass") and {r = 1, g = 0.3, b = 0.3} or {r = 0.3, g = 1, b = 0.3}
                     for school, amount in pairs(successDamageBySchool) do
-                        if tonumber(amount) and tonumber(amount) >= 0 then
-                            table.insert(spec.lines, {
-                                left = successLabel,
-                                right = string.format("Takes %d %s damage", math.floor(tonumber(amount)), school),
-                                r = labelColor.r, g = labelColor.g, b = labelColor.b
-                            })
-                        end
-                    end
-                    
-                    -- Display critical success damage per school if different from normal
-                    if hasCritMitigation and critSuccessDamageBySchool then
-                        for school, amount in pairs(critSuccessDamageBySchool) do
+                        -- Skip displaying damage for schools player is immune to
+                        if not immuneSchools[school:lower()] then
                             if tonumber(amount) and tonumber(amount) >= 0 then
                                 table.insert(spec.lines, {
-                                    left = critLabel,
+                                    left = successLabel,
                                     right = string.format("Takes %d %s damage", math.floor(tonumber(amount)), school),
-                                    r = 0.2, g = 1, b = 0.5
+                                    r = labelColor.r, g = labelColor.g, b = labelColor.b
                                 })
                             end
                         end
                     end
-                elseif reactions and reactions.predictedDamage then
-                    -- Fallback for old single-school format
-                    local school = reactions.damageSchool or "Physical"
-                    local labelColor = (defense.defenseType == "pass") and {r = 1, g = 0.3, b = 0.3} or {r = 0.3, g = 1, b = 0.3}
-                    table.insert(spec.lines, {
-                        left = successLabel,
-                        right = string.format("Takes %d %s damage", reactions.predictedDamage, school),
-                        r = labelColor.r, g = labelColor.g, b = labelColor.b
-                    })
-                end
+                    
+                    -- Display critical success damage per school if different from normal (skip immune schools)
+                    if hasCritMitigation and critSuccessDamageBySchool then
+                        for school, amount in pairs(critSuccessDamageBySchool) do
+                            -- Skip displaying damage for schools player is immune to
+                            if not immuneSchools[school:lower()] then
+                                if tonumber(amount) and tonumber(amount) >= 0 then
+                                    table.insert(spec.lines, {
+                                        left = critLabel,
+                                        right = string.format("Takes %d %s damage", math.floor(tonumber(amount)), school),
+                                        r = 0.2, g = 1, b = 0.5
+                                    })
+                                end
+                            end
+                        end
+                    end
+                    elseif reactions and reactions.predictedDamage then
+                        -- Fallback for old single-school format
+                        local school = reactions.damageSchool or "Physical"
+                        -- Skip displaying damage if player is immune to this school
+                        if not immuneSchools[school:lower()] then
+                            local labelColor = (defense.defenseType == "pass") and {r = 1, g = 0.3, b = 0.3} or {r = 0.3, g = 1, b = 0.3}
+                            table.insert(spec.lines, {
+                                left = successLabel,
+                                right = string.format("Takes %d %s damage", reactions.predictedDamage, school),
+                                r = labelColor.r, g = labelColor.g, b = labelColor.b
+                            })
+                        end
+                    end
+                end  -- Close the if defense.defenseType == "help" else block
                 
                 if Common and Common.ShowTooltip then
                     Common:ShowTooltip(frame, spec)
@@ -869,20 +1246,42 @@ function PlayerReactionWidget:_handleSimpleDefense(reaction)
     local finalDamageBySchool = {}
     if reaction.damageBySchool then
         for school, amount in pairs(reaction.damageBySchool) do
-            finalDamageBySchool[school] = amount
-            
-            if defendSuccess then
+            -- Check for aura-based immunity to this damage school
+            if _checkDamageSchoolImmunity(school) then
+                finalDamageBySchool[school] = 0
+            else
+                finalDamageBySchool[school] = amount
+                
                 local defenceStat_def = StatRegistry and StatRegistry:Get("DEFENCE")
-                if defenceStat_def and defenceStat_def.mitigation and defenceStat_def.mitigation.normal then
-                    local mitigationExpr = defenceStat_def.mitigation.normal
-                    if mitigationExpr ~= 0 then
-                        if type(mitigationExpr) == "number" then
-                            finalDamageBySchool[school] = math.max(0, amount - mitigationExpr)
-                        elseif type(mitigationExpr) == "string" and Formula and profile then
-                            local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(amount))
-                            local result = Formula:Roll(exprWithValue, profile)
-                            if result and type(result) == "number" then
-                                finalDamageBySchool[school] = math.max(0, result)
+                if defendSuccess then
+                    -- Apply normal mitigation on success
+                    if defenceStat_def and defenceStat_def.mitigation and defenceStat_def.mitigation.normal then
+                        local mitigationExpr = defenceStat_def.mitigation.normal
+                        if mitigationExpr ~= 0 then
+                            if type(mitigationExpr) == "number" then
+                                finalDamageBySchool[school] = math.max(0, amount - mitigationExpr)
+                            elseif type(mitigationExpr) == "string" and Formula and profile then
+                                local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(amount))
+                                local result = Formula:Roll(exprWithValue, profile)
+                                if result and type(result) == "number" then
+                                    finalDamageBySchool[school] = math.max(0, result)
+                                end
+                            end
+                        end
+                    end
+                else
+                    -- Apply fail mitigation on failure
+                    if defenceStat_def and defenceStat_def.mitigation and defenceStat_def.mitigation.fail then
+                        local mitigationExpr = defenceStat_def.mitigation.fail
+                        if mitigationExpr ~= 0 then
+                            if type(mitigationExpr) == "number" then
+                                finalDamageBySchool[school] = math.max(0, amount - mitigationExpr)
+                            elseif type(mitigationExpr) == "string" and Formula and profile then
+                                local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(amount))
+                                local result = Formula:Roll(exprWithValue, profile)
+                                if result and type(result) == "number" then
+                                    finalDamageBySchool[school] = math.max(0, result)
+                                end
                             end
                         end
                     end
@@ -892,20 +1291,41 @@ function PlayerReactionWidget:_handleSimpleDefense(reaction)
     else
         -- Fallback for single school
         local school = reaction.damageSchool or "Physical"
-        finalDamageBySchool[school] = reaction.predictedDamage
-        
-        if defendSuccess then
+        if _checkDamageSchoolImmunity(school) then
+            finalDamageBySchool[school] = 0
+        else
+            finalDamageBySchool[school] = reaction.predictedDamage
+            
             local defenceStat_def = StatRegistry and StatRegistry:Get("DEFENCE")
-            if defenceStat_def and defenceStat_def.mitigation and defenceStat_def.mitigation.normal then
-                local mitigationExpr = defenceStat_def.mitigation.normal
-                if mitigationExpr ~= 0 then
-                    if type(mitigationExpr) == "number" then
-                        finalDamageBySchool[school] = math.max(0, reaction.predictedDamage - mitigationExpr)
-                    elseif type(mitigationExpr) == "string" and Formula and profile then
-                        local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(reaction.predictedDamage))
-                        local result = Formula:Roll(exprWithValue, profile)
-                        if result and type(result) == "number" then
-                            finalDamageBySchool[school] = math.max(0, result)
+            if defendSuccess then
+                -- Apply normal mitigation on success
+                if defenceStat_def and defenceStat_def.mitigation and defenceStat_def.mitigation.normal then
+                    local mitigationExpr = defenceStat_def.mitigation.normal
+                    if mitigationExpr ~= 0 then
+                        if type(mitigationExpr) == "number" then
+                            finalDamageBySchool[school] = math.max(0, reaction.predictedDamage - mitigationExpr)
+                        elseif type(mitigationExpr) == "string" and Formula and profile then
+                            local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(reaction.predictedDamage))
+                            local result = Formula:Roll(exprWithValue, profile)
+                            if result and type(result) == "number" then
+                                finalDamageBySchool[school] = math.max(0, result)
+                            end
+                        end
+                    end
+                end
+            else
+                -- Apply fail mitigation on failure
+                if defenceStat_def and defenceStat_def.mitigation and defenceStat_def.mitigation.fail then
+                    local mitigationExpr = defenceStat_def.mitigation.fail
+                    if mitigationExpr ~= 0 then
+                        if type(mitigationExpr) == "number" then
+                            finalDamageBySchool[school] = math.max(0, reaction.predictedDamage - mitigationExpr)
+                        elseif type(mitigationExpr) == "string" and Formula and profile then
+                            local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(reaction.predictedDamage))
+                            local result = Formula:Roll(exprWithValue, profile)
+                            if result and type(result) == "number" then
+                                finalDamageBySchool[school] = math.max(0, result)
+                            end
                         end
                     end
                 end
@@ -947,6 +1367,9 @@ function PlayerReactionWidget:_handleSimpleDefense(reaction)
         if #damageStrings > 0 then
             local damageText = table.concat(damageStrings, ", ")
             Broadcast:SendCombatMessage(playerId, defenderName, ("%s deals %s damage to %s."):format(attackerName, damageText, defenderName))
+        else
+            -- All damage was mitigated
+            Broadcast:SendCombatMessage(playerId, defenderName, ("%s's attack is completely negated!"):format(attackerName))
         end
     end
 
@@ -970,20 +1393,42 @@ function PlayerReactionWidget:_handleComplexDefense(reaction, statId)
     local finalDamageBySchool = {}
     if reaction.damageBySchool then
         for school, amount in pairs(reaction.damageBySchool) do
-            finalDamageBySchool[school] = amount
-            
-            if defendSuccess and statId then
+            -- Check for aura-based immunity to this damage school
+            if _checkDamageSchoolImmunity(school) then
+                finalDamageBySchool[school] = 0
+            else
+                finalDamageBySchool[school] = amount
+                
                 local statDef = StatRegistry and StatRegistry:Get(statId)
-                if statDef and statDef.mitigation and statDef.mitigation.normal then
-                    local mitigationExpr = statDef.mitigation.normal
-                    if mitigationExpr ~= 0 then
-                        if type(mitigationExpr) == "number" then
-                            finalDamageBySchool[school] = math.max(0, amount - mitigationExpr)
-                        elseif type(mitigationExpr) == "string" and Formula and profile then
-                            local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(amount))
-                            local result = Formula:Roll(exprWithValue, profile)
-                            if result and type(result) == "number" then
-                                finalDamageBySchool[school] = math.max(0, result)
+                if defendSuccess and statId then
+                    -- Apply normal mitigation on success
+                    if statDef and statDef.mitigation and statDef.mitigation.normal then
+                        local mitigationExpr = statDef.mitigation.normal
+                        if mitigationExpr ~= 0 then
+                            if type(mitigationExpr) == "number" then
+                                finalDamageBySchool[school] = math.max(0, amount - mitigationExpr)
+                            elseif type(mitigationExpr) == "string" and Formula and profile then
+                                local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(amount))
+                                local result = Formula:Roll(exprWithValue, profile)
+                                if result and type(result) == "number" then
+                                    finalDamageBySchool[school] = math.max(0, result)
+                                end
+                            end
+                        end
+                    end
+                elseif not defendSuccess and statId then
+                    -- Apply fail mitigation on failure
+                    if statDef and statDef.mitigation and statDef.mitigation.fail then
+                        local mitigationExpr = statDef.mitigation.fail
+                        if mitigationExpr ~= 0 then
+                            if type(mitigationExpr) == "number" then
+                                finalDamageBySchool[school] = math.max(0, amount - mitigationExpr)
+                            elseif type(mitigationExpr) == "string" and Formula and profile then
+                                local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(amount))
+                                local result = Formula:Roll(exprWithValue, profile)
+                                if result and type(result) == "number" then
+                                    finalDamageBySchool[school] = math.max(0, result)
+                                end
                             end
                         end
                     end
@@ -993,20 +1438,41 @@ function PlayerReactionWidget:_handleComplexDefense(reaction, statId)
     else
         -- Fallback for single school
         local school = reaction.damageSchool or "Physical"
-        finalDamageBySchool[school] = reaction.predictedDamage
-        
-        if defendSuccess and statId then
+        if _checkDamageSchoolImmunity(school) then
+            finalDamageBySchool[school] = 0
+        else
+            finalDamageBySchool[school] = reaction.predictedDamage
+            
             local statDef = StatRegistry and StatRegistry:Get(statId)
-            if statDef and statDef.mitigation and statDef.mitigation.normal then
-                local mitigationExpr = statDef.mitigation.normal
-                if mitigationExpr ~= 0 then
-                    if type(mitigationExpr) == "number" then
-                        finalDamageBySchool[school] = math.max(0, reaction.predictedDamage - mitigationExpr)
-                    elseif type(mitigationExpr) == "string" and Formula and profile then
-                        local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(reaction.predictedDamage))
-                        local result = Formula:Roll(exprWithValue, profile)
-                        if result and type(result) == "number" then
-                            finalDamageBySchool[school] = math.max(0, result)
+            if defendSuccess and statId then
+                -- Apply normal mitigation on success
+                if statDef and statDef.mitigation and statDef.mitigation.normal then
+                    local mitigationExpr = statDef.mitigation.normal
+                    if mitigationExpr ~= 0 then
+                        if type(mitigationExpr) == "number" then
+                            finalDamageBySchool[school] = math.max(0, reaction.predictedDamage - mitigationExpr)
+                        elseif type(mitigationExpr) == "string" and Formula and profile then
+                            local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(reaction.predictedDamage))
+                            local result = Formula:Roll(exprWithValue, profile)
+                            if result and type(result) == "number" then
+                                finalDamageBySchool[school] = math.max(0, result)
+                            end
+                        end
+                    end
+                end
+            elseif not defendSuccess and statId then
+                -- Apply fail mitigation on failure
+                if statDef and statDef.mitigation and statDef.mitigation.fail then
+                    local mitigationExpr = statDef.mitigation.fail
+                    if mitigationExpr ~= 0 then
+                        if type(mitigationExpr) == "number" then
+                            finalDamageBySchool[school] = math.max(0, reaction.predictedDamage - mitigationExpr)
+                        elseif type(mitigationExpr) == "string" and Formula and profile then
+                            local exprWithValue = mitigationExpr:gsub("%$value%$", tostring(reaction.predictedDamage))
+                            local result = Formula:Roll(exprWithValue, profile)
+                            if result and type(result) == "number" then
+                                finalDamageBySchool[school] = math.max(0, result)
+                            end
                         end
                     end
                 end
@@ -1062,8 +1528,32 @@ function PlayerReactionWidget:_handlePassDefense(reaction)
     local roll = 0
     local lhs = 0
     
-    -- Calculate total final damage from all schools
-    local totalFinalDamage = reaction.predictedDamage  -- Pass defense means take full damage
+    -- Calculate total final damage from all schools, checking for immunity
+    local finalDamageBySchool = {}
+    if reaction.damageBySchool then
+        for school, amount in pairs(reaction.damageBySchool) do
+            -- Check for aura-based immunity to this damage school
+            if _checkDamageSchoolImmunity(school) then
+                finalDamageBySchool[school] = 0
+            else
+                finalDamageBySchool[school] = amount
+            end
+        end
+    else
+        -- Fallback for single school
+        local school = reaction.damageSchool or "Physical"
+        if _checkDamageSchoolImmunity(school) then
+            finalDamageBySchool[school] = 0
+        else
+            finalDamageBySchool[school] = reaction.predictedDamage
+        end
+    end
+    
+    -- Calculate total final damage
+    local totalFinalDamage = 0
+    for _, amount in pairs(finalDamageBySchool) do
+        totalFinalDamage = totalFinalDamage + amount
+    end
 
     -- Display outcome
     local attackerName = "Attacker"
@@ -1081,16 +1571,17 @@ function PlayerReactionWidget:_handlePassDefense(reaction)
     local defenderName = UnitName("player") or "You"
     if Broadcast and Broadcast.SendCombatMessage then
         local playerId = RPE.Core and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent:GetLocalPlayerUnitId() or 0
-        -- Aggregate damage by school into single message
+        -- Aggregate damage by school into single message, but note that absorption will reduce actual HP damage
         if reaction.damageBySchool then
             local damageStrings = {}
-            for school, amount in pairs(reaction.damageBySchool) do
+            for school, amount in pairs(finalDamageBySchool) do
                 if tonumber(amount) and tonumber(amount) > 0 then
                     table.insert(damageStrings, math.floor(amount) .. " " .. school)
                 end
             end
             if #damageStrings > 0 then
                 local damageText = table.concat(damageStrings, ", ")
+                -- Note: actual HP damage will be reduced by absorption shields when DAMAGE handler applies them
                 Broadcast:SendCombatMessage(playerId, defenderName, ("%s deals %s damage to %s."):format(attackerName, damageText, defenderName))
             end
         else
@@ -1104,6 +1595,21 @@ function PlayerReactionWidget:_handlePassDefense(reaction)
     if PlayerReaction and PlayerReaction.Complete then
         -- Pass defendSuccess=false and totalFinalDamage (passed defense takes full damage)
         PlayerReaction:Complete(defendSuccess, roll, lhs, totalFinalDamage)
+    end
+end
+
+function PlayerReactionWidget:_handleHelp()
+    -- Mark help as used this turn
+    self._helpUsedThisTurn = true
+    
+    -- Get player name and ID
+    local playerName = UnitName("player") or "You"
+    local playerId = RPE.Core and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent:GetLocalPlayerUnitId() or 0
+    
+    -- Broadcast help call to teammates
+    local Broadcast = RPE and RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
+    if Broadcast and Broadcast.CallHelp then
+        Broadcast:CallHelp(playerId, playerName)
     end
 end
 
