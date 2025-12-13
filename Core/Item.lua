@@ -395,6 +395,7 @@ function Item:ShowTooltip()
         end
     end
 
+    -- Sort by priority (higher first)
     table.sort(statLines, function(a, b) return (a.priority or 0) > (b.priority or 0) end)
     for _, s in ipairs(statLines) do
         table.insert(lines, { text = s.text, r = s.r, g = s.g, b = s.b, wrap = false })

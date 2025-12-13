@@ -621,6 +621,30 @@ function SpellEditorSheet:BuildUI(opts)
                                 end
                                 UIDropDownMenu_AddButton(del, level)
 
+                                -- Export Spell (compact, wrapped with key)
+                                local exportSpell = UIDropDownMenu_CreateInfo()
+                                exportSpell.notCheckable = true
+                                exportSpell.text = "Export Spell"
+                                if not entry then
+                                    exportSpell.disabled = true
+                                else
+                                    exportSpell.func = function()
+                                        local ds = self:GetEditingDataset()
+                                        if ds and ds.spells and entry.id and ds.spells[entry.id] then
+                                            local Export = _G.RPE and _G.RPE.Data and _G.RPE.Data.Export
+                                            if Export and Export.ToClipboard then
+                                                Export.ToClipboard(ds.spells[entry.id], { format = "compact", key = entry.id })
+                                                if RPE and RPE.Debug and RPE.Debug.Internal then
+                                                    RPE.Debug:Internal("Spell exported to clipboard (compact, wrapped): " .. entry.id)
+                                                end
+                                            else
+                                                print("Export utility not available.")
+                                            end
+                                        end
+                                    end
+                                end
+                                UIDropDownMenu_AddButton(exportSpell, level)
+
                             elseif level == 2 and menuList == "BIND_SLOT_LIST" then
                                 -- existing bind logic...
                                 if not entry then

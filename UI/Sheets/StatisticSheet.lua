@@ -315,15 +315,12 @@ function StatisticSheet:DrawStats(statBlock, filter, columns)
     for _, stat in pairs(self.profile.stats or {}) do
         if stat.category == filter then
             totalInCategory = totalInCategory + 1
-            local isRuleEnabled = _G.RPE.ActiveRules:IsStatEnabled(stat.id, stat.category)
             local isVisible = (stat.visible == nil or stat.visible == 1 or stat.visible == true)
             if not isVisible then
                 hiddenByVisibility = hiddenByVisibility + 1
             end
-            if isRuleEnabled and isVisible then
+            if isVisible then
                 table.insert(stats, stat)
-            elseif not isRuleEnabled then
-                RPE.Debug:Internal(string.format("  %s (%s): filtered by ActiveRules", stat.id, stat.name or "?"))
             end
         end
     end

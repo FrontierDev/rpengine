@@ -17,6 +17,14 @@ _G.RPE_UI.Windows.Clipboard = Clipboard
 Clipboard.__index = Clipboard
 Clipboard.Name = "Clipboard"
 
+-- Register Clipboard in core windows (like DatasetWindow)
+local function exposeCoreWindow(self)
+    _G.RPE       = _G.RPE or {}
+    _G.RPE.Core  = _G.RPE.Core or {}
+    _G.RPE.Core.Windows = _G.RPE.Core.Windows or {}
+    _G.RPE.Core.Windows.Clipboard = self
+end
+
 function Clipboard.New(opts)
     opts = opts or {}
     local self = setmetatable({}, Clipboard)
@@ -114,6 +122,8 @@ function Clipboard.New(opts)
     -- Hide by default
     self.root.frame:Hide()
 
+    exposeCoreWindow(self)
+
     return self
 end
 
@@ -126,9 +136,23 @@ function Clipboard:SetContent(text)
 end
 
 function Clipboard:Show()
-    if self.root and self.root.frame then
-        self.root.frame:Show()
+    if not self.root or not self.root.frame then
+        print("Clipboard root or frame is missing. Recreating the clipboard window using New().")
+        local opts = {
+            parent = UIParent,
+            x = 0,
+            y = 0,
+            width = 600,
+            height = 500
+        }
+        local newClipboard = Clipboard.New(opts)
+        _G.RPE_UI.Windows.Clipboard = newClipboard
+        return newClipboard:Show()
     end
+
+    self.root.frame:Show()
+    self.root.frame:SetFrameStrata("DIALOG")
+    self.textArea:SetFocus()
 end
 
 function Clipboard:Hide()
@@ -159,5 +183,31 @@ function Clipboard:GetClipboardText(pattern)
     
     return nil
 end
+
+-- Utility: serialize a Lua table to a copy-pasteable string
+local function serialize_lua_table(val, indent)
+    indent = indent or ""
+    local t = type(val)
+    if t == "table" then
+        local s = "{\n"
+        local nextIndent = indent .. "  "
+        for k, v in pairs(val) do
+            local key
+            if type(k) == "string" and k:match("^%a[%w_]*$") then
+                key = k
+            else
+                key = "[" .. serialize_lua_table(k) .. "]"
+            end
+            s = s .. nextIndent .. key .. " = " .. serialize_lua_table(v, nextIndent) .. ",\n"
+        end
+        return s .. indent .. "}"
+    elseif t == "string" then
+        return string.format("%q", val)
+    else
+        return tostring(val)
+    end
+end
+
+Clipboard.serialize_lua_table = serialize_lua_table
 
 return Clipboard

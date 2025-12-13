@@ -12,14 +12,25 @@ Common.lua
 Commands.lua
 Debug.lua
 
+## Universal Data
 Data/IconData.lua
 Data/ModelData.lua
 Data/DefaultCommon.lua
-Data/DefaultClassic.lua
-Data/Default5e.lua
-Data/DefaultWarcraft.lua
 Data/LanguageTable.lua
+Data/Export.lua
 
+## Classic RPT/RPE Dataset
+Data/Classic/Stats.lua
+Data/DefaultClassic.lua
+
+## DnD 5th Edition Dataset
+Data/5e/Stats.lua
+Data/Default5e.lua
+
+## Warcraft-like Dataset
+Data/DefaultWarcraft.lua
+
+## Communications
 Core/Comms/CommsManager.lua
 Core/Comms/Broadcast.lua
 Core/Comms/Handle.lua
@@ -65,10 +76,12 @@ Core/AuraManager.lua
 Core/NPCRegistry.lua
 Core/Language.lua
 
+## Core: Crafting Modules
 Core/Crafting/Recipe.lua
 Core/Crafting/RecipeRegistry.lua
 Core/Crafting/Crafting.lua
 
+## Core: Interaction Modules
 Core/Interaction/Interaction.lua
 Core/Interaction/InteractionRegistry.lua
 Core/Interaction/InteractionManager.lua
