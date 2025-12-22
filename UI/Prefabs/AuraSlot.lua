@@ -74,8 +74,9 @@ function AuraSlot:New(name, opts)
                     title = aura.name or tostring(o.auraId),
                     lines = {},
                 }
-                if aura.description and aura.description ~= "" then
-                    table.insert(t.lines, { text = aura.description, wrap = true, r=0.85, g=0.85, b=0.85 })
+                local desc = RPE.Core.Aura.RenderDescriptionFromDef(aura, {}, aura.description or "")
+                if desc ~= "" then
+                    table.insert(t.lines, { text = desc, wrap = true, r=0.85, g=0.85, b=0.85 })
                 end
                 RPE.Common:ShowTooltip(self, t)
             end
@@ -100,7 +101,8 @@ function AuraSlot:New(name, opts)
 
             local t = { title = displayName, lines = {} }
             if desc and desc ~= "" then
-                table.insert(t.lines, { text = desc, wrap = true, r=0.85, g=0.85, b=0.85 })
+                local rendered = RPE.Core.Aura.RenderDescriptionFromDef(v or {}, {}, desc)
+                table.insert(t.lines, { text = rendered, wrap = true, r=0.85, g=0.85, b=0.85 })
             end
             table.insert(t.lines, { text = "This aura is not part of your active data.", r=1, g=0.25, b=0.25 })
             RPE.Common:ShowTooltip(self, t)

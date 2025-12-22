@@ -59,15 +59,19 @@ end
 -- Resolve a stat's base value without runtime mods
 local function _resolveBaseForStat(profile, statId)
     if not profile or not profile.stats then return 0 end
-    local stat = profile.stats[statId]
-    if not stat then return 0 end
-    if type(stat._resolveBase) == "function" then
-        return stat:_resolveBase(profile) -- internal but fine to call
+    local total = 0
+    for _, stat in pairs(profile.stats or {}) do
+        if stat and stat.id == statId then
+            if type(stat._resolveBase) == "function" then
+                total = total + (stat:_resolveBase(profile) or 0)
+            elseif type(stat.GetBase) == "function" then
+                total = total + (stat:GetBase(profile) or 0)
+            else
+                total = total + (tonumber(stat.base) or 0)
+            end
+        end
     end
-    if type(stat.GetBase) == "function" then
-        return stat:GetBase(profile)
-    end
-    return tonumber(stat.base) or 0
+    return total
 end
 
 local function _equipFor(profile, statId)
@@ -81,18 +85,18 @@ local function getModSum(profile, statId)
     local pid        = profile and profile.name or nil
     local baseValue  = _resolveBaseForStat(profile, statId)
     local equipMods  = _equipFor(profile, statId)
-    
-    -- Include setupBonus as part of the total mods
+    -- Sum setupBonus across all datasets
     local setupBonus = 0
-    if profile and profile.stats and profile.stats[statId] then
-        setupBonus = tonumber(profile.stats[statId].setupBonus) or 0
+    if profile and profile.stats then
+        for _, stat in pairs(profile.stats) do
+            if stat and stat.id == statId and tonumber(stat.setupBonus) then
+                setupBonus = setupBonus + tonumber(stat.setupBonus)
+            end
+        end
     end
-
     local auraRaw    = (pid and StatMods.aura and StatMods.aura[pid] and StatMods.aura[pid][statId]) or 0
     local auraBucket = _asBucket(auraRaw)
     local auraDelta  = _auraDeltaFor(auraBucket, baseValue, equipMods)
-
-    -- Return TOTAL delta vs base (used only for color): setupBonus + equip + aura effect
     return setupBonus + (equipMods or 0) + (auraDelta or 0)
 end
 
@@ -300,20 +304,16 @@ function StatisticSheet:DrawStats(statBlock, filter, columns)
         if not RPE then return end
         if not RPE.Profile then return end
         if not RPE.Profile.DB then return end
-        
         self.profile = RPE.Profile.DB.GetOrCreateActive()
     end
-    
-    if not self.profile then
-        return 
-    end
+    if not self.profile then return end
 
-    -- Collect visible stats
+    -- Collect visible stats from all datasets (flat profile.stats with CharacterStat objects)
     local stats = {}
     local totalInCategory = 0
     local hiddenByVisibility = 0
     for _, stat in pairs(self.profile.stats or {}) do
-        if stat.category == filter then
+        if stat and stat.category == filter then
             totalInCategory = totalInCategory + 1
             local isVisible = (stat.visible == nil or stat.visible == 1 or stat.visible == true)
             if not isVisible then
@@ -324,11 +324,11 @@ function StatisticSheet:DrawStats(statBlock, filter, columns)
             end
         end
     end
-    
+
     -- Clear old children
     for _, child in ipairs(statBlock.children or {}) do child:Destroy() end
     statBlock.children = {}
-    
+
     table.sort(stats, function(a,b) return a.id < b.id end)
 
     local function makeEntry(parent, stat)
@@ -440,7 +440,14 @@ function StatisticSheet:RefreshStat(statId)
     end
 
     -- ✅ Need stat meta for percentage and base reference
-    local stat = self.profile and self.profile.stats and self.profile.stats[statId]
+    local stat = nil
+    if self.profile and self.profile.GetStat then
+        stat = self.profile:GetStat(statId)
+    else
+        if self.profile and self.profile.stats then
+            for _, st in pairs(self.profile.stats) do if st and st.id == statId then stat = st; break end end
+        end
+    end
 
     -- Format value string
     local text

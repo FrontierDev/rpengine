@@ -188,21 +188,17 @@ end
 local function _buildEditSchema(npcId, def)
     def = def or {}
 
-    -- Build stat rows from active rule "npc_stats"
-    local ruleList = (RPE and RPE.ActiveRules and RPE.ActiveRules.Get and RPE.ActiveRules:Get("npc_stats")) or {}
-    local statKeys = {}
-    if type(ruleList) == "table" then
-        local isArray = (ruleList[1] ~= nil)
-        if isArray then
-            for i = 1, #ruleList do statKeys[#statKeys+1] = tostring(ruleList[i]) end
-        else
-            for k, v in pairs(ruleList) do if v then statKeys[#statKeys+1] = tostring(k) end end
-            table.sort(statKeys)
-        end
-    end
-
+    -- Build stat rows from the NPC definition itself
+    local defStats = (type(def.stats) == "table") and def.stats or {}
     local statsRows = {}
-    local defStats  = (type(def.stats) == "table") and def.stats or {}
+    
+    -- Get all stat keys from the NPC definition and sort them
+    local statKeys = {}
+    for k, _ in pairs(defStats) do
+        table.insert(statKeys, tostring(k))
+    end
+    table.sort(statKeys)
+    
     for _, k in ipairs(statKeys) do
         statsRows[#statsRows+1] = { stat = k, value = tonumber(defStats[k]) or 0 }
     end
@@ -288,7 +284,7 @@ local function _buildEditSchema(npcId, def)
                 }
             },
             {
-                title    = "Stats (must include a row for each stat in the 'npc_stats' rule!)",
+                title    = "Stats (defined in the NPC database)",
                 elements = {
                     {
                         id     = "stats",
@@ -459,6 +455,30 @@ local function _buildRow(self, idx)
                             end
                         end,
                     }, level)
+
+                    -- Export NPC (compact, wrapped with key)
+                    local exportNPC = UIDropDownMenu_CreateInfo()
+                    exportNPC.notCheckable = true
+                    exportNPC.text = "Export NPC"
+                    if not entry then
+                        exportNPC.disabled = true
+                    else
+                        exportNPC.func = function()
+                            local ds = self:GetEditingDataset()
+                            if ds and ds.npcs and entry.id and ds.npcs[entry.id] then
+                                local Export = _G.RPE and _G.RPE.Data and _G.RPE.Data.Export
+                                if Export and Export.ToClipboard then
+                                    Export.ToClipboard(ds.npcs[entry.id], { format = "compact", key = entry.id })
+                                    if RPE and RPE.Debug and RPE.Debug.Internal then
+                                        RPE.Debug:Internal("NPC exported to clipboard (compact, wrapped): " .. entry.id)
+                                    end
+                                else
+                                    print("Export utility not available.")
+                                end
+                            end
+                        end
+                    end
+                    UIDropDownMenu_AddButton(exportNPC, level)
 
                     -- Delete
                     UIDropDownMenu_AddButton({

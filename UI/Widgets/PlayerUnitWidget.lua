@@ -36,9 +36,9 @@ PlayerUnitWidget.Name = "PlayerUnitWidget"
 
 -- defaults (can be overridden in opts)
 local DEFAULT_TOKEN_ICONS = {
-    ACTION       = "Interface\\AddOns\\RPEngine\\UI\\Textures\\action.png",
-    BONUS_ACTION = "Interface\\AddOns\\RPEngine\\UI\\Textures\\bonus_action.png",
-    REACTION     = "Interface\\AddOns\\RPEngine\\UI\\Textures\\reaction.png",
+    ACTION       = "Interface\\AddOns\\RPEngine\\UI\\Textures\\stats\\action.png",
+    BONUS_ACTION = "Interface\\AddOns\\RPEngine\\UI\\Textures\\stats\\bonus_action.png",
+    REACTION     = "Interface\\AddOns\\RPEngine\\UI\\Textures\\stats\\reaction.png",
 }
 
 local DEFAULT_TOKEN_COLORS = {
@@ -299,7 +299,7 @@ function PlayerUnitWidget:Refresh()
     
     for resId, parts in pairs(self.tokens or {}) do
         local cur  = select(1, Resources:Get(resId))
-        local icon = parts.icon or (parts.btn and parts.btn.icon)
+        local icon = parts.icon
         if icon then
             icon:SetAlpha((cur or 0) > 0 and 1.0 or 0.3)
         end
@@ -338,9 +338,12 @@ function PlayerUnitWidget:ShowResourceMenu()
 
     -- Collect ALL RESOURCE category stats that don't start with "MAX_" (but exclude HEALTH as it's implicit)
     local allResources = {}
-    for statId, stat in pairs(profile.stats) do
-        if stat.category == "RESOURCE" and not statId:match("^MAX_") and statId ~= "HEALTH" then
-            table.insert(allResources, { id = statId, name = stat.name or statId, alwaysUsed = alwaysUsed[statId] or false })
+    for _, stat in pairs(profile.stats or {}) do
+        if stat and stat.category == "RESOURCE" then
+            local sid = stat.id and tostring(stat.id) or nil
+            if sid and not sid:match("^MAX_") and sid ~= "HEALTH" then
+                table.insert(allResources, { id = sid, name = stat.name or sid, alwaysUsed = alwaysUsed[sid] or false })
+            end
         end
     end
 
@@ -600,9 +603,10 @@ function PlayerUnitWidget:SetTemporaryStats(unit)
     self._originalResources = self._originalResources or {}
     self._inTemporaryMode = true
 
-    -- Save current player resource values
+    -- Save current player resource values (from the bar UI, not profile)
     for resId, bar in pairs(self.bars or {}) do
-        local cur, max = Resources:Get(resId)
+        local cur = bar.value or 0
+        local max = bar.max or 1
         self._originalResources[resId] = { cur = cur, max = max, shown = bar.frame:IsShown() }
     end
 
@@ -677,11 +681,23 @@ function PlayerUnitWidget:RestoreStats()
 
     self._inTemporaryMode = false
 
-    -- Restore resource bars
+    -- Restore resource bars (direct property access, not triggering callbacks)
     for resId, saved in pairs(self._originalResources) do
         local bar = self.bars and self.bars[resId]
         if bar and saved then
-            bar:SetValue(saved.cur or 0, saved.max or 1)
+            -- Update bar state directly without triggering setters
+            bar.value = saved.cur or 0
+            bar.max = saved.max or 1
+            bar.targetValue = bar.value
+            
+            -- Update the visual representation
+            if bar.fill then
+                local pct = (bar.max and bar.max > 0) and (bar.value / bar.max) or 0
+                pct = math.max(0, math.min(1, pct))
+                bar.fill:SetWidth(bar.frame:GetWidth() * pct)
+            end
+            
+            -- Show/hide the bar
             if saved.shown then
                 bar:Show()
             else
@@ -697,7 +713,7 @@ function PlayerUnitWidget:RestoreStats()
     end
 
     self._originalResources = nil
-    
+
     -- Don't restore the cast bar here - let ActionBarWidget:RestoreActions() handle it
     -- The cast bar should show the player's CURRENT cast, not the original one
     local CB = RPE.Core.Windows and RPE.Core.Windows.CastBarWidget
@@ -712,8 +728,8 @@ function PlayerUnitWidget:RestoreStats()
         RPE.Profile.DB.ResetActiveInstance()
     end
     
-    -- Force a refresh to ensure the latest player resources are displayed
-    self:Refresh()
+    -- Don't call Refresh() here to avoid layout recursion during exit button click
+    -- The caller (RestoreActions) will handle refresh if needed
 end
 
 -- Constructor

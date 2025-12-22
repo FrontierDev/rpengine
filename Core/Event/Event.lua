@@ -877,6 +877,35 @@ function Event:_ExpireAbsorptionShields()
     end
 end
 
+--- Increment combat tracking counter for all units at the start of a new turn
+function Event:_IncrementDamageTracking()
+    if not (self and self.units) then return end
+    
+    for _, unit in pairs(self.units) do
+        if unit then
+            -- Increment turns since last combat activity
+            if unit.turnsLastCombat and unit.turnsLastCombat < 999 then
+                unit.turnsLastCombat = unit.turnsLastCombat + 1
+            end
+            
+            -- Check if unit should become disengaged (turnsLastCombat >= 3)
+            if (unit.turnsLastCombat or 0) >= 3 and unit.engagement then
+                unit.engagement = false
+                -- Broadcast the state change
+                local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+                if Broadcast and Broadcast.UpdateState then
+                    Broadcast:UpdateState(unit)
+                end
+            end
+            
+            -- Check if unit became disengaged after incrementing (for all units, not just local player)
+            if unit.CheckAndDisplayCombatStatusChange then
+                unit:CheckAndDisplayCombatStatusChange()
+            end
+        end
+    end
+end
+
 function Event:OnTurn()
     self.turn = (self.turn or 0) + 1
     
@@ -885,6 +914,9 @@ function Event:OnTurn()
     
     -- Expire absorption shields at the start of each turn
     self:_ExpireAbsorptionShields()
+    
+    -- Increment damage tracking counters for all units
+    self:_IncrementDamageTracking()
     
     self.ticks = {}
     self.tickIndex = 0
@@ -992,6 +1024,26 @@ function Event:OnPlayerTickStart()
     -- Ping the player and alert them that their turn started.
     local icon = (RPE.Common and RPE.Common.InlineIcons and RPE.Common.InlineIcons.Warning) or ""
     PlaySound(12889) -- RaidWarning
+    
+    -- Send chat message to player that their turn started
+    if DEFAULT_CHAT_FRAME then
+        local r, g, b, a
+        if RPE_UI and RPE_UI.Colors and RPE_UI.Colors.Get then
+            r, g, b, a = RPE_UI.Colors.Get("textBonus")
+        end
+        if not r then r, g, b, a = 0.55, 0.95, 0.65, 1.00 end
+        local hex = string.format("%02X%02X%02X", r*255, g*255, b*255)
+        DEFAULT_CHAT_FRAME:AddMessage(
+            string.format("|cFF%s→ Your turn started (Turn %d)|r", hex, self.turn),
+            r, g, b
+        )
+    end
+    
+    -- Also push to ChatBoxWidget
+    local CBW = RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
+    if CBW and CBW.PushPlayerTurnStartMessage then
+        CBW:PushPlayerTurnStartMessage(self.turn)
+    end
 
     -- Recover only the local player's resources
     RPE.Core.Resources:OnPlayerTurnStart()
@@ -1062,6 +1114,26 @@ end
 function Event:OnPlayerTickEnd()
     -- Ping the player and alert them that their turn ended.
     local icon = (RPE.Common and RPE.Common.InlineIcons and RPE.Common.InlineIcons.Warning) or ""
+    
+    -- Send chat message to player that their turn ended
+    if DEFAULT_CHAT_FRAME then
+        local r, g, b, a
+        if RPE_UI and RPE_UI.Colors and RPE_UI.Colors.Get then
+            r, g, b, a = RPE_UI.Colors.Get("textMalus")
+        end
+        if not r then r, g, b, a = 0.95, 0.55, 0.55, 1.00 end
+        local hex = string.format("%02X%02X%02X", r*255, g*255, b*255)
+        DEFAULT_CHAT_FRAME:AddMessage(
+            string.format("|cFF%s← Your turn ended|r", hex),
+            r, g, b
+        )
+    end
+    
+    -- Also push to ChatBoxWidget
+    local CBW = RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
+    if CBW and CBW.PushPlayerTurnEndMessage then
+        CBW:PushPlayerTurnEndMessage()
+    end
 
     if RPE.Core.Resources:Has("ACTION") and RPE.Core.Resources:Has("BONUS_ACTION") then
         Resources:Set("ACTION", 0)
@@ -1128,11 +1200,34 @@ function Event:OnNPCTickStart()
     -- Handle aura expiration for NPCs on their turn start
     local tickUnits = self.ticks[self.tickIndex]
     if tickUnits and self._auraManager then
+        local playerUnitId = self:GetLocalPlayerUnitId()
         for _, unit in ipairs(tickUnits) do
             if unit.isNPC and unit.active then
                 local npcId = tonumber(unit.id)
                 if npcId then
                     self._auraManager:OnOwnerTurnStart(npcId, self.turn)
+                    
+                    -- Send chat message if this is a summoned unit of the player
+                    if unit.summonedBy == playerUnitId and DEFAULT_CHAT_FRAME then
+                        local r, g, b, a
+                        if RPE_UI and RPE_UI.Colors and RPE_UI.Colors.Get then
+                            r, g, b, a = RPE_UI.Colors.Get("textModified")
+                        end
+                        if not r then r, g, b, a = 0.55, 0.75, 0.95, 1.00 end
+                        local hex = string.format("%02X%02X%02X", r*255, g*255, b*255)
+                        DEFAULT_CHAT_FRAME:AddMessage(
+                            string.format("|cFF%s→ %s's turn started|r", hex, unit.name or "Summoned unit"),
+                            r, g, b
+                        )
+                    end
+                    
+                    -- Also push to ChatBoxWidget
+                    if unit.summonedBy == playerUnitId then
+                        local CBW = RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
+                        if CBW and CBW.PushSummonedTurnStartMessage then
+                            CBW:PushSummonedTurnStartMessage(unit.name or "Summoned unit")
+                        end
+                    end
                 end
             end
         end

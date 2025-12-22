@@ -56,7 +56,7 @@ end
 
 -- Create and show a context menu at a frame
 ---@param parent Frame The UI element to attach the menu to
----@param builder fun(level:number, menuList:any) Callback to populate the menu (same signature as UIDropDownMenu_Initialize)
+---@param builder fun(level:number, value:any) Callback to populate the menu (same signature as UIDropDownMenu_Initialize)
 ---@return Frame|table contextMenu
 function RPE_UI.Common:ContextMenu(parent, builder)
     if not self._contextMenu then
@@ -64,14 +64,18 @@ function RPE_UI.Common:ContextMenu(parent, builder)
     end
 
     local menu = self._contextMenu
+    
+    -- Close any existing menu first
+    CloseDropDownMenus()
 
-    UIDropDownMenu_Initialize(menu, function(_, level, menuList)
+    UIDropDownMenu_Initialize(menu, function(frame, level, menuValue)
         if type(builder) == "function" then
-            builder(level, menuList)
+            builder(level, menuValue)
         end
     end, "MENU")
 
-    -- Always anchor the menu at the cursor
+    -- Show the menu at cursor - the second parameter should be passed the initial value for proper hierarchy
+    -- Using nil for the initial value so level 1 is shown first
     ToggleDropDownMenu(1, nil, menu, "cursor", 0, 0)
     return menu
 end

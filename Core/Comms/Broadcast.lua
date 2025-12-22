@@ -744,6 +744,9 @@ end
 function Broadcast:Damage(source, targets, amount, opts)
     local sId = _toUnitId(source) or 0
     local flat = { tostring(sId) }
+    
+    -- Check if this damage is from an aura trigger (opts.isFromAuraTrigger)
+    local isFromAuraTrigger = (opts and opts.isFromAuraTrigger) and "1" or "0"
 
     local function push_one(tgt, damageInfo, o)
         local tId = _toUnitId(tgt) or 0
@@ -784,6 +787,7 @@ function Broadcast:Damage(source, targets, amount, opts)
         flat[#flat+1] = school                  -- Single school or CSV of schools:amounts
         flat[#flat+1] = crit and "1" or "0"
         flat[#flat+1] = tDelta
+        flat[#flat+1] = isFromAuraTrigger       -- Flag indicating if damage originated from aura trigger
     end
 
     local is_tbl = type(targets) == "table"
@@ -834,6 +838,9 @@ end
 function Broadcast:Heal(source, targets, amount, opts)
     local sId = _toUnitId(source) or 0
     local flat = { tostring(sId) }
+    
+    -- Check if this heal is from an aura trigger (opts.isFromAuraTrigger)
+    local isFromAuraTrigger = (opts and opts.isFromAuraTrigger) and "1" or "0"
 
     local function push_one(tgt, amt, o)
         local tId = _toUnitId(tgt) or 0
@@ -845,6 +852,7 @@ function Broadcast:Heal(source, targets, amount, opts)
         flat[#flat+1] = tostring(a)
         flat[#flat+1] = crit
         flat[#flat+1] = tDelta
+        flat[#flat+1] = isFromAuraTrigger  -- Add flag after threat
     end
 
     local is_tbl = type(targets) == "table"
@@ -1151,6 +1159,33 @@ function Broadcast:Unhide(unitId)
     _sendAll("UNHIDE", { tostring(tId) })
 end
 
+--- Broadcast comprehensive unit state update (health, engagement, visibility, etc.)
+--- This syncs all critical unit state to ensure clients are in sync
+---@param unit table The EventUnit to sync
+function Broadcast:UpdateState(unit)
+    if not unit or not unit.id then return end
+    
+    local tId = tonumber(unit.id) or 0
+    if tId == 0 then return end
+    
+    local flat = {
+        tostring(tId),
+        tostring(unit.hp or 0),
+        tostring(unit.hpMax or 0),
+        unit.engagement and "1" or "0",
+        unit.hidden and "1" or "0",
+        unit.active and "1" or "0",
+        unit.flying and "1" or "0",
+    }
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(string.format("[Broadcast] UPDATE_STATE: Unit %d (engagement=%s, hidden=%s, active=%s)",
+            tId, tostring(unit.engagement), tostring(unit.hidden), tostring(unit.active)))
+    end
+    
+    _sendAll("UPDATE_STATE", flat)
+end
+
 --- Broadcast a help call from a teammate who needs assistance
 --- Teammates can use assist-tagged abilities even when it's not their turn
 ---@param unitId integer Unit ID of the player calling for help
@@ -1180,6 +1215,35 @@ function Broadcast:CallHelpEnd(unitId)
     _sendAll("CALL_HELP_END", { tostring(tId) })
 end
 
+
+--- Broadcast casting information to group members
+---@param unitId integer|nil Unit ID of the caster (nil = local player)
+---@param spellId string Spell ID from registry
+---@param spellName string Display name of spell
+---@param icon string|nil Icon texture path for the spell
+---@param timeRemaining number Turns remaining in cast
+---@param timeTotal number Total cast time in turns
+---@param targetId integer|nil Unit ID of the cast target (optional)
+function Broadcast:SendCasting(unitId, spellId, spellName, icon, timeRemaining, timeTotal, targetId)
+    local tId = _toUnitId(unitId) or 0
+    if tId == 0 then return end
+    
+    icon = icon or ""
+    timeRemaining = tonumber(timeRemaining) or 0
+    timeTotal = tonumber(timeTotal) or 0
+    targetId = tonumber(targetId) or 0
+    
+    _sendAll("CASTING", { tostring(tId), tostring(spellId), tostring(spellName), tostring(icon), tostring(timeRemaining), tostring(timeTotal), tostring(targetId) })
+end
+
+--- Broadcast clear/interrupt of casting to group members
+---@param unitId integer|nil Unit ID of the caster (nil = local player)
+function Broadcast:SendClearCasting(unitId)
+    local tId = _toUnitId(unitId) or 0
+    if tId == 0 then return end
+    
+    _sendAll("CLEAR_CASTING", { tostring(tId) })
+end
 
 --- Announce the player's TRP3 display name to the supergroup.
 --- The payload is a single string (display name/title). Recipients who are leaders

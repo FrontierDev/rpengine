@@ -52,6 +52,58 @@ local function _calculateMitigatedDamage(baseDamage, mitigationExpr, targetUnit)
     return baseDamage
 end
 
+--- Internal: Display defense success floating text
+local function _displayDefenseFloatingText(defenseStat)
+    if not defenseStat then return end
+    
+    local text = "Defend"  -- Default fallback
+    
+    -- Try to get combatText from stat's mitigation table first
+    local StatRegistry = RPE.Core and RPE.Core.StatRegistry
+    if StatRegistry then
+        local stat = StatRegistry:Get(defenseStat)
+        if stat and stat.mitigation and stat.mitigation.combatText then
+            text = stat.mitigation.combatText
+        else
+            -- Fallback to hardcoded mapping if no combatText property
+            if defenseStat == "DODGE" then
+                text = "Dodge"
+            elseif defenseStat == "BLOCK" then
+                text = "Block"
+            elseif defenseStat == "DEFENCE" then
+                text = "Defend"
+            elseif defenseStat == "PARRY" then
+                text = "Parry"
+            elseif defenseStat == "AC" then
+                text = "Defend"
+            end
+        end
+    else
+        -- Fallback if stat registry not available
+        if defenseStat == "DODGE" then
+            text = "Dodge"
+        elseif defenseStat == "BLOCK" then
+            text = "Block"
+        elseif defenseStat == "DEFENCE" then
+            text = "Defend"
+        elseif defenseStat == "PARRY" then
+            text = "Parry"
+        elseif defenseStat == "AC" then
+            text = "Defend"
+        end
+    end
+    
+    local fct = RPE.Core and RPE.Core.CombatText and RPE.Core.CombatText.Screen
+    if fct then
+        fct:AddText(text, {
+            color = { 1.0, 1.0, 1.0, 1.0 },  -- white
+            duration = 1.5,
+            distance = 60,
+            direction = "DOWN"  -- floating downwards
+        })
+    end
+end
+
 --- Internal: Show the next queued reaction or hide if none pending
 local function _showNextReaction()
     if #reactionQueue > 0 then
@@ -213,11 +265,19 @@ end
 function PlayerReaction:Complete(hitResult, roll, lhs, rhs)
     if not currentReaction then return end
 
+    -- Store the defense stat before clearing currentReaction
+    local defenseStat = currentReaction.chosenDefenseStat
+    
     local onComplete = currentReaction.onComplete
     currentReaction = nil
 
     if onComplete then
         onComplete(hitResult, roll, lhs, rhs)
+    end
+    
+    -- Display defense success floating text only if defense succeeded (hitResult == true)
+    if hitResult and defenseStat then
+        _displayDefenseFloatingText(defenseStat)
     end
 
     -- Re-sync the event widget to show the correct current tick (in case multiple ticks per turn)

@@ -1,3 +1,4 @@
+-- RPE Default Stats for Classic RPT System
 RPE = RPE or {}
 RPE.Data = RPE.Data or {}
 RPE.Data.DefaultClassic = RPE.Data.DefaultClassic or {}
@@ -92,6 +93,36 @@ RPE.Data.DefaultClassic.STATS = {
         itemLevelWeight = 0,
     },
 
+    -- Threat
+    ["THREAT"] = {
+        id = "THREAT",
+        name = "Threat",
+        category = "SECONDARY",
+        base = 1,
+        min = 0,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\threat.png",
+        tooltip = "Determines how much attention you draw from enemies.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$x Bonus Threat Generation",
+        itemTooltipColor = {1, 1, 1},
+        itemTooltipPriority = 99,
+        itemLevelWeight = 0.4,
+    },
+
     -- Health and Mana
     ["HEALTH"] = {
         id = "HEALTH",
@@ -153,7 +184,7 @@ RPE.Data.DefaultClassic.STATS = {
         id = "MAX_HEALTH",
         name = "Maximum Health",
         category = "RESOURCE",
-        base = { expr = "15 + ($stat.CON_MOD$ * 3)", default = 15 },
+        base = { expr = "150 + ($stat.CON_MOD$ * 30)", default = 15 },
         min = 1,
         max = math.huge,
         visible = 0,
@@ -180,7 +211,7 @@ RPE.Data.DefaultClassic.STATS = {
         id = "MAX_MANA",
         name = "Maximum Mana",
         category = "RESOURCE",
-        base = { expr = "8 + ($stat.INT_MOD$)", default = 8 },
+        base = { expr = "80 + ($stat.INT_MOD$) * 10", default = 8 },
         min = 1,
         max = math.huge,
         visible = 0,
@@ -203,7 +234,502 @@ RPE.Data.DefaultClassic.STATS = {
         itemTooltipPriority = 50,
         itemLevelWeight = 0,
     },
-
+    ["RAGE"] = {
+        id = "RAGE",
+        name = "Rage",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = { ref = "MAX_RAGE" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\rage.png",
+        tooltip = "Used to perform powerful melee attacks.",
+        recovery = {
+            ruleKey = "rage_regen",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {1, 0.5, 0},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_RAGE"] = {
+        id = "MAX_RAGE",
+        name = "Maximum Rage",
+        category = "RESOURCE",
+        base = 100,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\rage.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Rage",
+        itemTooltipColor = {0, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0,
+    },
+    ["ENERGY"] = {
+        id = "ENERGY",
+        name = "Energy",
+        category = "RESOURCE",
+        base = { ref = "MAX_ENERGY" },
+        min = 0,
+        max = { ref = "MAX_ENERGY" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\energy.png",
+        tooltip = "Used to perform quick attacks.",
+        recovery = {
+            ruleKey = "energy_regen",
+            default = 10
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {1, 1, 0},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_ENERGY"] = {
+        id = "MAX_ENERGY",
+        name = "Maximum Energy",
+        category = "RESOURCE",
+        base = 100,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\energy.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Max. Energy",
+        itemTooltipColor = {1, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0,
+    },
+    ["RUNIC_POWER"] = {
+        id = "RUNIC_POWER",
+        name = "Runic Power",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = { ref = "MAX_RUNIC_POWER" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\runic_power.png",
+        tooltip = "Used to perform powerful melee attacks.",
+        recovery = {
+            ruleKey = "runic_power_regen",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {0, 0.5, 0},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_RUNIC_POWER"] = {
+        id = "MAX_RUNIC_POWER",
+        name = "Maximum Runic Power",
+        category = "RESOURCE",
+        base = 100,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\rage.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Runic Power",
+        itemTooltipColor = {0, 0.5, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0,
+    },    
+    ["MAELSTROM"] = {
+        id = "MAELSTROM",
+        name = "Maelstrom",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = { ref = "MAX_MAELSTROM" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\maelstrom.png",
+        tooltip = "Used to perform powerful elemental attacks.",
+        recovery = {
+            ruleKey = "maelstrom_regen",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {0, 0.5, 1},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_MAELSTROM"] = {
+        id = "MAX_MAELSTROM",
+        name = "Maximum Maelstrom",
+        category = "RESOURCE",
+        base = 10,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\maelstrom.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Maelstrom",
+        itemTooltipColor = {0, 0.5, 1},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0,
+    },
+    ["ESSENCE"] = {
+        id = "ESSENCE",
+        name = "Essence",
+        category = "RESOURCE",
+        base = { ref = "MAX_ESSENCE" },
+        min = 0,
+        max = { ref = "MAX_ESSENCE" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\essence.png",
+        tooltip = "Used to perform powerful magical actions.",
+        recovery = {
+            ruleKey = "essence_regen",
+            default = 1
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {0.5, 0, 1},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_ESSENCE"] = {
+        id = "MAX_ESSENCE",
+        name = "Maximum Essence",
+        category = "RESOURCE",
+        base = 5,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\essence.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Essence",
+        itemTooltipColor = {0.5, 0, 1},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0,
+    },
+    ["COMBO_POINTS"] = {
+        id = "COMBO_POINTS",
+        name = "Combo Points",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = { ref = "MAX_COMBO_POINTS" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\combo_points.png",
+        tooltip = "Used to perform finishing moves.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {1, 1, 0},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_COMBO_POINTS"] = {
+        id = "MAX_COMBO_POINTS",
+        name = "Maximum Combo Points",
+        category = "RESOURCE",
+        base = 5,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\combo_points.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Max. Combo Points",
+        itemTooltipColor = {1, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0,
+    },
+    ["CHI"] = {
+        id = "CHI",
+        name = "Chi",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = { ref = "MAX_CHI" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\chi.png",
+        tooltip = "Used to perform finishing moves.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {1, 1, 0},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_CHI"] = {
+        id = "MAX_CHI",
+        name = "Maximum Chi",
+        category = "RESOURCE",
+        base = 4,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\chi.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Max. Chi",
+        itemTooltipColor = {1, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0,
+    },
+    ["FURY"] = {
+        id = "FURY",
+        name = "Fury",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = { ref = "MAX_FURY" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\fury.png",
+        tooltip = "Used to perform powerful demon hunter attacks.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {1, 0.5, 0},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_FURY"] = {
+        id = "MAX_FURY",
+        name = "Maximum Fury",
+        category = "RESOURCE",
+        base = 100,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\fury.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Fury",
+        itemTooltipColor = {1, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0,
+    },
+    ["SOUL_FRAGMENTS"] = {
+        id = "SOUL_FRAGMENTS",
+        name = "Soul Fragments",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = { ref = "MAX_SOUL_FRAGMENTS" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\soul_fragments.png",
+        tooltip = "Used to fuel demon hunter abilities.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {0.5, 0, 1},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_SOUL_FRAGMENTS"] = {
+        id = "MAX_SOUL_FRAGMENTS",
+        name = "Maximum Soul Fragments",
+        category = "RESOURCE",
+        base = 5,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\soul_fragments.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Soul Fragments",
+        itemTooltipColor = {0.5, 0, 1},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0,
+    },
+    
     -- Primary Attributes
     ["STR"] = {
         id = "STR",
@@ -232,6 +758,66 @@ RPE.Data.DefaultClassic.STATS = {
         itemTooltipColor = {1, 1, 1},
         itemTooltipPriority = 99,
         itemLevelWeight = 1.0,
+    },
+
+    ["STR_MOD"] = {
+        id = "STR_MOD",
+        name = "Strength",
+        category = "PRIMARY",
+        base = { expr = "math.floor(($stat.STR$-10)/2)", default = 0 },
+        min = 0,
+        max = math.huge,
+        visible = 1,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\str.png",
+        description = "",
+        tooltip = "Your Strength score is $stat.STR$, giving a modifier of $stat.STR_MOD$.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {1, 1, 1},
+        itemTooltipPriority = 0,
+        itemLevelWeight = 0,
+    },
+
+    ["DEX_MOD"] = {
+        id = "DEX_MOD",
+        name = "Dexterity",
+        category = "PRIMARY",
+        base = { expr = "math.floor(($stat.DEX$-10)/2)", default = 0 },
+        min = 0,
+        max = math.huge,
+        visible = 1,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\agi.png",
+        description = "",
+        tooltip = "Your Dexterity score is $stat.DEX$, giving a modifier of $stat.DEX_MOD$.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {1, 1, 1},
+        itemTooltipPriority = 0,
+        itemLevelWeight = 0,
     },
 
     ["INT"] = {
@@ -470,10 +1056,40 @@ RPE.Data.DefaultClassic.STATS = {
         itemLevelWeight = 0,
     },
 
+    -- Global modifiers
+    ["HEALING_TAKEN"] = {
+        id = "HEALING_TAKEN",
+        name = "Healing Taken",
+        category = "SECONDARY",
+        base = 1,
+        min = 0,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\melee.png",
+        tooltip = "Increases chance to hit with melee attacks.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value_pct$ Healing Taken",
+        itemTooltipColor = {0, 1, 0},
+        itemTooltipPriority = 20,
+        itemLevelWeight = 1.2,
+    },
+
     -- Hit Ratings
     ["MELEE_HIT"] = {
         id = "MELEE_HIT",
-        name = "Melee Hit Chance",
+        name = "Melee Hit Rating",
         category = "SECONDARY",
         base = 0,
         min = 0,
@@ -494,7 +1110,7 @@ RPE.Data.DefaultClassic.STATS = {
         defenceName = "",
         data = {},
         sourceDataset = "DefaultClassic",
-        itemTooltipFormat = "$value$ Melee Hit",
+        itemTooltipFormat = "$value$ Melee Hit Rating",
         itemTooltipColor = {0, 1, 0},
         itemTooltipPriority = 50,
         itemLevelWeight = 1.2,
@@ -502,7 +1118,7 @@ RPE.Data.DefaultClassic.STATS = {
 
     ["RANGED_HIT"] = {
         id = "RANGED_HIT",
-        name = "Ranged Hit Chance",
+        name = "Ranged Hit Rating",
         category = "SECONDARY",
         base = 0,
         min = 0,
@@ -523,7 +1139,7 @@ RPE.Data.DefaultClassic.STATS = {
         defenceName = "",
         data = {},
         sourceDataset = "DefaultClassic",
-        itemTooltipFormat = "$value$ Ranged Hit",
+        itemTooltipFormat = "$value$ Ranged Hit Rating",
         itemTooltipColor = {0, 1, 0},
         itemTooltipPriority = 50,
         itemLevelWeight = 1.2,
@@ -531,7 +1147,7 @@ RPE.Data.DefaultClassic.STATS = {
 
     ["SPELL_HIT"] = {
         id = "SPELL_HIT",
-        name = "Spell Hit Chance",
+        name = "Spell Hit Rating",
         category = "SECONDARY",
         base = 0,
         min = 0,
@@ -552,7 +1168,7 @@ RPE.Data.DefaultClassic.STATS = {
         defenceName = "",
         data = {},
         sourceDataset = "DefaultClassic",
-        itemTooltipFormat = "$value$ Spell Hit",
+        itemTooltipFormat = "$value$ Spell Hit Rating",
         itemTooltipColor = {0, 1, 0},
         itemTooltipPriority = 50,
         itemLevelWeight = 1.2,
@@ -645,6 +1261,35 @@ RPE.Data.DefaultClassic.STATS = {
         itemLevelWeight = 0.8,
     },
 
+    ["HEAL_POWER"] = {
+        id = "HEAL_POWER",
+        name = "Healing Power",
+        category = "SECONDARY",
+        base = 0,
+        min = 0,
+        max = math.huge,
+        visible = 1,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\sta.png",
+        tooltip = "Increases healing done by spells.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Healing Power",
+        itemTooltipColor = {0, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 1.5,
+    },
+
     ["MELEE_CRIT"] = {
         id = "MELEE_CRIT",
         name = "Melee Crit. Rating",
@@ -654,7 +1299,7 @@ RPE.Data.DefaultClassic.STATS = {
         max = math.huge,
         visible = 1,
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\melee.png",
-        tooltip = "Reduces the threshold required to score a critical hit with melee attacks.",
+        tooltip = "Reduces the threshold required to score a critical hit with melee attacks. Your melee critical damage multiplier is $stat.MELEE_CRIT_MULT$x.",
         recovery = {
             ruleKey = "",
             default = 0
@@ -683,7 +1328,7 @@ RPE.Data.DefaultClassic.STATS = {
         max = math.huge,
         visible = 1,
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\ranged.png",
-        tooltip = "Reduces the threshold required to score a critical hit with ranged attacks.",
+        tooltip = "Reduces the threshold required to score a critical hit with ranged attacks. Your ranged critical damage is multiplied by $stat.RANGED_CRIT_MULT$x.",
         recovery = {
             ruleKey = "",
             default = 0
@@ -712,7 +1357,7 @@ RPE.Data.DefaultClassic.STATS = {
         max = math.huge,
         visible = 1,
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\spell.png",
-        tooltip = "Reduces the threshold required to score a critical hit with spells.",
+        tooltip = "Reduces the threshold required to score a critical hit with spells. Your spell critical damage multiplier is $stat.SPELL_CRIT_MULT$x.",
         recovery = {
             ruleKey = "",
             default = 0
@@ -732,7 +1377,123 @@ RPE.Data.DefaultClassic.STATS = {
         itemLevelWeight = 1.4,
     },
 
+    ["MELEE_CRIT_MULT"] = {
+        id = "MELEE_CRIT_MULT",
+        name = "Melee Crit. Multiplier",
+        category = "SECONDARY",
+        base = 2,
+        min = 0,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\melee.png",
+        tooltip = "Reduces the threshold required to score a critical hit with melee attacks.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$x Melee Crit. Multiplier",
+        itemTooltipColor = {0, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 1.4,
+    },
+
+    ["RANGED_CRIT_MULT"] = {
+        id = "RANGED_CRIT_MULT",
+        name = "Ranged Crit. Multiplier",
+        category = "SECONDARY",
+        base = 2,
+        min = 0,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\ranged.png",
+        tooltip = "Reduces the threshold required to score a critical hit with ranged attacks.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$x Ranged Crit. Multiplier",
+        itemTooltipColor = {0, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 1.4,
+    },
+
+    ["SPELL_CRIT_MULT"] = {
+        id = "SPELL_CRIT_MULT",
+        name = "Spell Crit. Multiplier",
+        category = "SECONDARY",
+        base = 2,
+        min = 0,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\spell.png",
+        tooltip = "Reduces the threshold required to score a critical hit with spells.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$x Spell Crit. Multiplier",
+        itemTooltipColor = {0, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 1.4,
+    },
+
     -- Defences
+    ARMOR = {
+        id = "ARMOR",
+        name = "Armor",
+        category = "SECONDARY",
+        base = { expr = "$stat.DEX_MOD$ * 0.2", default = 0 },
+        min = 0,
+        max = math.huge,
+        visible = 1,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\block.png",
+        tooltip = "Reduces physical damage taken.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = "$value$",
+            critical = "$value$",
+            fail = "$value$"
+        },
+        defenceName = "Armor",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Armor",
+        itemTooltipColor = {1, 1, 1},
+        itemTooltipPriority = 200,
+        itemLevelWeight = 0.8,
+    },
+
     ["PARRY"] = {
         id = "PARRY",
         name = "Parry Rating",
@@ -742,7 +1503,7 @@ RPE.Data.DefaultClassic.STATS = {
         max = math.huge,
         visible = 1,
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\parry.png",
-        tooltip = "Increases chance to parry melee attacks.",
+        tooltip = "Increases chance to parry melee attacks. On a successful parry, you take no damage from the attack. Otherwise, damage taken is reduced by your armor. Your current armor mitigation is $stat.ARMOR$.",
         recovery = {
             ruleKey = "",
             default = 0
@@ -751,7 +1512,8 @@ RPE.Data.DefaultClassic.STATS = {
         mitigation = {
             normal = "0 * $value$",
             critical = "0 * $value$",
-            fail = "$value$"
+            fail = "$value$ - $stat.ARMOR$",
+            combatText = "Parry"
         },
         defenceName = "Parry",
         data = {},
@@ -771,7 +1533,7 @@ RPE.Data.DefaultClassic.STATS = {
         max = math.huge,
         visible = 1,
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\dodge.png",
-        tooltip = "Increases chance to dodge melee attacks.",
+        tooltip = "Increases chance to dodge melee attacks. On a successful dodge, you take no damage from the attack. Otherwise, damage taken is reduced by your armor. Your current armor mitigation is $stat.ARMOR$.",
         recovery = {
             ruleKey = "",
             default = 0
@@ -780,7 +1542,8 @@ RPE.Data.DefaultClassic.STATS = {
         mitigation = {
             normal = "0 * $value$",
             critical = "0 * $value$",
-            fail = "$value$"
+            fail = "$value$ - $stat.ARMOR$",
+            combatText = "Dodge"
         },
         defenceName = "Dodge",
         data = {},
@@ -800,16 +1563,17 @@ RPE.Data.DefaultClassic.STATS = {
         max = math.huge,
         visible = 1,
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\block.png",
-        tooltip = "Increases chance to block melee attacks.",
+        tooltip = "Increases chance to block melee attacks. On a failed block, you take reduced damage from the attack based on your shield block value and your armor. Your current shield block value is $stat.SHIELD_BLOCK$ and your armor mitigation is $stat.ARMOR$.",
         recovery = {
             ruleKey = "",
             default = 0
         },
         pct = 0,
         mitigation = {
-            normal = "$value$ - $stat.SHIELD_BLOCK$",
+            normal = "$value$ * 0",
             critical = "0 * $value$",
-            fail = "$value$"
+            fail = "$value$ - $stat.SHIELD_BLOCK$ - $stat.ARMOR$",
+            combatText = "Block"
         },
         defenceName = "Block",
         data = {},
@@ -822,14 +1586,14 @@ RPE.Data.DefaultClassic.STATS = {
 
     ["SHIELD_BLOCK"] = {
         id = "SHIELD_BLOCK",
-        name = "Shield Block Rating",
+        name = "Shield Rating",
         category = "SECONDARY",
         base = 0,
         min = 0,
         max = math.huge,
-        visible = 0,
+        visible = 1,
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\block.png",
-        tooltip = "Increases chance to block melee attacks while wielding a shield.",
+        tooltip = "Reduces damage taken when failing to block using a shield.",
         recovery = {
             ruleKey = "",
             default = 0
@@ -838,14 +1602,15 @@ RPE.Data.DefaultClassic.STATS = {
         mitigation = {
             normal = "0 * $value$",
             critical = "0 * $value$",
-            fail = "$value$"
+            fail = "$value$",
+            combatText = "Shield Block"
         },
         defenceName = "Shield Block",
         data = {},
         sourceDataset = "DefaultClassic",
         itemTooltipFormat = "$value$ Block",
         itemTooltipColor = {1, 1, 1},
-        itemTooltipPriority = 99,
+        itemTooltipPriority = 201,
         itemLevelWeight = 0.6,
     },
 
@@ -868,7 +1633,8 @@ RPE.Data.DefaultClassic.STATS = {
         mitigation = {
             normal = "($value$ * 0.5) - $stat.FIRE_RESIST$",
             critical = "0 * $value$",
-            fail = "$value$ - $stat.FIRE_RESIST$"
+            fail = "$value$ - $stat.FIRE_RESIST$",
+            combatText = "Resist"
         },
         defenceName = "Fire Resistance",
         data = {},
@@ -897,7 +1663,8 @@ RPE.Data.DefaultClassic.STATS = {
         mitigation = {
             normal = "($value$ * 0.5) - $stat.FROST_RESIST$",
             critical = "0 * $value$",
-            fail = "$value$ - $stat.FROST_RESIST$"
+            fail = "$value$ - $stat.FROST_RESIST$",
+            combatText = "Resist"
         },
         defenceName = "Frost Resistance",
         data = {},
@@ -926,7 +1693,8 @@ RPE.Data.DefaultClassic.STATS = {
         mitigation = {
             normal = "($value$ * 0.5) - $stat.ARCANE_RESIST$",
             critical = "0 * $value$",
-            fail = "$value$ - $stat.ARCANE_RESIST$"
+            fail = "$value$ - $stat.ARCANE_RESIST$",
+            combatText = "Resist"
         },
         defenceName = "Arcane Resistance",
         data = {},
@@ -955,7 +1723,8 @@ RPE.Data.DefaultClassic.STATS = {
         mitigation = {
             normal = "($value$ * 0.5) - $stat.NATURE_RESIST$",
             critical = "0 * $value$",
-            fail = "$value$ - $stat.NATURE_RESIST$"
+            fail = "$value$ - $stat.NATURE_RESIST$",
+            combatText = "Resist"
         },
         defenceName = "Nature Resistance",
         data = {},
@@ -984,7 +1753,8 @@ RPE.Data.DefaultClassic.STATS = {
         mitigation = {
             normal = "($value$ * 0.5) - $stat.SHADOW_RESIST$",
             critical = "0 * $value$",
-            fail = "$value$ - $stat.SHADOW_RESIST$"
+            fail = "$value$ - $stat.SHADOW_RESIST$",
+            combatText = "Resist"
         },
         defenceName = "Shadow Resistance",
         data = {},
@@ -1013,7 +1783,8 @@ RPE.Data.DefaultClassic.STATS = {
         mitigation = {
             normal = "($value$ * 0.5) - $stat.HOLY_RESIST$",
             critical = "0 * $value$",
-            fail = "$value$ - $stat.HOLY_RESIST$"
+            fail = "$value$ - $stat.HOLY_RESIST$",
+            combatText = "Resist"
         },
         defenceName = "Holy Resistance",
         data = {},
@@ -1042,7 +1813,8 @@ RPE.Data.DefaultClassic.STATS = {
         mitigation = {
             normal = "($value$ * 0.5) - $stat.FEL_RESIST$",
             critical = "0 * $value$",
-            fail = "$value$ - $stat.FEL_RESIST$"
+            fail = "$value$ - $stat.FEL_RESIST$",
+            combatText = "Resist"
         },
         defenceName = "Fel Resistance",
         data = {},

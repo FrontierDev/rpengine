@@ -392,7 +392,54 @@ function Spell:_resolveActionProperty(entry, propPath, vars)
         else   return _formatAmount(parsed)
         end
     elseif propPath == "school" then
-        return tostring(args.school or "Physical")
+        -- Resolve weapon token like "$wep.ranged$" to equipped item's damageSchool
+        local raw = args.school or "Physical"
+        if type(raw) == "string" then
+            local slot = raw:match("^%$wep%.([%w_]+)%$")
+            if slot then
+                local norm = string.lower(slot)
+                if norm == "mh" then norm = "mainhand"
+                elseif norm == "oh" then norm = "offhand"
+                elseif norm == "rng" or norm == "bow" then norm = "ranged" end
+
+                local profile = (vars and vars.profile) or _activeProfile()
+                local item = nil
+                if profile and type(profile.GetEquipped) == "function" then
+                    local ok, id = pcall(profile.GetEquipped, profile, norm)
+                    if ok and id then
+                        if type(id) == "table" then item = id end
+                        if type(id) == "string" then
+                            local reg = RPE.Core and RPE.Core.ItemRegistry
+                            if reg and type(reg.Get) == "function" then
+                                local ok2, def = pcall(reg.Get, reg, id)
+                                if ok2 and def then item = def end
+                            end
+                        end
+                    end
+                end
+                if not item and profile and type(profile.equipment) == "table" then
+                    local ent = profile.equipment[norm]
+                    if ent then
+                        if type(ent) == "table" then item = ent end
+                        if type(ent) == "string" then
+                            local reg = RPE.Core and RPE.Core.ItemRegistry
+                            if reg and type(reg.Get) == "function" then
+                                local ok2, def = pcall(reg.Get, reg, ent)
+                                if ok2 and def then item = def end
+                            end
+                        end
+                    end
+                end
+
+                if item then
+                    local d = (type(item) == "table") and (item.data or item) or {}
+                    local ds = d.damageSchool or d.school or d.damage_school
+                    if ds and ds ~= "" then return tostring(ds) end
+                end
+                return "Physical"
+            end
+        end
+        return tostring(raw)
     elseif propPath == "target" then
         return _targetPhraseFromSpec(self, act)
     elseif propPath == "auraId" then
@@ -495,6 +542,7 @@ local function _formatRequirement(reqStr)
             elseif slot == "offhand" then slotName = "Off-hand"
             elseif slot == "dual" then slotName = "Dual Wielding"
             elseif slot == "twohand" then slotName = "Two-Handed Weapon"
+            elseif slot == "ranged" then slotName = "Ranged"
             end
             
             if itemType then
@@ -519,6 +567,21 @@ local function _formatRequirement(reqStr)
             end
             return "Requires " .. itemName
         end
+    end
+    
+    -- summoned.TYPE format (e.g., "summoned.Pet", "summoned.Minion")
+    if reqStr:match("^summoned%.") then
+        local summonType = reqStr:match("^summoned%.(.+)$")
+        if summonType then
+            -- Title case: capitalize first letter
+            summonType = summonType:sub(1, 1):upper() .. summonType:sub(2):lower()
+            return "Requires " .. summonType
+        end
+    end
+    
+    -- hidden format (e.g., "hidden")
+    if reqStr == "hidden" then
+        return "Requires Hidden"
     end
     
     return nil
@@ -630,19 +693,38 @@ function Spell:GetTooltip(rank, casterUnit)
     end
 
     -- Costs (first cost left) | Cooldown (right)
-    -- Only show costs for resources the player "uses"
+    -- Always show ACTION, BONUS_ACTION, REACTION costs; filter others by usedResources
+    local function formatResourceName(res)
+        -- Format resource name: "BONUS_ACTION" -> "Bonus Action", "MANA" -> "Mana", "holy_power" -> "Holy Power"
+        local formatted = tostring(res):upper():gsub("_", " ")
+        -- Capitalize first letter of each word
+        formatted = formatted:gsub("(%S)(%S*)", function(first, rest)
+            return first:upper() .. rest:lower()
+        end)
+        return formatted
+    end
+    
     local firstCost, restCosts = nil, {}
     if self.costs and #self.costs > 0 then
         local Resources = RPE.Core and RPE.Core.Resources
         local usedResources = Resources and Resources:GetUsedResources(profile) or {}
+        local alwaysShow = { HEALTH = true, ACTION = true, BONUS_ACTION = true, REACTION = true }
+        local actionOnly = { ACTION = true, BONUS_ACTION = true, REACTION = true }
         
         for i, c in ipairs(self.costs) do
             local resId = string.upper(c.resource or "")
-            -- Only include this cost if the resource is in the 'use' list
-            if usedResources[resId] then
+            -- Show if it's an always-show resource (ACTION/BONUS_ACTION/REACTION/HEALTH) or in the 'use' list
+            if alwaysShow[resId] or usedResources[resId] then
                 local amt = _evaluateCost(self, c, profile)
                 local res = c.resource or ""
-                local text = string.format("%s %s", tostring(amt), string.lower(tostring(res)))
+                local formatted = formatResourceName(res)
+                -- For action economy resources, omit the amount; for others, include it
+                local text
+                if actionOnly[resId] then
+                    text = formatted
+                else
+                    text = string.format("%s %s", tostring(amt), formatted)
+                end
 
                 if i == 1 then
                     firstCost = text
@@ -653,17 +735,33 @@ function Spell:GetTooltip(rank, casterUnit)
         end
     end
 
+    -- Cast time (compute early so it can be used on the cost line when no costs exist)
+    local castLine
+    if self.cast then
+        local ct = self.cast
+        if ct.type == "INSTANT" then
+            castLine = "Instant"
+        elseif ct.type == "CAST_TURNS" then
+            castLine = ("%d turn cast"):format(tonumber(ct.turns) or 1)
+        elseif ct.type == "CHANNEL" then
+            local total = tonumber(ct.turns) or 1
+            local every = tonumber(ct.tickIntervalTurns) or 1
+            castLine = ("Channel %d turn%s (tick %d"):
+                       format(total, (total == 1 and "" or "s"), every)
+        end
+    end
+
     -- Cooldown
     local cdText
-    if self.cooldown and self.cooldown.turns then
+    if self.cooldown and self.cooldown.turns and tonumber(self.cooldown.turns) > 0 then
         local t = tonumber(self.cooldown.turns) or 0
         cdText = ("%d turn%s cooldown"):format(t, (t == 1 and "" or "s"))
     end
 
-    -- Show first cost + cooldown on same line
-    if firstCost or cdText then
+    -- Show first cost + cooldown on same line. If there are no costs, show cast time on the left.
+    if firstCost or cdText or castLine then
         table.insert(lines, {
-            left  = firstCost or "",
+            left  = firstCost or castLine or "",
             right = cdText or "",
             r = 1, g = 1, b = 1,
         })
@@ -674,23 +772,9 @@ function Spell:GetTooltip(rank, casterUnit)
         table.insert(lines, { left = cost, r = 1, g = 1, b = 1 })
     end
 
-    -- Cast time
-    if self.cast then
-        local ct = self.cast
-        local castLine
-        if ct.type == "INSTANT" then
-            castLine = "Instant"
-        elseif ct.type == "CAST_TURNS" then
-            castLine = ("%d turn cast"):format(tonumber(ct.turns) or 1)
-        elseif ct.type == "CHANNEL" then
-            local total = tonumber(ct.turns) or 1
-            local every = tonumber(ct.tickIntervalTurns) or 1
-            castLine = ("Channel %d turn%s (tick %d)"):
-                       format(total, (total == 1 and "" or "s"), every)
-        end
-        if castLine then
-            table.insert(lines, { left = castLine, r = 1, g = 1, b = 1 })
-        end
+    -- Cast time (if costs existed, show cast time as its own line; if no costs, it was used above)
+    if castLine and firstCost then
+        table.insert(lines, { left = castLine, r = 1, g = 1, b = 1 })
     end
 
     -- Requirements
@@ -718,20 +802,29 @@ function Spell:GetTooltip(rank, casterUnit)
     table.insert(lines, { left = " " })
 
     -- Rank availability info (grey line, shows explicit levels)
-    if (self.maxRanks and self.maxRanks > 1) and (self.unlockLevel and self.unlockLevel > 0) and RPE.ActiveRules:Get("use_spell_ranks_lvl") == 1 then
+    if (self.unlockLevel and self.unlockLevel > 0) and RPE.ActiveRules:Get("use_spell_ranks_lvl") == 1 then
         local levels = {}
         local start  = self.unlockLevel or 1
         local step   = self.rankInterval or 1
-        local maxR   = self.maxRanks or 1
-
-        for r = 1, maxR do
-            table.insert(levels, start + (r - 1) * step)
+        
+        -- rankInterval of 0 means only 1 rank
+        if step == 0 then
+            table.insert(levels, start)
+        else
+            local maxLevel = RPE.ActiveRules:Get("max_player_level") or 20
+            local level = start
+            while level <= maxLevel do
+                table.insert(levels, level)
+                level = level + step
+            end
         end
 
-        table.insert(lines, {
-            left = "Unlocks at Level " .. table.concat(levels, ", "),
-            r = 0.7, g = 0.7, b = 0.7,  -- grey text
-        })
+        if #levels > 0 then
+            table.insert(lines, {
+                left = "Unlocks at Level " .. table.concat(levels, ", "),
+                r = 0.7, g = 0.7, b = 0.7,  -- grey text
+            })
+        end
     end
 
     return spec

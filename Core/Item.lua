@@ -356,6 +356,15 @@ function Item:ShowTooltip()
             if stat then
                 local formatted = stat.FormatForItemTooltip and stat:FormatForItemTooltip(v)
                 if formatted and formatted ~= "" then
+                    -- Support $value_pct$ token: convert decimal to percentage (0.1 → +10%)
+                    formatted = formatted:gsub("%$value_pct%$", function()
+                        local pctValue = tonumber(v)
+                        if pctValue then
+                            return string.format("%+.0f%%", pctValue * 100)
+                        end
+                        return "$value_pct$"
+                    end)
+                    
                     local r, g, b, a = 1, 1, 1, 1
                     if stat.GetItemTooltipColor then
                         local R, G, B, A = stat:GetItemTooltipColor()
@@ -364,24 +373,12 @@ function Item:ShowTooltip()
 
                     local priority = stat.itemTooltipPriority or 0
 
-                    -- Check allow_* lists in active rules
+                    -- Allowed stats are determined by presence in the StatRegistry
                     local allowed = false
-                    local rules = RPE.ActiveRules and RPE.ActiveRules.rules
-                    if rules then
-                        for key, list in pairs(rules) do
-                            if type(key) == "string" and key:match("^allow_") then
-                                if type(list) == "table" then
-                                    for _, allowedId in ipairs(list) do
-                                        if allowedId == statId then allowed = true break end
-                                    end
-                                elseif type(list) == "string" then
-                                    for allowedId in list:gmatch("([^,%s]+)") do
-                                        if allowedId == statId then allowed = true break end
-                                    end
-                                end
-                            end
-                            if allowed then break end
-                        end
+                    local reg = RPE.Core and RPE.Core.StatRegistry
+                    if reg and reg.Get then
+                        local s = reg:Get(statId)
+                        if s ~= nil then allowed = true end
                     end
 
                     if not allowed then
@@ -436,6 +433,7 @@ function Item:ShowTooltip()
     if self.id then
         local reg = RPE.Core and RPE.Core.ItemRegistry
         local item = reg and reg.Get and reg:Get(self.id) or nil
+        
         if RPE and RPE.Debug and RPE.Debug.Warning and not item then
             RPE.Debug:Warning("Item not available in active datasets; cannot equip or use.")
         end

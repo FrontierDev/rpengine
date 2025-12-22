@@ -229,14 +229,13 @@ function DatasetDB.AddActive(name)
         end
     end
     
-    -- Print warnings for conflicts
+    -- Print warnings for conflicts but allow activation: stats will be stored under composite keys
     if #conflicts > 0 then
-        RPE.Debug:Warning(string.format("Cannot add dataset '%s' - %d stat key conflicts with active datasets:", name, #conflicts))
+        RPE.Debug:Warning(string.format("Adding dataset '%s' with %d stat key conflicts with active datasets; preserving both sets under composite keys:", name, #conflicts))
         for _, conflict in ipairs(conflicts) do
             RPE.Debug:Internal(string.format("  Stat '%s' exists in both '%s' and '%s'", 
                 conflict.stat, conflict.existing, conflict.new))
         end
-        return  -- Don't add the conflicting dataset
     end
     
     table.insert(db.activeByChar[key], name)
@@ -247,9 +246,10 @@ function DatasetDB.AddActive(name)
     if profile and dataset and dataset.extra and dataset.extra.stats then
         local synced = 0
         for statId, statDef in pairs(dataset.extra.stats) do
-            -- Only add if not already present
-            if not profile.stats[statId] then
-                local stat = profile:GetStat(statId, statDef.category or "PRIMARY")
+            -- Compose composite key and only add if not already present
+            local compositeKey = name .. "." .. statId
+            if not profile.stats[compositeKey] then
+                local stat = profile:GetStat(statId, statDef.category or "PRIMARY", name)
                 if stat then
                     stat:SetData({
                         id              = statId,
@@ -600,8 +600,9 @@ if f then
                 local hiddenCount = 0
                 for statId, statDef in pairs(allStats) do
                     if statDef then
-                        -- Get or create stat on profile with proper category
-                        local stat = profile:GetStat(statId, statDef.category or "PRIMARY")
+                        -- Get or create stat on profile with proper category and source dataset
+                        local src = statDef.sourceDataset or nil
+                        local stat = profile:GetStat(statId, statDef.category or "PRIMARY", src)
                         if stat then
                             synced = synced + 1
                             

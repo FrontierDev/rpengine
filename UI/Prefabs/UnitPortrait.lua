@@ -17,12 +17,34 @@ local Colors       = RPE_UI.Colors
 ---@field hp Frame             -- health bar frame
 ---@field hpBG Texture         -- health bar background
 ---@field hpFill Texture       -- health bar fill
+---@field castBar Frame        -- cast bar frame
+---@field castBarBG Texture    -- cast bar background
+---@field castBarFill Texture  -- cast bar fill
+---@field castBarText FontString -- cast bar text
 ---@field raidIcon Texture     -- raid marker icon (bottom-left of box)
+---@field raidIconFrame Frame  -- raid marker icon frame
+---@field flyingIcon Texture   -- flying unit icon
+---@field flyingIconFrame Frame -- flying unit icon frame
 ---@field statusRow Frame      -- container under HP bar
----@field hiddenOverlay Texture -- semi-transparent overlay for hidden units
+---@field hiddenOverlay Frame  -- overlay for hidden units
+---@field auraIconsFrame Frame -- vertical aura icons container
 ---@field healedIcon Button
 ---@field threatIcon Button
 ---@field attackedIcon Button
+---@field disengagedIcon Button
+---@field activeBuffsIcon Button
+---@field activeDebuffsIcon Button
+---@field _hpCur number
+---@field _hpMax number
+---@field _castTimeRemaining number
+---@field _castTimeTotal number
+---@field _castIcon string
+---@field _iconSize number
+---@field _auraIconSize number
+---@field _iconGap number
+---@field _noHealthBar boolean
+---@field _buffsGlowTimer table
+---@field _debuffsGlowTimer table
 local UnitPortrait = setmetatable({}, { __index = FrameElement })
 UnitPortrait.__index = UnitPortrait
 RPE_UI.Prefabs.UnitPortrait = UnitPortrait
@@ -116,18 +138,33 @@ function UnitPortrait:New(name, opts)
     local hpH     = math.max(2, math.floor((opts.healthBarHeight or 6)))
     local spacing = 4
 
-    -- Precompute icon row size so we reserve full height
+    -- Precompute icon sizes
     local iconSize = math.max(12, math.floor(size * 0.35))
-    local totalH   = size + hpH + spacing + iconSize + spacing
+    local auraIconSize = math.max(10, math.floor(size * 0.25))  -- smaller aura icons
+    local auraStackWidth = auraIconSize + 2  -- small gap between stacked auras
+    
+    -- Total height includes HP + cast bar + status icons row
+    local totalH   = size + hpH + spacing + hpH + spacing + iconSize + spacing
+
+    -- Total width includes aura stack on left + portrait
+    local totalW = auraStackWidth + spacing + size
+
+    -- Total height includes aura stack (2 icons) on the side
+    local totalH_WithAuras = math.max(totalH, auraIconSize * 2 + spacing)
 
     -- Total height includes HP + status icons row
     local f = CreateFrame("Button", name, parentFrame)
-    f:SetSize(size, totalH)
+    f:SetSize(totalW, totalH_WithAuras)
+
+    -- Aura icons frame (left side, vertical stack)
+    local auraIconsFrame = CreateFrame("Frame", nil, f)
+    auraIconsFrame:SetSize(auraStackWidth, auraIconSize * 2 + spacing)
+    auraIconsFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
 
     -- Inner "box" region reserved for the portrait/model
     local box = CreateFrame("Frame", nil, f)
     box:SetSize(size, size)
-    box:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+    box:SetPoint("TOPLEFT", f, "TOPLEFT", auraStackWidth + spacing, 0)
 
     -- Overlay for hidden units (semi-transparent grey) - create on top-level frame
     local hiddenOverlay = CreateFrame("Frame", nil, f)
@@ -200,11 +237,63 @@ function UnitPortrait:New(name, opts)
     hpFill:SetWidth(0)
     hpFill:SetColorTexture(0.20, 0.85, 0.30, 1.0)
 
-    -- === Status icons row (under the health bar) ===
+    -- Cast bar under the health bar (positioned relative to box to work even when hp is hidden)
+    local castBar = CreateFrame("Frame", nil, f)
+    castBar:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, -spacing - hpH - spacing)
+    castBar:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", 0, -spacing - hpH - spacing)
+    castBar:SetHeight(hpH)
+
+    local castBarBG = castBar:CreateTexture(nil, "BACKGROUND")
+    castBarBG:SetAllPoints()
+    castBarBG:SetColorTexture(0, 0, 0, 0.7)
+
+    -- Cast icon (left side of bar)
+    local castBarIcon = castBar:CreateTexture(nil, "ARTWORK")
+    castBarIcon:SetSize(16, 16)
+    castBarIcon:SetPoint("RIGHT", castBar, "LEFT", -2, 0)
+    castBarIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    castBarIcon:Hide()
+
+    local castBarFill = castBar:CreateTexture(nil, "ARTWORK")
+    castBarFill:SetPoint("LEFT", castBar, "LEFT", 0, 0)
+    castBarFill:SetPoint("TOP", castBar, "TOP", 0, 0)
+    castBarFill:SetPoint("BOTTOM", castBar, "BOTTOM", 0, 0)
+    castBarFill:SetWidth(0)
+    do
+        local r,g,b,a = Colors.Get("progress_cast")
+        castBarFill:SetColorTexture(r, g, b, a)
+    end
+
+    -- Preview bar (fainter, shows ahead of actual progress)
+    local castBarPreview = castBar:CreateTexture(nil, "ARTWORK")
+    castBarPreview:SetPoint("LEFT", castBar, "LEFT", 0, 0)
+    castBarPreview:SetPoint("TOP", castBar, "TOP", 0, 0)
+    castBarPreview:SetPoint("BOTTOM", castBar, "BOTTOM", 0, 0)
+    castBarPreview:SetWidth(0)
+    do
+        local r,g,b,a = Colors.Get("progress_cast")
+        castBarPreview:SetColorTexture(r, g, b, a * 0.3)  -- Same color but fainter
+    end
+    castBarPreview:SetDrawLayer("ARTWORK", 0)  -- Behind main fill
+
+    local castBarText = castBar:CreateFontString(nil, "OVERLAY")
+    castBarText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    castBarText:SetPoint("LEFT", castBar, "LEFT", 4, 0)
+    castBarText:SetTextColor(1, 1, 1, 1)
+    castBarText:SetText("Casting...")
+    castBarText:Hide()
+
+    -- === Status icons row (under the cast bar) ===
     local statusRow = CreateFrame("Frame", nil, f)
-    statusRow:SetPoint("TOPLEFT",  hp, "BOTTOMLEFT", 0, -spacing)
-    statusRow:SetPoint("TOPRIGHT", hp, "BOTTOMRIGHT", 0, -spacing)
+    statusRow:SetPoint("TOPLEFT",  castBar.frame, "BOTTOMLEFT", 0, -spacing)
+    statusRow:SetPoint("TOPRIGHT", castBar.frame, "BOTTOMRIGHT", 0, -spacing)
     statusRow:SetHeight(iconSize)
+
+    -- === Aura icons row (below status row) ===
+    local auraRow = CreateFrame("Frame", nil, f)
+    auraRow:SetPoint("TOPLEFT",  statusRow, "BOTTOMLEFT", 0, -spacing)
+    auraRow:SetPoint("TOPRIGHT", statusRow, "BOTTOMRIGHT", 0, -spacing)
+    auraRow:SetHeight(iconSize)
 
     local function makeStatusIcon(parent, texturePath, tooltipText)
         local btn = CreateFrame("Button", nil, parent)
@@ -246,6 +335,57 @@ function UnitPortrait:New(name, opts)
         "You attacked this unit last turn."
     )
 
+    local disengagedIcon = makeStatusIcon(
+        statusRow,
+        "Interface\\AddOns\\RPEngine\\UI\\Textures\\disengaged.png",
+        "This unit is disengaged from combat."
+    )
+
+    -- Aura icons (vertical stack on left side)
+    local function makeAuraIcon(parent, texturePath, tooltipText, colorKey)
+        local btn = CreateFrame("Button", nil, parent)
+        btn:SetSize(auraIconSize, auraIconSize)
+        btn:SetPoint("CENTER", parent, "CENTER", 0, 0) -- temp; real position set by LayoutAuraIcons
+        btn:EnableMouse(true)
+
+        local tex = btn:CreateTexture(nil, "ARTWORK")
+        tex:SetAllPoints()
+        tex:SetTexture(texturePath)
+        tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        
+        -- Apply color if provided
+        if colorKey and Colors and Colors.Get then
+            local r, g, b, a = Colors.Get(colorKey)
+            if r ~= nil then
+                tex:SetVertexColor(r, g, b, a or 1)
+            end
+        end
+
+        btn:Hide()
+        return btn
+    end
+
+    local activeBuffsIcon = makeAuraIcon(
+        auraIconsFrame,
+        "Interface\\AddOns\\RPEngine\\UI\\Textures\\active_buffs.png",
+        "Active Beneficial Auras",
+        "textBonus"
+    )
+
+    local activeDebuffsIcon = makeAuraIcon(
+        auraIconsFrame,
+        "Interface\\AddOns\\RPEngine\\UI\\Textures\\active_debuffs.png",
+        "Active Harmful Auras",
+        "textMalus"
+    )
+
+    -- Raid marker icon - initialize early (will be populated later)
+    local raidIcon = nil
+    local raidIconFrame = nil
+
+    -- Flying icon frame - initialize early (will be populated later)
+    local flyingIcon = nil
+    local flyingIconFrame = nil
 
     -- Object wrapper
     local o = FrameElement.New(self, "UnitPortrait", f, opts.parent)
@@ -258,21 +398,235 @@ function UnitPortrait:New(name, opts)
     o.hp       = hp
     o.hpBG     = hpBG
     o.hpFill   = hpFill
+    o.castBar  = castBar
+    o.castBarBG = castBarBG
+    o.castBarIcon = castBarIcon
+    o.castBarFill = castBarFill
+    o.castBarPreview = castBarPreview
+    o.castBarText = castBarText
     o.raidIcon = raidIcon
     o._hpCur   = nil
     o._hpMax   = nil
+    o._castTimeRemaining = nil
+    o._castTimeTotal = nil
 
     
     o.statusRow    = statusRow
+    o.auraIconsFrame = auraIconsFrame
     o.healedIcon   = healedIcon
     o.threatIcon   = threatIcon
     o.attackedIcon = attackedIcon
+    o.disengagedIcon = disengagedIcon
+    o.activeBuffsIcon = activeBuffsIcon
+    o.activeDebuffsIcon = activeDebuffsIcon
     o._iconSize = iconSize
+    o._auraIconSize = auraIconSize
     o._iconGap  = 4
     o.hiddenOverlay = hiddenOverlay
     o._noHealthBar = opts.noHealthBar or false
+    
+    -- Pulse timers for aura icons
+    o._buffsGlowTimer = nil
+    o._debuffsGlowTimer = nil
 
     local portrait = o 
+    
+    -- Setup aura icon tooltips (now that o exists)
+    activeBuffsIcon:SetScript("OnEnter", function()
+        local auraLines = {}
+        local localPlayerUnitId = nil
+        
+        if o.unit and o.unit.id then
+            local ev = RPE.Core and RPE.Core.ActiveEvent
+            if ev then
+                -- Get local player's unit ID for coloring check
+                if ev.localPlayerKey then
+                    local localPlayerUnit = ev.units and ev.units[ev.localPlayerKey]
+                    localPlayerUnitId = localPlayerUnit and localPlayerUnit.id
+                end
+                
+                if ev._auraManager then
+                    local auras = ev._auraManager:All(o.unit.id)
+                    if auras then
+                        for _, aura in ipairs(auras) do
+                            if aura.def and aura.def.isHelpful and not aura.def.hidden then
+                                table.insert(auraLines, aura)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Sort by remaining turns ascending
+        table.sort(auraLines, function(a, b)
+            return (a.remaining or 0) < (b.remaining or 0)
+        end)
+        
+        local lines = {}
+        local currentTurn = 0
+        if o.unit and o.unit.id then
+            local ev = RPE.Core and RPE.Core.ActiveEvent
+            if ev then
+                currentTurn = ev.turn or 0
+            end
+        end
+        
+        for _, aura in ipairs(auraLines) do
+            local name = aura.def and aura.def.name or "Unknown"
+            local icon = aura.def and aura.def.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+            local iconStr = "|T" .. icon .. ":16:16:0:0|t "
+            
+            -- Calculate remaining turns from expiresOn
+            local remaining = 0
+            if aura.expiresOn then
+                remaining = math.max(0, aura.expiresOn - currentTurn)
+            end
+            
+            -- Check if cast by local player
+            local isLocalPlayerAura = localPlayerUnitId and aura.sourceId == localPlayerUnitId
+            local r, g, b, a = 1, 1, 1, 1
+            if isLocalPlayerAura then
+                r, g, b, a = Colors.Get("textModified")
+            end
+            
+            -- Build line with right field (always present, empty if 0 turns)
+            local turnsText = ""
+            if remaining > 0 then
+                turnsText = remaining == 1 and "1 turn" or remaining .. " turns"
+            end
+            
+            table.insert(lines, {
+                left = iconStr .. name,
+                right = turnsText,
+                r = r, g = g, b = b
+            })
+        end
+        
+        if #lines == 0 then
+            table.insert(lines, {
+                text = "This unit has no buffs.",
+                r = 0.7, g = 0.7, b = 0.7,
+                wrap = false
+            })
+        end
+        
+        if Common and Common.ShowTooltip then
+            Common:ShowTooltip(activeBuffsIcon, {
+                title = "Active Buffs",
+                lines = lines
+            })
+        else
+            GameTooltip:SetOwner(activeBuffsIcon, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Active Buffs", 1, 1, 1)
+            GameTooltip:Show()
+        end
+    end)
+    activeBuffsIcon:SetScript("OnLeave", function()
+        if Common and Common.HideTooltip then
+            Common:HideTooltip()
+        else
+            GameTooltip:Hide()
+        end
+    end)
+    
+    activeDebuffsIcon:SetScript("OnEnter", function()
+        local auraLines = {}
+        local localPlayerUnitId = nil
+        
+        if o.unit and o.unit.id then
+            local ev = RPE.Core and RPE.Core.ActiveEvent
+            if ev then
+                -- Get local player's unit ID for coloring check
+                if ev.localPlayerKey then
+                    local localPlayerUnit = ev.units and ev.units[ev.localPlayerKey]
+                    localPlayerUnitId = localPlayerUnit and localPlayerUnit.id
+                end
+                
+                if ev._auraManager then
+                    local auras = ev._auraManager:All(o.unit.id)
+                    if auras then
+                        for _, aura in ipairs(auras) do
+                            if aura.def and not aura.def.isHelpful and not aura.def.hidden then
+                                table.insert(auraLines, aura)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Sort by remaining turns ascending
+        table.sort(auraLines, function(a, b)
+            return (a.remaining or 0) < (b.remaining or 0)
+        end)
+        
+        local lines = {}
+        local currentTurn = 0
+        if o.unit and o.unit.id then
+            local ev = RPE.Core and RPE.Core.ActiveEvent
+            if ev then
+                currentTurn = ev.turn or 0
+            end
+        end
+        
+        for _, aura in ipairs(auraLines) do
+            local name = aura.def and aura.def.name or "Unknown"
+            local icon = aura.def and aura.def.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+            local iconStr = "|T" .. icon .. ":16:16:0:0|t "
+            
+            -- Calculate remaining turns from expiresOn
+            local remaining = 0
+            if aura.expiresOn then
+                remaining = math.max(0, aura.expiresOn - currentTurn)
+            end
+            
+            -- Check if cast by local player
+            local isLocalPlayerAura = localPlayerUnitId and aura.sourceId == localPlayerUnitId
+            local r, g, b, a = 1, 1, 1, 1
+            if isLocalPlayerAura then
+                r, g, b, a = Colors.Get("textModified")
+            end
+            
+            -- Build line with right field (always present, empty if 0 turns)
+            local turnsText = ""
+            if remaining > 0 then
+                turnsText = remaining == 1 and "1 turn" or remaining .. " turns"
+            end
+            
+            table.insert(lines, {
+                left = iconStr .. name,
+                right = turnsText,
+                r = r, g = g, b = b
+            })
+        end
+        
+        if #lines == 0 then
+            table.insert(lines, {
+                text = "This unit has no debuffs.",
+                r = 0.7, g = 0.7, b = 0.7,
+                wrap = false
+            })
+        end
+        
+        if Common and Common.ShowTooltip then
+            Common:ShowTooltip(activeDebuffsIcon, {
+                title = "Active Debuffs",
+                lines = lines
+            })
+        else
+            GameTooltip:SetOwner(activeDebuffsIcon, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Active Debuffs", 1, 1, 1)
+            GameTooltip:Show()
+        end
+    end)
+    activeDebuffsIcon:SetScript("OnLeave", function()
+        if Common and Common.HideTooltip then
+            Common:HideTooltip()
+        else
+            GameTooltip:Hide()
+        end
+    end)
 
     -- Tooltip hover for the whole portrait
     f:SetScript("OnEnter", function()
@@ -342,7 +696,9 @@ function UnitPortrait:New(name, opts)
                 RPE.Debug:Internal(("[UnitPortrait:OnClick] Checking summoner: localPlayerUnitId=%s, unit.summonedBy=%s"):format(
                     tostring(localPlayerUnitId), tostring(unit.summonedBy)))
             end
-            canControl = (localPlayerUnitId and unit.summonedBy and localPlayerUnitId == unit.summonedBy)
+            if localPlayerUnitId and unit.summonedBy and localPlayerUnitId == unit.summonedBy then
+                canControl = true
+            end
             if RPE.Debug and RPE.Debug.Internal then
                 RPE.Debug:Internal(("[UnitPortrait:OnClick] Summoner check result: canControl=%s"):format(
                     tostring(canControl)))
@@ -408,12 +764,29 @@ function UnitPortrait:New(name, opts)
     o.raidIcon = raidIcon
     o.raidIconFrame = raidIconFrame
 
+    -- Flying icon (created on a dedicated frame with high level to render above model)
+    local flyingIconFrame = CreateFrame("Frame", nil, f)
+    flyingIconFrame:SetSize(size * 0.3, size * 0.3)  -- Smaller icon
+    flyingIconFrame:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -2, 2)
+    flyingIconFrame:SetFrameLevel(20)  -- VERY high level to ensure it's above the model
+    flyingIconFrame:Hide()
+    
+    local flyingIcon = flyingIconFrame:CreateTexture(nil, "OVERLAY")
+    flyingIcon:SetAllPoints(flyingIconFrame)
+    flyingIcon:SetDrawLayer("OVERLAY", 7)
+    
+    o.flyingIcon = flyingIcon
+    o.flyingIconFrame = flyingIconFrame
     -- Hidden by default until values are set
     o.hp:Hide()
+    o.castBar:Hide()
     o.statusRow:Hide()
     o.healedIcon:Hide()
     o.threatIcon:Hide()
     o.attackedIcon:Hide()
+    o.disengagedIcon:Hide()
+    o.activeBuffsIcon:Hide()
+    o.activeDebuffsIcon:Hide()
 
     return o
 end
@@ -423,6 +796,7 @@ function UnitPortrait:SetUnit(u)
     self:Refresh()
     self:ApplyTeamColor()
     self:ApplyRaidMarker()
+    self:ApplyFlyingIcon()
     self:UpdateStatusRowVisibility()
 end
 
@@ -527,6 +901,29 @@ function UnitPortrait:ApplyRaidMarker()
     end
 end
 
+-- Flying unit icon rendering
+function UnitPortrait:ApplyFlyingIcon()
+    if not self.flyingIcon then return end
+    if not self.unit then
+        if self.flyingIconFrame then self.flyingIconFrame:Hide() end
+        return
+    end
+    
+    local isFlying = self.unit.flying
+    
+    if isFlying then
+        self.flyingIcon:SetTexture("Interface\\Addons\\RPEngine\\UI\\Textures\\flying.png")
+        self.flyingIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        self.flyingIcon:SetDrawLayer("OVERLAY", 7)
+        if self.flyingIconFrame then 
+            self.flyingIconFrame:SetFrameLevel(20)  -- Ensure high level
+            self.flyingIconFrame:Show() 
+        end
+    else
+        if self.flyingIconFrame then self.flyingIconFrame:Hide() end
+    end
+end
+
 -- Public API for health; will show/hide bar automatically
 function UnitPortrait:SetHealth(cur, max)
     cur = tonumber(cur)
@@ -559,7 +956,156 @@ function UnitPortrait:SetHealth(cur, max)
     end
 end
 
---- Set absorption value for the health bar overlay
+--- Set cast bar progress
+---@param timeRemaining number -- turns remaining in cast
+---@param timeTotal number -- total cast time in turns
+---@param castName string -- name of what's being cast
+---@param icon string|nil -- icon texture path for the spell (optional)
+function UnitPortrait:SetCast(timeRemaining, timeTotal, castName, icon)
+    timeRemaining = tonumber(timeRemaining)
+    timeTotal = tonumber(timeTotal)
+    self._castTimeRemaining = timeRemaining
+    self._castTimeTotal = timeTotal
+    self._castIcon = icon
+    
+    -- Only proceed if we have valid numeric values
+    if timeRemaining == nil or timeTotal == nil or timeTotal <= 0 then
+        return
+    end
+
+    self.castBar:Show()
+    
+    -- Show spell icon
+    if icon then
+        self.castBarIcon:SetTexture(icon)
+        self.castBarIcon:Show()
+    else
+        self.castBarIcon:Hide()
+    end
+    
+    -- Always update the main bar based on actual progress (animated)
+    local pct = math.max(0, math.min(1, (timeTotal - timeRemaining) / timeTotal))
+    local w = self.castBar:GetWidth()
+    
+        local function startPreviewAnimation()
+        local function animatePreviewCycle()
+            if not self.castBar or not self.castBar:IsShown() then return end
+            
+            local barWidth = self.castBar:GetWidth()
+            if barWidth <= 0 then return end
+            
+            local startWidth = barWidth * 0.1  -- Start from 10%
+            local endWidth = barWidth          -- End at 100%
+            
+            -- Animate preview bar from 10% to 100% over 3 seconds
+            local animStartTime = GetTime()
+            local function updatePreview()
+                if not self.castBar or not self.castBar:IsShown() or not self.castBarPreview then
+                    return
+                end
+                
+                local elapsed = GetTime() - animStartTime
+                if elapsed < 1 then
+                    -- Animating
+                    local pct_preview = elapsed / 1.0
+                    local width = startWidth + (endWidth - startWidth) * pct_preview
+                    self.castBarPreview:SetWidth(width)
+                else
+                    -- Cycle complete, restart
+                    animatePreviewCycle()
+                    return
+                end
+                
+                -- Schedule next update
+                C_Timer.After(0.016, updatePreview)  -- ~60fps
+            end
+            
+            updatePreview()
+        end
+        
+        animatePreviewCycle()
+    end
+    
+    local function animateMainBar()
+        if not self._animatingMainBar or not self.castBarFill then return end
+        
+        local now = GetTime()
+        local elapsed = now - (self._mainBarAnimStartTime or now)
+        local currentWidth = self.castBarFill:GetWidth()
+        local targetWidth = self._mainBarTargetWidth or 0
+        local diff = targetWidth - currentWidth
+        
+        if math.abs(diff) > 0.5 then
+            -- Animate over 0.3 seconds
+            local newWidth = currentWidth + diff * math.min(1, elapsed / 0.3)
+            self.castBarFill:SetWidth(newWidth)
+            C_Timer.After(0.016, animateMainBar)  -- Continue animation
+        else
+            -- Animation complete, snap to target
+            self.castBarFill:SetWidth(targetWidth)
+            self._animatingMainBar = false
+            
+            -- Now start preview animation if this is the first SetCast
+            if not self._castAnimationActive then
+                self._castAnimationActive = true
+                startPreviewAnimation()
+            end
+            
+            -- If bar is at 100%, schedule auto-clear after 1.5 seconds
+            if targetWidth >= (self.castBar:GetWidth() or 1) then
+                if self._autoClearTimer then
+                    self._autoClearTimer:Cancel()
+                end
+                self._autoClearTimer = C_Timer.NewTimer(1.5, function()
+                    self:ClearCast()
+                end)
+            end
+        end
+    end
+    
+    
+    local function startMainBarAnimation()
+        if w <= 0 then
+            C_Timer.After(0, function()
+                if self.castBar and self.castBar:GetWidth() > 0 then
+                    local targetWidth = self.castBar:GetWidth() * pct
+                    self._mainBarTargetWidth = targetWidth
+                    self._mainBarAnimStartTime = GetTime()
+                    self._animatingMainBar = true
+                    animateMainBar()
+                end
+            end)
+        else
+            local targetWidth = w * pct
+            self._mainBarTargetWidth = targetWidth
+            self._mainBarAnimStartTime = GetTime()
+            self._animatingMainBar = true
+            animateMainBar()
+        end
+    end
+    
+    startMainBarAnimation()
+end
+
+--- Hide the cast bar
+function UnitPortrait:ClearCast()
+    if self._autoClearTimer then
+        self._autoClearTimer:Cancel()
+        self._autoClearTimer = nil
+    end
+    
+    self.castBar:Hide()
+    self.castBarIcon:Hide()
+    self.castBarFill:SetWidth(0)
+    self.castBarPreview:SetWidth(0)
+    self.castBarText:Hide()
+    self._castTimeRemaining = nil
+    self._castTimeTotal = nil
+    self._castAnimationActive = false
+    self._animatingMainBar = false
+end
+
+--- Greyscale / disable the portrait and all its visuals.
 function UnitPortrait:SetAbsorption(absorbAmount)
     absorbAmount = math.max(0, absorbAmount or 0)
     self._lastAbsorbAmount = absorbAmount  -- Store for refresh
@@ -629,18 +1175,31 @@ function UnitPortrait:UpdateStatusRowVisibility()
     local anyShown = (self.healedIcon and self.healedIcon:IsShown())
         or (self.threatIcon and self.threatIcon:IsShown())
         or (self.attackedIcon and self.attackedIcon:IsShown())
+        or (self.disengagedIcon and self.disengagedIcon:IsShown())
     if anyShown then
         self.statusRow:Show()
         self:LayoutStatusIcons()
     else
         self.statusRow:Hide()
     end
+    
+    -- Check aura icons visibility
+    if not self.auraIconsFrame then return end
+    local anyAuraShown = (self.activeBuffsIcon and self.activeBuffsIcon:IsShown())
+        or (self.activeDebuffsIcon and self.activeDebuffsIcon:IsShown())
+    if anyAuraShown then
+        self.auraIconsFrame:Show()
+        self:LayoutAuraIcons()
+    else
+        self.auraIconsFrame:Hide()
+    end
 end
 
-function UnitPortrait:SetStatusIcons(healed, threat, attacked)
+function UnitPortrait:SetStatusIcons(healed, threat, attacked, disengaged)
     if self.healedIcon   then self.healedIcon:SetShown(healed and true or false) end
     if self.threatIcon   then self.threatIcon:SetShown(threat and true or false) end
     if self.attackedIcon then self.attackedIcon:SetShown(attacked and true or false) end
+    if self.disengagedIcon then self.disengagedIcon:SetShown(disengaged and true or false) end
     self:UpdateStatusRowVisibility()
 end
 
@@ -659,6 +1218,83 @@ function UnitPortrait:SetAttackedLast(flag)
     self:UpdateStatusRowVisibility()
 end
 
+function UnitPortrait:SetDisengaged(flag)
+    if self.disengagedIcon then self.disengagedIcon:SetShown(flag and true or false) end
+    self:UpdateStatusRowVisibility()
+end
+
+function UnitPortrait:SetActiveBuffs(flag)
+    if self.activeBuffsIcon then self.activeBuffsIcon:SetShown(flag and true or false) end
+    self:UpdateStatusRowVisibility()
+end
+
+function UnitPortrait:SetActiveDebuffs(flag)
+    if self.activeDebuffsIcon then self.activeDebuffsIcon:SetShown(flag and true or false) end
+    self:UpdateStatusRowVisibility()
+end
+
+--- Start a continuous pulse glow on an aura icon
+function UnitPortrait:StartAuraGlow(iconFrame, timerKey)
+    if not iconFrame then return end
+    
+    -- Stop any existing glow on this icon
+    if timerKey == "buffs" then
+        if self._buffsGlowTimer then
+            self._buffsGlowTimer:Cancel()
+            self._buffsGlowTimer = nil
+        end
+    elseif timerKey == "debuffs" then
+        if self._debuffsGlowTimer then
+            self._debuffsGlowTimer:Cancel()
+            self._debuffsGlowTimer = nil
+        end
+    end
+    
+    local function doPulse()
+        if not iconFrame or not iconFrame:IsShown() then return end
+        iconFrame:SetAlpha(0.6)
+        UIFrameFadeIn(iconFrame, 0.5, 0.6, 1)
+        C_Timer.After(0.5, function()
+            if not iconFrame or not iconFrame:IsShown() then return end
+            iconFrame:SetAlpha(1)
+            UIFrameFadeOut(iconFrame, 0.5, 1, 0.6)
+        end)
+    end
+    
+    -- Do initial pulse
+    doPulse()
+    
+    -- Set up repeating timer every 1 second
+    local timer = C_Timer.NewTicker(1, doPulse)
+    
+    if timerKey == "buffs" then
+        self._buffsGlowTimer = timer
+    elseif timerKey == "debuffs" then
+        self._debuffsGlowTimer = timer
+    end
+end
+
+--- Stop the continuous glow on an aura icon
+function UnitPortrait:StopAuraGlow(timerKey)
+    if timerKey == "buffs" then
+        if self._buffsGlowTimer then
+            self._buffsGlowTimer:Cancel()
+            self._buffsGlowTimer = nil
+        end
+        if self.activeBuffsIcon then
+            self.activeBuffsIcon:SetAlpha(1)
+        end
+    elseif timerKey == "debuffs" then
+        if self._debuffsGlowTimer then
+            self._debuffsGlowTimer:Cancel()
+            self._debuffsGlowTimer = nil
+        end
+        if self.activeDebuffsIcon then
+            self.activeDebuffsIcon:SetAlpha(1)
+        end
+    end
+end
+
 function UnitPortrait:LayoutStatusIcons()
     if not self.statusRow then return end
 
@@ -666,6 +1302,7 @@ function UnitPortrait:LayoutStatusIcons()
     if self.healedIcon   and self.healedIcon:IsShown()   then table.insert(icons, self.healedIcon) end
     if self.threatIcon   and self.threatIcon:IsShown()   then table.insert(icons, self.threatIcon) end
     if self.attackedIcon and self.attackedIcon:IsShown() then table.insert(icons, self.attackedIcon) end
+    if self.disengagedIcon and self.disengagedIcon:IsShown() then table.insert(icons, self.disengagedIcon) end
 
     local n = #icons
     if n == 0 then
@@ -684,6 +1321,123 @@ function UnitPortrait:LayoutStatusIcons()
         btn:ClearAllPoints()
         btn:SetPoint("CENTER", self.statusRow, "CENTER", startX + (idx - 1) * (size + gap), 0)
     end
+end
+
+function UnitPortrait:LayoutAuraIcons()
+    if not self.auraIconsFrame then return end
+
+    local icons = {}
+    if self.activeBuffsIcon and self.activeBuffsIcon:IsShown() then table.insert(icons, self.activeBuffsIcon) end
+    if self.activeDebuffsIcon and self.activeDebuffsIcon:IsShown() then table.insert(icons, self.activeDebuffsIcon) end
+
+    local n = #icons
+    if n == 0 then
+        self.auraIconsFrame:Hide()
+        return
+    end
+
+    self.auraIconsFrame:Show()
+
+    -- Vertical stack: position top to bottom
+    local gap = 2
+    local auraIconSize = self._auraIconSize or 16
+    local totalH = n * auraIconSize + (n - 1) * gap
+    local startY = totalH / 2 - auraIconSize / 2
+
+    for idx, btn in ipairs(icons) do
+        btn:ClearAllPoints()
+        btn:SetPoint("CENTER", self.auraIconsFrame, "CENTER", 0, startY - (idx - 1) * (auraIconSize + gap))
+    end
+end
+
+--- Check if unit has any active, non-hidden, beneficial auras
+function UnitPortrait:HasActiveBuffs()
+    if not self.unit or not self.unit.id then return false end
+    
+    local ev = RPE.Core and RPE.Core.ActiveEvent
+    if not (ev and ev._auraManager) then return false end
+    
+    local auras = ev._auraManager:All(self.unit.id)
+    if not auras or #auras == 0 then return false end
+    
+    for _, aura in ipairs(auras) do
+        if aura.def and aura.def.isHelpful and not aura.def.hidden then
+            return true
+        end
+    end
+    return false
+end
+
+--- Check if unit has any active, non-hidden, harmful auras
+function UnitPortrait:HasActiveDebuffs()
+    if not self.unit or not self.unit.id then return false end
+    
+    local ev = RPE.Core and RPE.Core.ActiveEvent
+    if not (ev and ev._auraManager) then return false end
+    
+    local auras = ev._auraManager:All(self.unit.id)
+    if not auras or #auras == 0 then return false end
+    
+    for _, aura in ipairs(auras) do
+        if aura.def and not aura.def.isHelpful and not aura.def.hidden then
+            return true
+        end
+    end
+    return false
+end
+
+--- Check if unit has any active, non-hidden beneficial auras from the local player
+function UnitPortrait:HasLocalPlayerBuffs()
+    if not self.unit or not self.unit.id then return false end
+    
+    local ev = RPE.Core and RPE.Core.ActiveEvent
+    if not (ev and ev._auraManager) then return false end
+    
+    -- Get local player's unit ID
+    local localPlayerUnitId = nil
+    if ev.localPlayerKey then
+        local localPlayerUnit = ev.units and ev.units[ev.localPlayerKey]
+        localPlayerUnitId = localPlayerUnit and localPlayerUnit.id
+    end
+    
+    if not localPlayerUnitId then return false end
+    
+    local auras = ev._auraManager:All(self.unit.id)
+    if not auras or #auras == 0 then return false end
+    
+    for _, aura in ipairs(auras) do
+        if aura.def and aura.def.isHelpful and not aura.def.hidden and aura.sourceId == localPlayerUnitId then
+            return true
+        end
+    end
+    return false
+end
+
+--- Check if unit has any active, non-hidden harmful auras from the local player
+function UnitPortrait:HasLocalPlayerDebuffs()
+    if not self.unit or not self.unit.id then return false end
+    
+    local ev = RPE.Core and RPE.Core.ActiveEvent
+    if not (ev and ev._auraManager) then return false end
+    
+    -- Get local player's unit ID
+    local localPlayerUnitId = nil
+    if ev.localPlayerKey then
+        local localPlayerUnit = ev.units and ev.units[ev.localPlayerKey]
+        localPlayerUnitId = localPlayerUnit and localPlayerUnit.id
+    end
+    
+    if not localPlayerUnitId then return false end
+    
+    local auras = ev._auraManager:All(self.unit.id)
+    if not auras or #auras == 0 then return false end
+    
+    for _, aura in ipairs(auras) do
+        if aura.def and not aura.def.isHelpful and not aura.def.hidden and aura.sourceId == localPlayerUnitId then
+            return true
+        end
+    end
+    return false
 end
 
 function UnitPortrait:Refresh()
@@ -780,6 +1534,38 @@ function UnitPortrait:Refresh()
     -- Re-apply raid marker frame level after portrait rendering to ensure it's on top
     if self.raidIconFrame then
         self.raidIconFrame:SetFrameLevel(20)
+    end
+    
+    self:ApplyFlyingIcon()
+    
+    -- Update disengaged icon based on unit's engagement state
+    if self.unit and type(self.unit.IsDisengaged) == "function" then
+        local isDisengaged = self.unit:IsDisengaged()
+        RPE.Debug:Internal(("UnitPortrait:Refresh - %s turnsLastCombat=%d, IsDisengaged=%s"):format(
+            self.unit.name or self.unit.key, 
+            self.unit.turnsLastCombat or 999,
+            tostring(isDisengaged)
+        ))
+        self:SetDisengaged(isDisengaged)
+    else
+        self:SetDisengaged(false)
+    end
+    
+    -- Update active buff/debuff icons
+    self:SetActiveBuffs(self:HasActiveBuffs())
+    self:SetActiveDebuffs(self:HasActiveDebuffs())
+    
+    -- Pulse icons if they were cast by the local player
+    if self:HasLocalPlayerBuffs() and self.activeBuffsIcon and self.activeBuffsIcon:IsShown() then
+        self:StartAuraGlow(self.activeBuffsIcon, "buffs")
+    else
+        self:StopAuraGlow("buffs")
+    end
+    
+    if self:HasLocalPlayerDebuffs() and self.activeDebuffsIcon and self.activeDebuffsIcon:IsShown() then
+        self:StartAuraGlow(self.activeDebuffsIcon, "debuffs")
+    else
+        self:StopAuraGlow("debuffs")
     end
 end
 

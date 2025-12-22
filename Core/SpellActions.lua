@@ -174,6 +174,7 @@ end
 ---@param args table|nil
 function Actions:Run(key, ctx, cast, targets, args)
     local fn = self._acts[key]
+
     if not fn then
         if RPE.Debug and RPE.Debug.Warn then
             RPE.Debug:Warn("Unknown action: " .. tostring(key))
@@ -190,9 +191,24 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
     local ev = ctx and ctx.event
     if not (ev and targets and #targets > 0) then return end
 
+    -- Reset the caster's combat counter immediately (they are attempting an attack)
+    local casterUnit = findUnitById(cast and cast.caster)
+    if RPE.Debug then RPE.Debug:Print(string.format("[SpellActions:DAMAGE] Caster unit %d: %s", cast and cast.caster or 0, casterUnit and casterUnit.name or "NOT FOUND")) end
+    if casterUnit then
+        -- Reset counter to 0 so unit stays engaged
+        if RPE.Debug then RPE.Debug:Print(string.format("[SpellActions:DAMAGE] Resetting combat for caster %s", casterUnit.name)) end
+        if type(casterUnit.ResetCombat) == "function" then
+            casterUnit:ResetCombat()
+        end
+        -- Update engagement state
+        if type(casterUnit.SetEngaged) == "function" then
+            casterUnit:SetEngaged(true)
+        end
+    end
+
     -- Get caster's stats: use NPC's stats if caster is an NPC, otherwise use player profile
     local profile = cast and cast.profile
-    local casterUnit = nil
+    casterUnit = nil
     if not profile and cast and cast.caster then
         -- Find the caster unit to check if it's an NPC
         casterUnit = findUnitById(cast.caster)
@@ -232,6 +248,18 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
             local perAmount = tonumber(Formula:Roll(perExpr, profile)) or 0
             base = base + (perAmount * (rank - 1))
         end
+
+        -- Apply fudge factor from ruleset (default: 0)
+        local fudge = 0
+        if RPE.ActiveRules then
+            local fudgeVal = RPE.ActiveRules:Get("fudge", 0)
+            if type(fudgeVal) == "string" then
+                fudge = tonumber(Formula:Roll(fudgeVal, profile)) or 0
+            else
+                fudge = tonumber(fudgeVal) or 0
+            end
+        end
+        base = base + fudge
 
         return math.max(0, math.floor(base))
     end
@@ -308,12 +336,73 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
                     end
                 end
 
+                -- Parse threat value (supports formulas and stat references)
+                local threatVal = args.threat
+                if type(threatVal) == "string" then
+                    threatVal = tonumber(Formula:Roll(threatVal, profile)) or 0
+                else
+                    threatVal = tonumber(threatVal) or 0
+                end
+
+                -- Resolve weapon school tokens (e.g., "$wep.mainhand$") to actual damage schools
+                local resolvedSchool = school
+                if type(resolvedSchool) == "string" then
+                    local slot = resolvedSchool:match("^%$wep%.([%w_]+)%$")
+                    if slot then
+                        local norm = string.lower(slot)
+                        if norm == "mh" then norm = "mainhand"
+                        elseif norm == "oh" then norm = "offhand"
+                        elseif norm == "rng" or norm == "wand" then norm = "ranged" end
+
+                        -- Try to resolve equipped item from profile (GetEquipped API) or equipment table
+                        local item = nil
+                        if profile and type(profile.GetEquipped) == "function" then
+                            local ok, id = pcall(profile.GetEquipped, profile, norm)
+                            if ok and id then
+                                if type(id) == "table" then item = id end
+                                if type(id) == "string" then
+                                    local reg = RPE.Core and RPE.Core.ItemRegistry
+                                    if reg and type(reg.Get) == "function" then
+                                        local ok2, def = pcall(reg.Get, reg, id)
+                                        if ok2 and def then item = def end
+                                    end
+                                end
+                            end
+                        end
+                        if not item and profile and type(profile.equipment) == "table" then
+                            local ent = profile.equipment[norm]
+                            if ent then
+                                if type(ent) == "table" then item = ent end
+                                if type(ent) == "string" then
+                                    local reg = RPE.Core and RPE.Core.ItemRegistry
+                                    if reg and type(reg.Get) == "function" then
+                                        local ok2, def = pcall(reg.Get, reg, ent)
+                                        if ok2 and def then item = def end
+                                    end
+                                end
+                            end
+                        end
+
+                        if item then
+                            local d = (type(item) == "table") and (item.data or item) or {}
+                            local ds = d.damageSchool or d.school or d.damage_school
+                            if ds and type(ds) == "string" and ds ~= "" then
+                                resolvedSchool = ds
+                            else
+                                resolvedSchool = "Physical"  -- default if item has no damage school
+                            end
+                        else
+                            resolvedSchool = "Physical"  -- default if weapon not found
+                        end
+                    end
+                end
+
                 entries[#entries+1] = {
                     target = coerceUnitId(tgt),
                     amount = amt,
-                    school = school,
+                    school = resolvedSchool,
                     crit   = isCrit,
-                    threat = args.threat,
+                    threat = threatVal,
                 }
             end
         end
@@ -345,6 +434,21 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
         local aggregatedList = {}
         for _, agg in pairs(aggregatedByTarget) do
             table.insert(aggregatedList, agg)
+        end
+        
+        -- For aura tick damage (cast.def == nil), apply damage locally to the target unit immediately
+        -- This is needed because aura ticks don't go through the normal broadcast/Handle system
+        if not cast.def then
+            for _, agg in ipairs(aggregatedList) do
+                local targetUnit = findUnitById(agg.target)
+                if targetUnit and type(targetUnit.ApplyDamage) == "function" then
+                    local totalDamage = 0
+                    for _, amt in pairs(agg.damageBySchool) do
+                        totalDamage = totalDamage + amt
+                    end
+                    targetUnit:ApplyDamage(totalDamage, agg.crit, 0)
+                end
+            end
         end
         
         -- Use the groupId passed from runActions (via cast._groupId)
@@ -471,6 +575,18 @@ Actions:Register("HEAL", function(ctx, cast, targets, args)
             local perAmount = tonumber(Formula:Roll(perExpr, profile)) or 0
             base = base + (perAmount * (rank - 1))
         end
+
+        -- Apply fudge factor from ruleset (default: 0)
+        local fudge = 0
+        if RPE.ActiveRules then
+            local fudgeVal = RPE.ActiveRules:Get("fudge", 0)
+            if type(fudgeVal) == "string" then
+                fudge = tonumber(Formula:Roll(fudgeVal, profile)) or 0
+            else
+                fudge = tonumber(fudgeVal) or 0
+            end
+        end
+        base = base + fudge
 
         return math.max(0, math.floor(base))
     end
@@ -807,6 +923,17 @@ Actions:Register("REDUCE_COOLDOWN", function(ctx, cast, targets, args)
     local turn   = (ctx.event and ctx.event.turn) or 0
     local amount = tonumber(args.amount or args.turns) or 1
 
+    if args.sharedGroup == "ALL" then
+        -- Reduce cooldown for all spells for this caster
+        local reg = RPE.Core.SpellRegistry
+        if reg and reg.All then
+            for id, def in pairs(reg:All()) do
+                CD:Reduce(cast.caster, def, amount, turn)
+            end
+        end
+        return
+    end
+
     local def
     if args.sharedGroup then
         -- build a minimal def keyed to the shared group
@@ -899,6 +1026,77 @@ Actions:Register("HIDE", function(ctx, cast, targets, args)
     -- Broadcast hide for the caster
     if Broadcast and Broadcast.Hide then
         Broadcast:Hide(cast.caster)
+    end
+end)
+
+Actions:Register("GAIN_RESOURCE", function(ctx, cast, targets, args)
+    local Resources = RPE.Core and RPE.Core.Resources
+    if not Resources or not targets or #targets == 0 then return end
+
+    -- Accept both "auraId" and "resourceId" for compatibility
+    local resourceId = args.resourceId or args.auraId
+    if not resourceId then return end
+
+    -- Get caster's stats: use NPC's stats if caster is an NPC, otherwise use player profile
+    local profile = cast and cast.profile
+    if not profile and cast and cast.caster then
+        local casterUnit = findUnitById(cast.caster)
+        if casterUnit and casterUnit.isNPC and casterUnit.stats then
+            profile = {
+                GetStatValue = function(self, statId)
+                    return tonumber(casterUnit.stats[statId] or 1) or 1
+                end
+            }
+        end
+    end
+
+    -- Calculate amount (supports formulas)
+    local amount = 0
+    if type(args.amount) == "string" and Formula then
+        amount = tonumber(Formula:Roll(args.amount, profile)) or 0
+    else
+        amount = tonumber(args.amount or 0)
+    end
+    if amount == 0 then return end
+
+    local myUnitId = nil
+    if RPE.Core and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent.GetLocalPlayerUnitId then
+        myUnitId = RPE.Core.ActiveEvent:GetLocalPlayerUnitId()
+    end
+    
+    for _, tgt in ipairs(targets) do
+        -- Only tick resources for the local player unit
+        if tonumber(tgt) == tonumber(myUnitId) then
+            Resources:Add(resourceId, amount)
+            if RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal(('[SpellActions:GAIN_RESOURCE] Added %d %s to unit %s'):format(amount, resourceId, tostring(tgt)))
+            end
+        end
+    end
+end)
+
+-- INTERRUPT: stop a target unit's spell casting
+Actions:Register("INTERRUPT", function(ctx, cast, targets, args)
+    if not (targets and #targets > 0) then return end
+
+    for _, tgt in ipairs(targets) do
+        local targetId = coerceUnitId(tgt)
+        if targetId > 0 then
+            local targetUnit = findUnitById(targetId)
+            if targetUnit then
+                if RPE.Debug and RPE.Debug.Internal then
+                    RPE.Debug:Internal(('[SpellActions:INTERRUPT] Interrupting unit %d'):format(targetId))
+                end
+                
+                -- Mark the unit as interrupted to prevent spell execution
+                targetUnit._wasInterrupted = true
+                
+                -- Broadcast CLEAR_CASTING to stop the cast on all clients
+                if Broadcast and Broadcast.SendClearCasting then
+                    Broadcast:SendClearCasting(targetId)
+                end
+            end
+        end
     end
 end)
 

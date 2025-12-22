@@ -93,7 +93,7 @@ local CLASSES = {
     {id = "druid", name = "Druid", icon = 625999},
     {id = "monk", name = "Monk", icon = 626002},
     {id = "demonhunter", name = "Demon Hunter", icon = 1260827},
-    {id = "evoker", name = "Demon Hunter", icon = 4574311},
+    {id = "evoker", name = "Evoker", icon = 4574311},
 }
 
 local function exposeCoreWindow(self)
@@ -361,6 +361,10 @@ function SetupWindow:ShowPage(idx)
         autoSize = true, width = WIN_W - 20, x = 10,
     })
     self.body:Add(bodyGroup)
+    self._currentBodyGroup = bodyGroup  -- Store for use in UpdateWindowHeight
+    
+    -- Ensure body doesn't shift by setting a fixed width
+    self.body.frame:SetWidth(WIN_W)
 
     -- Page type specific rendering
     if page.pageType == "SELECT_RACE" then
@@ -381,6 +385,35 @@ function SetupWindow:ShowPage(idx)
 
     self:UpdatePageText()
     self:UpdateButtonStates()
+end
+
+function SetupWindow:UpdateWindowHeight(traitCount)
+    -- Calculate and set window height based on trait count
+    -- 3 traits per row, ~100 pixels per row (includes spacing and borders)
+    local traitRows = math.max(1, math.ceil(traitCount / 3))
+    local headerHeight = HEADER_MIN_HEIGHT
+    local bodyHeight = traitRows * 100
+    local newHeight = headerHeight + bodyHeight + FOOTER_HEIGHT + 20
+    
+    -- Clamp to min/max
+    newHeight = math.max(MIN_WIN_H, math.min(newHeight, MAX_WIN_H))
+    
+    self.currentWinH = newHeight
+    if self.root and self.root.frame then
+        self.root.frame:SetHeight(newHeight)
+    end
+    
+    -- Fix body panel width to prevent horizontal shifts
+    if self.body and self.body.frame then
+        self.body.frame:SetWidth(WIN_W)
+    end
+    
+    -- Reset bodyGroup position and anchor to prevent layout shift
+    if self._currentBodyGroup and self._currentBodyGroup.frame then
+        self._currentBodyGroup.frame:ClearAllPoints()
+        self._currentBodyGroup.frame:SetPoint("TOPLEFT", self.body.frame, "TOPLEFT", 10, 0)
+        self._currentBodyGroup.frame:SetPoint("TOPRIGHT", self.body.frame, "TOPRIGHT", -10, 0)
+    end
 end
 
 function SetupWindow:RenderSelectRace(headerGroup, bodyGroup, page)
@@ -491,6 +524,23 @@ function SetupWindow:RenderSelectRace(headerGroup, bodyGroup, page)
             window.selectedRaceTraits = {}
             updateRaceButtonStates()
             updateTraitList()
+            -- Recalculate window height for new trait count
+            local totalTraits = 0
+            local AuraRegistry = _G.RPE and _G.RPE.Core and _G.RPE.Core.AuraRegistry
+            if AuraRegistry and window.selectedRace and AuraRegistry.defs then
+                local raceTag = "race:" .. window.selectedRace
+                for auraId, auraDef in pairs(AuraRegistry.defs) do
+                    if auraDef and auraDef.isTrait and auraDef.tags and type(auraDef.tags) == "table" then
+                        for _, tag in ipairs(auraDef.tags) do
+                            if tag == raceTag then
+                                totalTraits = totalTraits + 1
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            window:UpdateWindowHeight(totalTraits)
         end)
     end
     
@@ -502,7 +552,7 @@ function SetupWindow:RenderSelectRace(headerGroup, bodyGroup, page)
     bodyGroup:Add(traitContainer)
     
     local traitLabel = Text:New("RPE_Setup_RaceTraitLabel", {
-        parent = traitContainer, text = "Racial Traits:",
+        parent = traitContainer, text = " ",
         fontSize = 12, marginB = 6,
     })
     traitContainer:Add(traitLabel)
@@ -515,15 +565,45 @@ function SetupWindow:RenderSelectRace(headerGroup, bodyGroup, page)
     traitContainer:Add(traitListGroup)
     
     -- Helper function to update trait list display
+    local columns = nil
+    local noTraitsText = nil
     function updateTraitList()
-        -- Clear previous trait buttons
-        if traitListGroup.children then
-            for i = #traitListGroup.children, 1, -1 do
-                local ch = traitListGroup.children[i]
-                if ch and ch.frame and ch.frame.SetParent then ch.frame:SetParent(nil) end
-                if ch and ch.Hide then ch:Hide() end
-                traitListGroup.children[i] = nil
+        -- If columns don't exist, create them
+        if not columns then
+            columns = {
+                VGroup:New("RPE_Setup_TraitCol1", {
+                    parent = traitListGroup, spacingY = 4, alignH = "LEFT", alignV = "TOP",
+                    autoSize = true,
+                }),
+                VGroup:New("RPE_Setup_TraitCol2", {
+                    parent = traitListGroup, spacingY = 4, alignH = "LEFT", alignV = "TOP",
+                    autoSize = true,
+                }),
+                VGroup:New("RPE_Setup_TraitCol3", {
+                    parent = traitListGroup, spacingY = 4, alignH = "LEFT", alignV = "TOP",
+                    autoSize = true,
+                }),
+            }
+            for i, col in ipairs(columns) do
+                traitListGroup:Add(col)
             end
+        end
+        
+        -- Clear previous trait entries from columns
+        for _, col in ipairs(columns) do
+            if col.children then
+                for i = #col.children, 1, -1 do
+                    local ch = col.children[i]
+                    if ch and ch.frame and ch.frame.SetParent then ch.frame:SetParent(nil) end
+                    if ch and ch.Hide then ch:Hide() end
+                    col.children[i] = nil
+                end
+            end
+        end
+        
+        -- Hide "no traits" message if it exists
+        if noTraitsText and noTraitsText.frame then
+            noTraitsText:Hide()
         end
         
         if not window.selectedRace then
@@ -560,35 +640,20 @@ function SetupWindow:RenderSelectRace(headerGroup, bodyGroup, page)
         end
         
         if #traits == 0 then
-            local noTraitsText = Text:New("RPE_Setup_RaceTraitNone", {
-                parent = traitListGroup, text = "No racial traits available.",
-                fontSize = 10,
-            })
-            traitListGroup:Add(noTraitsText)
+            -- Create the "no traits" message once if it doesn't exist
+            if not noTraitsText or not noTraitsText.frame or not noTraitsText.frame:GetParent() then
+                noTraitsText = Text:New("RPE_Setup_RaceTraitNone", {
+                    parent = traitListGroup, text = "No racial traits available.",
+                    fontSize = 10,
+                })
+                traitListGroup:Add(noTraitsText)
+            else
+                noTraitsText:Show()
+            end
             return
         end
         
         -- Create 3-column layout for traits
-        local columns = {
-            VGroup:New("RPE_Setup_TraitCol1", {
-                parent = traitListGroup, spacingY = 4, alignH = "LEFT", alignV = "TOP",
-                autoSize = true,
-            }),
-            VGroup:New("RPE_Setup_TraitCol2", {
-                parent = traitListGroup, spacingY = 4, alignH = "LEFT", alignV = "TOP",
-                autoSize = true,
-            }),
-            VGroup:New("RPE_Setup_TraitCol3", {
-                parent = traitListGroup, spacingY = 4, alignH = "LEFT", alignV = "TOP",
-                autoSize = true,
-            }),
-        }
-        
-        for i, col in ipairs(columns) do
-            traitListGroup:Add(col)
-        end
-        
-        -- Get TraitEntry class
         local TraitEntry = RPE_UI.Prefabs.TraitEntry
         
         -- Track trait entries for updating selection state
@@ -689,6 +754,23 @@ function SetupWindow:RenderSelectRace(headerGroup, bodyGroup, page)
     
     -- Initial render
     updateTraitList()
+    
+    -- Set initial window height
+    local totalTraits = 0
+    if AuraRegistry and window.selectedRace and AuraRegistry.defs then
+        local raceTag = "race:" .. window.selectedRace
+        for auraId, auraDef in pairs(AuraRegistry.defs) do
+            if auraDef and auraDef.isTrait and auraDef.tags and type(auraDef.tags) == "table" then
+                for _, tag in ipairs(auraDef.tags) do
+                    if tag == raceTag then
+                        totalTraits = totalTraits + 1
+                        break
+                    end
+                end
+            end
+        end
+    end
+    self:UpdateWindowHeight(totalTraits)
 end
 
 function SetupWindow:RenderSelectClass(headerGroup, bodyGroup, page)
@@ -799,6 +881,23 @@ function SetupWindow:RenderSelectClass(headerGroup, bodyGroup, page)
             window.selectedClassTraits = {}
             updateClassButtonStates()
             updateClassTraitList()
+            -- Recalculate window height for new trait count
+            local totalTraits = 0
+            local AuraRegistry = _G.RPE and _G.RPE.Core and _G.RPE.Core.AuraRegistry
+            if AuraRegistry and window.selectedClass and AuraRegistry.defs then
+                local classTag = "class:" .. window.selectedClass
+                for auraId, auraDef in pairs(AuraRegistry.defs) do
+                    if auraDef and auraDef.isTrait and auraDef.tags and type(auraDef.tags) == "table" then
+                        for _, tag in ipairs(auraDef.tags) do
+                            if tag == classTag then
+                                totalTraits = totalTraits + 1
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            window:UpdateWindowHeight(totalTraits)
         end)
     end
     
@@ -810,7 +909,7 @@ function SetupWindow:RenderSelectClass(headerGroup, bodyGroup, page)
     bodyGroup:Add(classTraitContainer)
     
     local classTraitLabel = Text:New("RPE_Setup_ClassTraitLabel", {
-        parent = classTraitContainer, text = "Class Traits:",
+        parent = classTraitContainer, text = " ",
         fontSize = 12, marginB = 6,
     })
     classTraitContainer:Add(classTraitLabel)
@@ -960,6 +1059,23 @@ function SetupWindow:RenderSelectClass(headerGroup, bodyGroup, page)
     
     -- Initial render
     updateClassTraitList()
+    
+    -- Set initial window height
+    local totalTraits = 0
+    if AuraRegistry and window.selectedClass and AuraRegistry.defs then
+        local classTag = "class:" .. window.selectedClass
+        for auraId, auraDef in pairs(AuraRegistry.defs) do
+            if auraDef and auraDef.isTrait and auraDef.tags and type(auraDef.tags) == "table" then
+                for _, tag in ipairs(auraDef.tags) do
+                    if tag == classTag then
+                        totalTraits = totalTraits + 1
+                        break
+                    end
+                end
+            end
+        end
+    end
+    self:UpdateWindowHeight(totalTraits)
 end
 
 function SetupWindow:RenderSelectLanguage(headerGroup, bodyGroup, page)
@@ -1217,12 +1333,62 @@ function SetupWindow:ShowAddLanguageDialog(page)
     p:Show()
 end
 
+-- Helper: Extract race from spell tags (handles "race:orc" and direct race names)
+local function extractRaceFromTags(tags)
+    if not tags then return nil end
+    for _, tag in ipairs(tags) do
+        -- Format: "race:orc" or "race:human" etc.
+        if tag:match("^race:") then
+            return tag:sub(6):lower()
+        end
+        -- Format: Direct race name like "Human", "Orc", etc.
+        if tag:match("^(Dwarf|Gnome|Human|Orc|Tauren|Troll|BloodElf|Draenei|Pandaren|Nightborne|HighmountainTauren|VoidElf|Mechagnome|Worgen|Dracthyr|LightForged|Zandalari|KulTiran|DarkIron|Vulpera|MagharOrc)$") then
+            return tag:lower()
+        end
+    end
+    return nil
+end
+
+-- Helper: Check if spell is a racial ability
+local function isRacialSpell(tags)
+    if not tags then return false end
+    for _, tag in ipairs(tags) do
+        if tag == "Racial" or extractRaceFromTags({tag}) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Helper: Normalize race names for comparison
+local function normalizeRaceName(raceName)
+    if not raceName then return nil end
+    local normalized = raceName:lower()
+    -- Handle common misspellings/variants
+    local raceMap = {
+        ["bloodelf"] = "bloodelf",
+        ["draenei"] = "draenei",
+        ["darkiron"] = "darkiron",
+        ["dracthyr"] = "dracthyr",
+        ["highmountaintauren"] = "highmountaintauren",
+        ["kultiran"] = "kultiran",
+        ["lightforged"] = "lightforged",
+        ["magharorc"] = "magharorc",
+        ["mechagnome"] = "mechagnome",
+        ["nightborne"] = "nightborne",
+        ["voidelf"] = "voidelf",
+        ["zandalari"] = "zandalari",
+    }
+    return raceMap[normalized] or normalized
+end
+
 function SetupWindow:RenderSelectSpells(headerGroup, bodyGroup, page)
     local window = self
     
     -- Read spell configuration from page (read-only, never modify page object)
     local allowRacial = page.allowRacial ~= false
     local restrictToClass = page.restrictToClass or false
+    local restrictToRace = page.restrictToRace or false
     local firstRankOnly = page.firstRankOnly or false
     
     -- Initialize spell selections on first render (not on re-renders during same session)
@@ -1399,7 +1565,85 @@ function SetupWindow:RenderSelectSpells(headerGroup, bodyGroup, page)
                 
                 UIDropDownMenu_AddSeparator(level)
                 
-                -- Built-in class/spec tags with hierarchy
+                -- Class submenu
+                local anyClassActive = false
+                for _, classDef in ipairs(BUILTIN_CLASS_TAGS) do
+                    for _, spec in ipairs(classDef.specs) do
+                        if self._spellActiveFilters[spec:lower()] then
+                            anyClassActive = true
+                            break
+                        end
+                    end
+                    if anyClassActive then break end
+                end
+                
+                UIDropDownMenu_AddButton({
+                    text = "Class",
+                    hasArrow = true,
+                    notCheckable = false,
+                    checked = anyClassActive,
+                    keepShownOnClick = true,
+                    menuList = "class_submenu",
+                }, level)
+                
+                -- Race submenu
+                local anyRaceActive = false
+                for tag in pairs(self._spellActiveFilters) do
+                    if tag == "racial" or (self._spellActiveFilters[tag] and extractRaceFromTags({tag})) then
+                        anyRaceActive = true
+                        break
+                    end
+                end
+                
+                UIDropDownMenu_AddButton({
+                    text = "Race",
+                    hasArrow = true,
+                    notCheckable = false,
+                    checked = anyRaceActive,
+                    keepShownOnClick = true,
+                    menuList = "race_submenu",
+                }, level)
+                
+                UIDropDownMenu_AddSeparator(level)
+                
+                -- Spell type filters
+                UIDropDownMenu_AddButton({
+                    text = "melee",
+                    isNotRadio = true,
+                    keepShownOnClick = true,
+                    checked = self._spellActiveFilters["melee"] == true,
+                    func = function()
+                        self._spellActiveFilters["melee"] = not self._spellActiveFilters["melee"]
+                        updateFilterButtonLabel()
+                        window:ShowPage(window.currentPageIdx)
+                    end,
+                }, level)
+                
+                UIDropDownMenu_AddButton({
+                    text = "ranged",
+                    isNotRadio = true,
+                    keepShownOnClick = true,
+                    checked = self._spellActiveFilters["ranged"] == true,
+                    func = function()
+                        self._spellActiveFilters["ranged"] = not self._spellActiveFilters["ranged"]
+                        updateFilterButtonLabel()
+                        window:ShowPage(window.currentPageIdx)
+                    end,
+                }, level)
+                
+                UIDropDownMenu_AddButton({
+                    text = "spell",
+                    isNotRadio = true,
+                    keepShownOnClick = true,
+                    checked = self._spellActiveFilters["spell"] == true,
+                    func = function()
+                        self._spellActiveFilters["spell"] = not self._spellActiveFilters["spell"]
+                        updateFilterButtonLabel()
+                        window:ShowPage(window.currentPageIdx)
+                    end,
+                }, level)
+            elseif level == 2 and menuList == "class_submenu" then
+                -- Class/spec submenu
                 for _, classDef in ipairs(BUILTIN_CLASS_TAGS) do
                     local cr, cg, cb = unpack(classDef.color)
                     local classKeyLower = classDef.class:lower()
@@ -1415,20 +1659,18 @@ function SetupWindow:RenderSelectSpells(headerGroup, bodyGroup, page)
                         notCheckable = false,
                         checked = allOn,
                         keepShownOnClick = true,
-                        menuList = classKeyLower,  -- Store class key in lowercase
+                        menuList = classKeyLower,
                         func = function()
                             local anyActive = false
                             for _, spec in ipairs(classDef.specs) do
                                 if self._spellActiveFilters[spec:lower()] then anyActive = true break end
                             end
-                            -- Also check if the class name itself is active as a tag
                             if self._spellActiveFilters[classKeyLower] then anyActive = true end
                             
                             local newState = not anyActive
                             for _, spec in ipairs(classDef.specs) do
                                 self._spellActiveFilters[spec:lower()] = newState
                             end
-                            -- Also toggle the class name if it exists as a tag
                             if allTags[classKeyLower] then
                                 self._spellActiveFilters[classKeyLower] = newState
                             end
@@ -1437,11 +1679,25 @@ function SetupWindow:RenderSelectSpells(headerGroup, bodyGroup, page)
                         end,
                     }, level)
                 end
+            elseif level == 2 and menuList == "race_submenu" then
+                -- Race submenu
+                UIDropDownMenu_AddButton({
+                    text = "Racial",
+                    isNotRadio = true,
+                    keepShownOnClick = true,
+                    checked = self._spellActiveFilters["racial"] == true,
+                    func = function()
+                        self._spellActiveFilters["racial"] = not self._spellActiveFilters["racial"]
+                        updateFilterButtonLabel()
+                        window:ShowPage(window.currentPageIdx)
+                    end,
+                }, level)
                 
-                -- Extra tags (not in built-in list)
-                if #extraTags > 0 then
-                    UIDropDownMenu_AddSeparator(level)
-                    for _, tag in ipairs(extraTags) do
+                UIDropDownMenu_AddSeparator(level)
+                
+                -- Individual race filters from extraTags
+                for _, tag in ipairs(extraTags) do
+                    if tag:match("^race:") or extractRaceFromTags({tag}) then
                         UIDropDownMenu_AddButton({
                             text = tag,
                             isNotRadio = true,
@@ -1455,7 +1711,7 @@ function SetupWindow:RenderSelectSpells(headerGroup, bodyGroup, page)
                         }, level)
                     end
                 end
-            elseif level == 2 and menuList then
+            elseif level == 3 and menuList then
                 -- Handle class submenu for specs
                 for _, classDef in ipairs(BUILTIN_CLASS_TAGS) do
                     if menuList == classDef.class:lower() then
@@ -1556,19 +1812,45 @@ function SetupWindow:RenderSelectSpells(headerGroup, bodyGroup, page)
         if restrictToClass then
             local spellObj = spellObjects[spellId]
             if spellObj and spellObj.tags then
-                local playerClass = window.selectedClass
-                if playerClass then
-                    playerClass = playerClass:lower()
-                    local hasClass = false
-                    for _, tag in ipairs(spellObj.tags) do
-                        if tag:lower() == playerClass then
-                            hasClass = true
-                            break
+                -- Check if this is a racial spell - if so, allow it regardless of class
+                local isRacial = false
+                for _, tag in ipairs(spellObj.tags) do
+                    if tag == "Racial" or tag:match("^(Dwarf|Gnome|Human|Orc|Tauren|Troll|BloodElf|Draenei|Pandaren|Nightborne|HighmountainTauren|VoidElf|Mechagnome|Worgen|Dracthyr|LightForged|Zandalari|KulTiran|DarkIron|Vulpera|MagharOrc)$") then
+                        isRacial = true
+                        break
+                    end
+                end
+                
+                -- If not racial, check class restriction
+                if not isRacial then
+                    local playerClass = window.selectedClass
+                    if playerClass then
+                        playerClass = playerClass:lower()
+                        local hasClass = false
+                        for _, tag in ipairs(spellObj.tags) do
+                            if tag:lower() == playerClass then
+                                hasClass = true
+                                break
+                            end
+                        end
+                        if not hasClass then
+                            return false
                         end
                     end
-                    if not hasClass then
-                        return false
-                    end
+                end
+            end
+        end
+        
+        -- Check race restriction for racial spells (if enabled)
+        if restrictToRace then
+            local spellObj = spellObjects[spellId]
+            if spellObj and spellObj.tags and isRacialSpell(spellObj.tags) then
+                local spellRace = extractRaceFromTags(spellObj.tags)
+                local playerRace = window.selectedRace and normalizeRaceName(window.selectedRace)
+                local normalizedSpellRace = spellRace and normalizeRaceName(spellRace)
+                
+                if spellRace and playerRace and normalizedSpellRace ~= playerRace then
+                    return false
                 end
             end
         end
@@ -1576,18 +1858,8 @@ function SetupWindow:RenderSelectSpells(headerGroup, bodyGroup, page)
         -- Check racial restriction (if racial spells not allowed)
         if not allowRacial then
             local spellObj = spellObjects[spellId]
-            if spellObj and spellObj.tags then
-                local isRacial = false
-                for _, tag in ipairs(spellObj.tags) do
-                    -- Common racial tags: Dwarf, Gnome, Human, Orc, Tauren, Troll, BloodElf, Draenei, Pandaren, Nightborne, HighmountainTauren, Void Elf, Mechagnome
-                    if tag == "Racial" or tag:match("^(Dwarf|Gnome|Human|Orc|Tauren|Troll|BloodElf|Draenei|Pandaren|Nightborne|HighmountainTauren|VoidElf|Mechagnome)$") then
-                        isRacial = true
-                        break
-                    end
-                end
-                if isRacial then
-                    return false
-                end
+            if spellObj and spellObj.tags and isRacialSpell(spellObj.tags) then
+                return false
             end
         end
         
@@ -3209,31 +3481,19 @@ function SetupWindow:Finish()
     if self.statValues and next(self.statValues) then
         if DBG then DBG:Internal("SetupWindow: Saving stats") end
         
-        if not profile.stats then
-            profile.stats = {}
-        end
-        
+        local dataset = self.selectedDataset or "_setup"
         for statId, value in pairs(self.statValues) do
-            if profile.stats[statId] then
+            -- Use profile API to get or create stat under the selected dataset
+            local statObj = (profile and profile.GetStat) and profile:GetStat(statId, "PRIMARY", dataset) or nil
+            if statObj then
                 -- Calculate setupBonus as the difference between what user chose and the definition base
-                local defBase = profile.stats[statId].base or 10
+                local defBase = statObj.base or 10
                 local setupBonus = value - defBase
-                
-                -- Apply incrementBy multiplier for point-based systems (not standard array)
-                -- Use the incrementBy value from the page where this stat was first edited
                 if self.statType ~= "STANDARD_ARRAY" then
                     local statIncrementBy = self.statIncrementBy[statId] or 1
                     setupBonus = setupBonus * statIncrementBy
                 end
-                
-                profile.stats[statId].setupBonus = setupBonus
-            else
-                local CharacterStat = _G.RPE and _G.RPE.Stats and _G.RPE.Stats.CharacterStat
-                if CharacterStat then
-                    profile.stats[statId] = CharacterStat:New(statId, "PRIMARY", value)
-                    -- For new stats, setupBonus would be 0 since we set the base directly
-                    profile.stats[statId].setupBonus = 0
-                end
+                statObj.setupBonus = setupBonus
             end
         end
     end
@@ -3494,6 +3754,21 @@ function SetupWindow:Finish()
                 else
                     profile.professions.firstaid.learned = true
                 end
+            end
+        end
+    end
+    
+    -- Learn all spells marked as alwaysKnown from the SpellRegistry
+    local SpellRegistry = _G.RPE and _G.RPE.Core and _G.RPE.Core.SpellRegistry
+    if SpellRegistry and SpellRegistry.All then
+        for spellId, spellDef in pairs(SpellRegistry:All()) do
+            if spellDef and spellDef.alwaysKnown then
+                -- Learn the spell at its max rank
+                local maxRank = tonumber(spellDef.maxRanks) or 1
+                for rank = 1, maxRank do
+                    profile:LearnSpell(spellId, rank)
+                end
+                if DBG then DBG:Internal("SetupWindow: Learned alwaysKnown spell " .. spellId .. " (ranks 1-" .. maxRank .. ")") end
             end
         end
     end

@@ -316,6 +316,50 @@ function ActionBarSlot:New(name, opts)
         if o._ownerWidget and o._ownerWidget._controlledUnitId then
             -- Casting as a controlled unit (numeric ID)
             casterId = o._ownerWidget._controlledUnitId
+            -- For NPCs, create a proxy resources object that deducts from the NPC's stats instead of player's
+            local npcUnit = RPE.Common:FindUnitById(casterId)
+            if npcUnit then
+                -- Create a proxy that redirects resource checks/spending to the NPC's stats
+                ctx.resources = {
+                    -- Check if NPC has enough of a resource
+                    Has = function(self, resourceId, amount)
+                        local current = npcUnit[resourceId:lower()] or 0
+                        return current >= tonumber(amount or 0)
+                    end,
+                    -- Deduct resource from NPC
+                    Spend = function(self, costs, when)
+                        if not costs then return end
+                        for _, cost in ipairs(costs) do
+                            if cost.when == when then
+                                local resId = cost.resource:lower()
+                                local amt = tonumber(cost.amount) or 0
+                                if npcUnit[resId] then
+                                    npcUnit[resId] = math.max(0, npcUnit[resId] - amt)
+                                end
+                            end
+                        end
+                    end,
+                    -- Refund resource back to NPC
+                    Refund = function(self, costs)
+                        if not costs then return end
+                        for _, cost in ipairs(costs) do
+                            local resId = cost.resource:lower()
+                            local amt = tonumber(cost.amount) or 0
+                            if npcUnit[resId] then
+                                npcUnit[resId] = npcUnit[resId] + amt
+                            end
+                        end
+                    end,
+                    -- Get current amount
+                    Get = function(self, resourceId)
+                        return npcUnit[resourceId:lower()] or 0
+                    end,
+                    -- Set amount (for direct adjustments)
+                    Set = function(self, resourceId, amount)
+                        npcUnit[resourceId:lower()] = tonumber(amount) or 0
+                    end,
+                }
+            end
         else
             -- Casting as local player (key -> need to look up numeric ID)
             casterId = casterKey
@@ -331,8 +375,8 @@ function ActionBarSlot:New(name, opts)
 
         -- === Case 1: Self or caster-only targeting (instant resolve) ===
         local defaultTargeter = spell.targeter and spell.targeter.default
-        if defaultTargeter == "CASTER" or defaultTargeter == "SELF" then
-            -- Seed precast targets
+        if defaultTargeter == "CASTER" or defaultTargeter == "SELF" or defaultTargeter == "ALL_ALLIES" or defaultTargeter == "ALL_ENEMIES" or defaultTargeter == "ALL_UNITS" or defaultTargeter == "RAID_MARKER" then
+            -- Seed precast or raid_marker targets
             cast.targetSets = cast.targetSets or {}
             local tgtKey = (defaultTargeter == "SELF") and "CASTER" or defaultTargeter
             local sel = RPE.Core.Targeters and RPE.Core.Targeters:Select(tgtKey, ctx, cast, {})
@@ -340,7 +384,12 @@ function ActionBarSlot:New(name, opts)
             -- If we have targets from selector, use them. Otherwise, use the caster as fallback.
             -- This ensures NPCs target themselves, not the player!
             if sel and sel.targets and #sel.targets > 0 then
-                cast.targetSets.precast = sel.targets
+                -- For RAID_MARKER, seed the raid_marker targetSet instead of precast
+                if defaultTargeter == "RAID_MARKER" then
+                    cast.targetSets.raid_marker = sel.targets
+                else
+                    cast.targetSets.precast = sel.targets
+                end
             else
                 -- For SELF/CASTER targeting, the target should be the caster (player or NPC)
                 -- Find the unit with this numeric ID to get its key
@@ -353,7 +402,11 @@ function ActionBarSlot:New(name, opts)
                         end
                     end
                 end
-                cast.targetSets.precast = { casterKey }
+                if defaultTargeter == "RAID_MARKER" then
+                    cast.targetSets.raid_marker = { casterKey }
+                else
+                    cast.targetSets.precast = { casterKey }
+                end
             end
 
             cast:FinishTargeting(ctx)
@@ -467,6 +520,14 @@ function ActionBarSlot:MeetsAllRequirements()
             if not ok then
                 return false  -- requirement not met
             end
+        end
+    end
+
+    -- Check spell costs (can player afford to cast this spell?)
+    local Resources = RPE.Core and RPE.Core.Resources
+    if Resources and spell.costs and #spell.costs > 0 then
+        if not Resources:CanAfford(spell.costs, spell) then
+            return false  -- insufficient resources
         end
     end
 

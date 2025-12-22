@@ -76,6 +76,18 @@ local SLOT_ALIASES = {
     ranged   = { "ranged",   "RANGED",   "bow", "BOW" },
 }
 
+-- Build a lookup map from alias (lowercase) -> canonical slot
+local SLOT_ALIAS_MAP = {}
+do
+    for canon, aliases in pairs(SLOT_ALIASES) do
+        for _, a in ipairs(aliases) do
+            SLOT_ALIAS_MAP[string.lower(a)] = canon
+        end
+        -- also register canonical name itself
+        SLOT_ALIAS_MAP[string.lower(canon)] = canon
+    end
+end
+
 local function _firstPresent(t, keys)
     for _, k in ipairs(keys) do
         if t[k] ~= nil then return t[k] end
@@ -84,8 +96,8 @@ end
 
 local function _itemDamageRange(item)
     if not item then 
-        RPE.Debug:Error("Attempted to get item damage range from invalid item.")
-        return R(0,0) 
+        -- RPE.Debug:Error("Attempted to get item damage range from invalid item.")
+        return R(1,1) 
     end
 
     local d = (type(item)=="table" and (item.data or item)) or {}
@@ -123,7 +135,7 @@ local function getEquippedItem(profile, slotKey)
 
     -- CharacterProfile API (string itemId): GetEquipped(slot) -> itemId
     if profile and type(profile.GetEquipped) == "function" then
-        local ok, id = pcall(profile.GetEquipped, profile, string.upper(slotKey))
+        local ok, id = pcall(profile.GetEquipped, profile, string.lower(slotKey))
         if ok then
             local itm = resolve(id)
             if itm then return itm end
@@ -132,7 +144,7 @@ local function getEquippedItem(profile, slotKey)
 
     -- Direct table access (string itemId)
     if profile and type(profile.equipment) == "table" then
-        local itm = resolve(profile.equipment[string.upper(slotKey)])
+        local itm = resolve(profile.equipment[string.lower(slotKey)])
         if itm then return itm end
     end
     return nil
@@ -217,7 +229,9 @@ local function tokenize(expr)
         -- weapon token (placed before $stat to avoid any future overlap)
         elseif rest:match("^%$wep%.[%w_]+%$") then
             local slot, adv = rest:match("^%$wep%.([%w_]+)%$()")
-            table.insert(toks, { t="WEAPON", slot=slot })
+            local norm = slot and SLOT_ALIAS_MAP[string.lower(slot)] or nil
+            if not norm then norm = string.lower(slot or "") end
+            table.insert(toks, { t="WEAPON", slot=norm })
             i = i + adv - 1
 
         elseif rest:match("^%$stat%.[%w_]+%$") then

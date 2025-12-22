@@ -392,9 +392,9 @@ function EventWidget:BuildPortraitRow(nextStep)
     self.portraitRow = HGroup:New("RPE_EventWidget_PortraitRow", {
         parent   = self.content,
         autoSize = true,
-        spacingX = 12,
+        spacingX = 20,
         alignV   = "CENTER",
-        width = 500,  -- Set a reasonable initial width to ensure portraits display
+        width = 600,  -- increased width to accommodate aura icons on left
         height = 120,
     })
     self.content:Add(self.portraitRow)
@@ -407,7 +407,7 @@ function EventWidget:BuildPortraitRow(nextStep)
     -- Cache + layout settings
     self.portraitsByKey = self.portraitsByKey or {}  -- key -> UnitPortrait
     self.portraitSize   = 48
-    self.portraitGap    = 12
+    self.portraitGap    = 28  -- spacing between portrait groups
 
     FadeInFrame(self.portraitRow.frame, 0.5, function()
         if self._pendingTick then

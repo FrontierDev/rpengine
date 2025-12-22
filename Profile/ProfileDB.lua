@@ -51,22 +51,8 @@ function ProfileDB.LoadActiveForCurrentCharacter()
     end
 
     local profile = CharacterProfile.FromTable(t)
-    if profile.equipment then
-        -- Re-apply equipment stat mods
-        if not RPE.Core.ItemRegistry then
-            return profile
-        end
-
-        for slot, itemId in pairs(profile.equipment) do
-            local item = RPE.Core.ItemRegistry and RPE.Core.ItemRegistry:Get(itemId)
-            if item then
-                RPE.Debug:Internal(string.format("Re-applying equipment: %s in slot %s", itemId, slot))
-                profile:Equip(item.data and item.data.slot or slot, itemId, true)  -- onLoad = true
-            else
-                RPE.Debug:Error(string.format("Equipped item %s not found in ItemRegistry.", itemId))
-            end
-        end
-    end
+    -- Equipment stat mods are already recalculated in CharacterProfile constructor via RecalculateEquipmentStats()
+    -- Do NOT call Equip() here as it would double-apply the mods via applyEquipMods() using +1 delta
 
     loaded = true
     return profile
@@ -252,6 +238,11 @@ end
 function ProfileDB.InitializeUI()
     local profile = ProfileDB.GetOrCreateActive()
     
+    -- Recalculate equipment stats once after profile is fully loaded and ready
+    if profile and type(profile.RecalculateEquipmentStats) == "function" then
+        profile:RecalculateEquipmentStats()
+    end
+    
     -- Initialize the Language system with profile data
     local Language = RPE.Core and RPE.Core.Language
     if Language then
@@ -271,7 +262,7 @@ function ProfileDB.InitializeUI()
     -- Create Event window
     local eventWindow = RPE_UI.Windows.EventWindow.New()
 
-    profile:RecalculateEquipmentStats()
+    -- Equipment stats already recalculated in constructor, no need to do it again
 
     RPE.Core.Resources:Init()
 

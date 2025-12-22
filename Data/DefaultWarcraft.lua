@@ -234,6 +234,7 @@ local STATS_WARCRAFT = {
             normal = "$value$*(0.5-$stat.FIRE_RESIST$/200)",
             critical = "$value$*0",
             fail = "$value$*(1-($stat.FIRE_RESIST$/100))",
+            combatText = "Fire Resistance",
         },
     },
     FROST_RESIST = {
@@ -248,7 +249,8 @@ local STATS_WARCRAFT = {
         defenceName = "Frost Resistance",  
         mitigation = {
             normal = "$value$*0.5",                           -- Block reduces normal damage by 50%
-            critical = "$value$*0"                            -- Block doesn't affect critical hits
+            critical = "$value$*0",                            -- Block doesn't affect critical hits
+            combatText = "Frost Resistance",
         },
     },
     NATURE_RESIST = {
@@ -263,7 +265,8 @@ local STATS_WARCRAFT = {
         defenceName = "Nature Resistance",
         mitigation = {
             normal = "$value$*0.5",                          -- Block reduces normal damage by 50%
-            critical = "$value$*0"                            -- Block doesn't affect critical hits
+            critical = "$value$*0",                            -- Block doesn't affect critical hits
+            combatText = "Nature Resistance",
         },
     },
     ARCANE_RESIST = {
@@ -278,7 +281,8 @@ local STATS_WARCRAFT = {
         defenceName = "Arcane Resistance",
         mitigation = {
             normal = "$value$*0.5",     -- Block reduces normal damage by 50%
-            critical = "$value$*0"                            -- Block doesn't affect critical hits
+            critical = "$value$*0",                            -- Block doesn't affect critical hits
+            combatText = "Arcane Resistance",
         },
     },
     SHADOW_RESIST = {
@@ -293,7 +297,8 @@ local STATS_WARCRAFT = {
         defenceName = "Shadow Resistance",
         mitigation = {
             normal = "$value$*0.5",     -- Block reduces normal damage by 50%
-            critical = "$value$*0"                            -- Block doesn't affect critical hits
+            critical = "$value$*0",                            -- Block doesn't affect critical hits
+            combatText = "Shadow Resistance",
         },
     },
     HOLY_RESIST = {
@@ -308,7 +313,8 @@ local STATS_WARCRAFT = {
         defenceName = "Holy Resistance",
         mitigation = {
             normal = "$value$*0.5",     -- Block reduces normal damage by 50%
-            critical = "$value$*0"                            -- Block doesn't affect critical hits
+            critical = "$value$*0",     -- Block doesn't affect critical hits
+            combatText = "Holy Resistance",
         },
     },
     -- --- Defense ---

@@ -33,6 +33,13 @@ end
 
 -- The caster themselves.
 Targeters:Register("CASTER", function(ctx, cast, args)
+    if not cast.caster then
+        if RPE.Debug and RPE.Debug.Warning then
+            RPE.Debug:Warning("[Targeters:CASTER] No valid caster found for spell: " .. tostring(cast.def and cast.def.id))
+        end
+        return { name = "caster", targets = {} }
+    end
+
     return { name = "caster", targets = { cast.caster } }
 end)
 
@@ -41,13 +48,6 @@ Targeters:Register("PRECAST", function(ctx, cast, args)
     local out = {}
     for i, t in ipairs(cast.targetSets and cast.targetSets.precast or {}) do out[i] = t end
     return { name = "precast", targets = out }
-end)
-
--- Ally single if provided in PRECAST; otherwise self.
-Targeters:Register("ALLY_SINGLE_OR_SELF", function(ctx, cast, args)
-    local prec = cast.targetSets and cast.targetSets.precast or {}
-    if #prec > 0 then return { name = "ally", targets = { prec[1] } } end
-    return { name = "self", targets = { cast.caster } }
 end)
 
 -- All allies (including self)
@@ -72,12 +72,30 @@ Targeters:Register("ALL_ALLIES", function(ctx, cast, args)
     end
     
     local targets = {}
-    for _, unit in pairs(event.units) do
+    for key, unit in pairs(event.units) do
         if unit.team == casterTeam then
-            table.insert(targets, unit.id)
+            if unit.isNPC then
+                table.insert(targets, unit.id)
+            else
+                table.insert(targets, key)
+            end
         end
     end
-    
+
+    -- Apply maxTargets filtering if specified and > 0
+    local maxTargets = args and args.maxTargets or 0
+    if maxTargets > 0 and #targets > maxTargets then
+        -- Fisher-Yates shuffle
+        for i = #targets, 2, -1 do
+            local j = math.random(1, i)
+            targets[i], targets[j] = targets[j], targets[i]
+        end
+        -- Keep only first maxTargets
+        for i = #targets, maxTargets + 1, -1 do
+            table.remove(targets, i)
+        end
+    end
+
     return { name = "all_allies", targets = targets }
 end)
 
@@ -109,6 +127,20 @@ Targeters:Register("ALL_ENEMIES", function(ctx, cast, args)
         end
     end
     
+    -- Apply maxTargets filtering if specified and > 0
+    local maxTargets = args and args.maxTargets or 0
+    if maxTargets > 0 and #targets > maxTargets then
+        -- Fisher-Yates shuffle
+        for i = #targets, 2, -1 do
+            local j = math.random(1, i)
+            targets[i], targets[j] = targets[j], targets[i]
+        end
+        -- Keep only first maxTargets
+        for i = #targets, maxTargets + 1, -1 do
+            table.remove(targets, i)
+        end
+    end
+    
     return { name = "all_enemies", targets = targets }
 end)
 
@@ -130,6 +162,50 @@ Targeters:Register("ALL_UNITS", function(ctx, cast, args)
     end
     
     return { name = "all_units", targets = targets }
+end)
+
+-- Units summoned by the caster (or caster's master if caster is summoned)
+Targeters:Register("SUMMONED", function(ctx, cast, args)
+    local Common = RPE.Common
+    if not Common or not Common.Event then
+        return { name = "summoned", targets = {} }
+    end
+    
+    local event = Common:Event()
+    if not (event and event.units) then
+        return { name = "summoned", targets = {} }
+    end
+    
+    local casterId = cast.caster
+    if not casterId then
+        return { name = "summoned", targets = {} }
+    end
+    
+    -- Resolve caster to a unit object to get numeric ID
+    local casterUnit = Common:FindUnitById(casterId)
+    if not casterUnit then
+        return { name = "summoned", targets = {} }
+    end
+    
+    local casterNumericId = tonumber(casterUnit.id)
+    local ownerToCheck = casterNumericId
+    
+    -- If the caster itself is summoned, look for units summoned by caster's master instead
+    if casterUnit.summonedBy then
+        ownerToCheck = tonumber(casterUnit.summonedBy)
+    end
+    
+    local targets = {}
+    for _, unit in pairs(event.units) do
+        -- Only include units that are:
+        -- 1. Not the caster themselves
+        -- 2. Summoned by the ownerToCheck
+        if tonumber(unit.id) ~= casterNumericId and unit.summonedBy and tonumber(unit.summonedBy) == ownerToCheck then
+            table.insert(targets, unit.id)
+        end
+    end
+    
+    return { name = "summoned", targets = targets }
 end)
 
 return Targeters

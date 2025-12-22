@@ -368,7 +368,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 				},
 			},
 		},
-		target = "First Aid Trainer",
+		target = "Bandage Trainer",
 	},
 
 	-- Skinning (gatherer)
@@ -418,6 +418,22 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 			},
 		},
 		target = "type:beast",
+	},
+
+	-- Paladin Trainer
+	["ixn-paladin-trainer"] = {
+		id = "ixn-paladin-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "paladin",
+				},
+			},
+		},
+		target = "Paladin Trainer",
 	},
 }
 

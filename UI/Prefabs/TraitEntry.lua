@@ -7,6 +7,39 @@ local FrameElement          = RPE_UI.Elements.FrameElement
 local HorizontalLayoutGroup = RPE_UI.Elements.HorizontalLayoutGroup
 local Text                  = RPE_UI.Elements.Text
 
+local function truncateText(text, maxWidth, fontString)
+    if not text or text == "" then return text end
+    
+    -- Set the font string temporarily to measure
+    fontString:SetText(text)
+    local textWidth = fontString:GetStringWidth()
+    
+    -- If it fits, return as-is
+    if textWidth <= maxWidth then
+        return text
+    end
+    
+    -- Binary search to find the right truncation point
+    local left, right = 1, #text
+    local result = text:sub(1, 1) .. "..."
+    
+    while left <= right do
+        local mid = math.floor((left + right) / 2)
+        local truncated = text:sub(1, mid) .. "..."
+        fontString:SetText(truncated)
+        local w = fontString:GetStringWidth()
+        
+        if w <= maxWidth then
+            result = truncated
+            left = mid + 1
+        else
+            right = mid - 1
+        end
+    end
+    
+    return result
+end
+
 ---@class TraitEntry: FrameElement
 ---@field icon Texture
 ---@field name Text
@@ -125,6 +158,11 @@ function TraitEntry:New(name, opts)
             o.name.fs:ClearAllPoints()
             o.name.fs:SetPoint("LEFT", o.name.frame, "LEFT", 0, 0)
             o.name.fs:SetJustifyH("LEFT")
+            
+            -- Truncate long names
+            local truncatedName = truncateText(opts.label or "", nameWidth - 4, o.name.fs)
+            o.name:SetText(truncatedName)
+            
             nameGroup:Add(o.name)
             
             local subtitle = Text:New(name .. "_Subtitle", {
@@ -161,6 +199,11 @@ function TraitEntry:New(name, opts)
             o.name.fs:ClearAllPoints()
             o.name.fs:SetPoint("LEFT", o.name.frame, "LEFT", 0, 0)
             o.name.fs:SetJustifyH("LEFT")
+            
+            -- Truncate long names
+            local truncatedName = truncateText(opts.label or "", nameWidth - 4, o.name.fs)
+            o.name:SetText(truncatedName)
+            
             hGroup:Add(o.name)
         end
     else
@@ -175,6 +218,11 @@ function TraitEntry:New(name, opts)
         o.name.fs:ClearAllPoints()
         o.name.fs:SetPoint("LEFT", o.name.frame, "LEFT", 0, 0)
         o.name.fs:SetJustifyH("LEFT")
+        
+        -- Truncate long names
+        local truncatedName = truncateText(opts.label or "", nameWidth - 4, o.name.fs)
+        o.name:SetText(truncatedName)
+        
         hGroup:Add(o.name)
     end
 
@@ -188,11 +236,20 @@ function TraitEntry:New(name, opts)
         
         -- Use RPE.Common:ShowTooltip for consistent tooltip display
         if RPE and RPE.Common and RPE.Common.ShowTooltip then
-            RPE.Common:ShowTooltip(f, {
-                title = auraDef.name or auraId,
-                titleColor = { 1, 1, 1 },
-                lines = auraDef.description and { { text = auraDef.description } } or {},
-            })
+            if type(auraDef.GetTooltip) == "function" then
+                RPE.Common:ShowTooltip(f, auraDef:GetTooltip())
+            else
+                -- Raw table: build a simple tooltip
+                local t = {
+                    title = auraDef.name or tostring(auraId),
+                    lines = {},
+                }
+                local desc = RPE.Core.Aura.RenderDescriptionFromDef(auraDef, {}, auraDef.description or "")
+                if desc ~= "" then
+                    table.insert(t.lines, { text = desc, wrap = true, r=0.85, g=0.85, b=0.85 })
+                end
+                RPE.Common:ShowTooltip(f, t)
+            end
         end
     end)
     f:SetScript("OnLeave", function() hl:Hide(); if RPE and RPE.Common and RPE.Common.HideTooltip then RPE.Common:HideTooltip() end end)

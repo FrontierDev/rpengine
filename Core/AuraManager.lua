@@ -12,6 +12,7 @@ local AuraTriggers = assert(RPE.Core.AuraTriggers, "AuraTriggers required")
 
 StatMods.aura     = StatMods.aura     or {}  -- totals per-profile per-stat (BUCKETS)
 StatMods.auraInst = StatMods.auraInst or {}  -- per-instance per-stat (BUCKETS)
+StatMods.npcBase  = StatMods.npcBase  or {}  -- base stats for NPCs (before auras): { [unitId] = { [statId] = value } }
 
 ---@class AuraManager
 ---@field event table|nil
@@ -121,7 +122,9 @@ local function MakeBucketFromModifier(m, stacks)
     local amt  = (tonumber(m.value) or 0) * (m.scaleWithStacks and (stacks or 1) or 1)
     local mode = string.upper(m.mode or "ADD")
     if     mode == "ADD" or mode == "FLAT" then b.ADD       = amt
+    elseif mode == "SUB"                   then b.ADD       = -amt
     elseif mode == "PCT_ADD"               then b.PCT_ADD   = amt
+    elseif mode == "PCT_SUB"               then b.PCT_ADD   = -amt
     elseif mode == "MULT" or mode == "PCT_MULT" then b.MULT = 1 + (amt / 100)
     elseif mode == "FINAL_ADD"             then b.FINAL_ADD = amt
     else b.ADD = amt end
@@ -171,8 +174,16 @@ local function _computeInstanceMods(self, inst, targetProfile)
 
                 -- Ruleset gate (if any)
                 local ok = true
-                if targetProfile and targetProfile.stats and RPE.ActiveRules then
-                    local statObj = targetProfile.stats[statId]
+                if targetProfile and RPE.ActiveRules then
+                    local statObj = nil
+                    if type(targetProfile.GetStat) == "function" then
+                        statObj = targetProfile:GetStat(statId)
+                    end
+                    if not statObj and targetProfile.stats then
+                        for _, st in pairs(targetProfile.stats) do
+                            if st and st.id == statId then statObj = st; break end
+                        end
+                    end
                     if statObj and not RPE.ActiveRules:IsStatEnabled(statId, statObj.category) then
                         ok = false
                     end
@@ -181,7 +192,9 @@ local function _computeInstanceMods(self, inst, targetProfile)
                 if ok then
                     local b = NewBucket()
                     if     mode == "ADD" or mode == "FLAT" then b.ADD       = amt
+                    elseif mode == "SUB"                   then b.ADD       = -amt
                     elseif mode == "PCT_ADD"               then b.PCT_ADD   = amt
+                    elseif mode == "PCT_SUB"               then b.PCT_ADD   = -amt
                     elseif mode == "MULT" or mode == "PCT_MULT" then b.MULT = 1 + (amt / 100)
                     elseif mode == "FINAL_ADD"             then b.FINAL_ADD = amt
                     else b.ADD = amt end
@@ -237,31 +250,64 @@ local function _addNPCInstanceMods(unit, instId, mods)
     if not unit or not unit.stats or not mods or not next(mods) then return end
     StatMods.npcAuraInst = StatMods.npcAuraInst or {}
     StatMods.npcAuraInst[unit.id] = StatMods.npcAuraInst[unit.id] or {}
+    StatMods.npcBase[unit.id] = StatMods.npcBase[unit.id] or {}
+    
     StatMods.npcAuraInst[unit.id][instId] = mods
 
     for statId, b in pairs(mods) do
-        -- For NPCs, directly add the flat value to unit.stats
-        -- (ignoring PCT_MULT, MULT, etc. for now - just use ADD/FLAT)
-        local amount = b.ADD or 0
-        unit.stats[statId] = (unit.stats[statId] or 0) + amount
+        -- Store base value before any mods are applied (only once)
+        if not StatMods.npcBase[unit.id][statId] then
+            StatMods.npcBase[unit.id][statId] = unit.stats[statId] or 0
+        end
+        
+        -- Apply bucket modifiers using the same formula as player stats
+        -- base = original value, apply ADD, then PCT_ADD, then MULT, then FINAL_ADD
+        local base = StatMods.npcBase[unit.id][statId]
+        local result = (tonumber(base) or 0) + (tonumber(b.ADD) or 0)
+        result = result * (1 + (tonumber(b.PCT_ADD) or 0) / 100)
+        result = result * (tonumber(b.MULT) or 1)
+        result = result + (tonumber(b.FINAL_ADD) or 0)
+        unit.stats[statId] = result
         _notifyStatChanged(statId)
     end
 end
 
--- Remove aura mods from an NPC's unit.stats table
+-- Remove aura mods from an NPC's unit.stats table and recalculate
 local function _removeNPCInstanceMods(unit, instId)
     if not unit or not unit.stats then return end
     StatMods.npcAuraInst = StatMods.npcAuraInst or {}
-    local unitMods = StatMods.npcAuraInst[unit.id] and StatMods.npcAuraInst[unit.id][instId]
-    if not unitMods then return end
-
-    for statId, b in pairs(unitMods) do
-        local amount = b.ADD or 0
-        unit.stats[statId] = (unit.stats[statId] or 0) - amount
+    StatMods.npcBase = StatMods.npcBase or {}
+    
+    local unitAuras = StatMods.npcAuraInst[unit.id]
+    if not unitAuras or not unitAuras[instId] then return end
+    
+    local removedMods = unitAuras[instId]
+    unitAuras[instId] = nil
+    
+    -- Recalculate all affected stats
+    for statId, _ in pairs(removedMods) do
+        local base = (StatMods.npcBase[unit.id] and StatMods.npcBase[unit.id][statId]) or (unit.stats[statId] or 0)
+        local result = base
+        
+        -- Reapply all remaining aura mods for this stat
+        if unitAuras then
+            for otherInstId, otherMods in pairs(unitAuras) do
+                if otherMods and otherMods[statId] then
+                    local b = otherMods[statId]
+                    result = result + (tonumber(b.ADD) or 0)
+                    result = result * (1 + (tonumber(b.PCT_ADD) or 0) / 100)
+                    result = result * (tonumber(b.MULT) or 1)
+                    result = result + (tonumber(b.FINAL_ADD) or 0)
+                end
+            end
+        end
+        
+        unit.stats[statId] = result
         _notifyStatChanged(statId)
     end
 
-    StatMods.npcAuraInst[unit.id][instId] = nil
+
+
 end
 
 
@@ -425,6 +471,21 @@ function AuraManager.New(event)
         end
     end
     
+    -- Register global trigger listener for auras that break on damage taken
+    local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
+    if AuraTriggers then
+        AuraTriggers:On("ON_HIT_TAKEN", function(ctx, sourceId, targetId, extra)
+            -- When a unit takes damage, remove auras with removeOnDamageTaken flag
+            local aurasOnTarget = manager:All(targetId)
+            for i = #aurasOnTarget, 1, -1 do
+                local aura = aurasOnTarget[i]
+                if aura.removeOnDamageTaken then
+                    manager:_onRemoved(aura, "DAMAGE_TAKEN")
+                end
+            end
+        end)
+    end
+    
     return manager
 end
 
@@ -538,7 +599,15 @@ function AuraManager:IsDefenceStatFailing(unit, defenceStat)
                     stats = _parseCSVList(stats)
                 end
                 for _, stat in ipairs(stats) do
-                    if stat == defenceStat then
+                    -- Support both plain names (BLOCK) and token format ($stat.BLOCK$)
+                    local statName = stat
+                    if type(stat) == "string" then
+                        local extracted = stat:match("^%$stat%.([%w_]+)%$$")
+                        if extracted then
+                            statName = extracted
+                        end
+                    end
+                    if statName == defenceStat then
                         return true
                     end
                 end
@@ -638,8 +707,16 @@ function AuraManager:_recomputeStatModsForTarget(targetId)
                     end
 
                     local ok = true
-                    if targetProfile and targetProfile.stats and RPE.ActiveRules then
-                        local statObj = targetProfile.stats[statId]
+                    if targetProfile and RPE.ActiveRules then
+                        local statObj = nil
+                        if type(targetProfile.GetStat) == "function" then
+                            statObj = targetProfile:GetStat(statId)
+                        end
+                        if not statObj and targetProfile.stats then
+                            for _, st in pairs(targetProfile.stats) do
+                                if st and st.id == statId then statObj = st; break end
+                            end
+                        end
                         if statObj and not RPE.ActiveRules:IsStatEnabled(statId, statObj.category) then
                             ok = false
                         end
@@ -648,7 +725,9 @@ function AuraManager:_recomputeStatModsForTarget(targetId)
                         local b = NewBucket()
                         local mode = string.upper(m.mode or "ADD")
                         if     mode == "ADD" or mode == "FLAT" then b.ADD       = amt
+                        elseif mode == "SUB"                   then b.ADD       = -amt
                         elseif mode == "PCT_ADD"               then b.PCT_ADD   = amt
+                        elseif mode == "PCT_SUB"               then b.PCT_ADD   = -amt
                         elseif mode == "MULT" or mode == "PCT_MULT" then b.MULT = 1 + (amt / 100)
                         elseif mode == "FINAL_ADD"             then b.FINAL_ADD = amt
                         else b.ADD = amt end
@@ -699,7 +778,29 @@ function AuraManager:Apply(source, target, auraId, opts)
     assert(tId, "AuraManager.Apply: invalid target unit")
 
     local def = AuraRegistry:Get(auraId)
-    assert(def, ("Unknown aura '%s'"):format(tostring(auraId)))
+    if not def then
+        -- Gracefully ignore missing auras instead of crashing
+        if RPE and RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(("[AuraManager:Apply] Aura '%s' not found in registry, ignoring"):format(tostring(auraId)))
+        end
+        return false, "AURA_NOT_FOUND"
+    end
+
+    -- ===== Requirement check (before any application logic) =====
+    if def.requirements and #def.requirements > 0 then
+        local SpellRequirements = RPE.Core and RPE.Core.SpellRequirements
+        if SpellRequirements then
+            local ctx = {}  -- context for requirement evaluation
+            local ok, reason, code = SpellRequirements:EvalRequirements(ctx, def.requirements)
+            if not ok then
+                if RPE.Debug and RPE.Debug.Internal then
+                    RPE.Debug:Internal(("[AuraManager:Apply] Aura '%s' blocked: %s (%s)"):format(auraId, reason or "unknown", code or ""))
+                end
+                return false, code or "REQ_FAILED"
+            end
+        end
+    end
+    -- -------------------------------------------------------------------------
 
     local now  = (self.event and self.event.turn) or 0
     local list = forUnit(self, tId, true)
@@ -1178,7 +1279,14 @@ function AuraManager:OnTick(turn)
                                 end
 
                                 local runtimeArgs = {}
-                                if act.args then for k, v in pairs(act.args) do runtimeArgs[k] = v end end
+                                if act.args then 
+                                    for k, v in pairs(act.args) do 
+                                        -- Don't copy targets spec to runtimeArgs; we handle it separately above
+                                        if k ~= "targets" then
+                                            runtimeArgs[k] = v 
+                                        end
+                                    end 
+                                end
                                 if type(aura.snapshot) == "table" then
                                     for k, v in pairs(aura.snapshot) do runtimeArgs[k] = v end
                                 end
@@ -1194,10 +1302,23 @@ function AuraManager:OnTick(turn)
                                     end
                                 end
 
+                                -- Resolve targets based on action's targets.ref specification
+                                local actionTargets = targets
+                                if act.args and act.args.targets and act.args.targets.ref then
+                                    local ref = (act.args.targets.ref or ""):upper()
+                                    if ref == "CASTER" or ref == "SOURCE" then
+                                        actionTargets = { aura.sourceId or aura.source }
+                                    elseif ref == "TARGET" then
+                                        actionTargets = { targetId }
+                                    elseif ref == "BOTH" then
+                                        actionTargets = { aura.sourceId or aura.source, targetId }
+                                    end
+                                end
+
                                 local ok, err = pcall(function()
                                     RPE.Debug:Internal(("[AuraManager:OnTick] About to call Actions:Run('%s', ctx, cast, targets, args)"):format(
                                         tostring(act.key)))
-                                    SpellActions:Run(act.key, ctx, cast, targets, runtimeArgs)
+                                    SpellActions:Run(act.key, ctx, cast, actionTargets, runtimeArgs)
                                     RPE.Debug:Internal(("[AuraManager:OnTick] Actions:Run completed successfully"):format())
                                 end)
 
@@ -1540,7 +1661,14 @@ function AuraManager:_onTick(a, turn)
             :format(i, tostring(act.key or "nil"), tostring(a.id)))
 
         local runtimeArgs = {}
-        if act.args then for k, v in pairs(act.args) do runtimeArgs[k] = v end end
+        if act.args then 
+            for k, v in pairs(act.args) do 
+                -- Don't copy targets spec to runtimeArgs; we handle it separately below
+                if k ~= "targets" then
+                    runtimeArgs[k] = v 
+                end
+            end 
+        end
         if type(a.snapshot) == "table" then
             for k, v in pairs(a.snapshot) do runtimeArgs[k] = v end
         end
@@ -1554,8 +1682,33 @@ function AuraManager:_onTick(a, turn)
             end
         end
 
+        -- Resolve targets based on action's targets spec
+        local actionTargets = targets
+        if act.args and act.args.targets then
+            -- Handle targets.ref (SOURCE, TARGET, BOTH, etc.)
+            if act.args.targets.ref then
+                local ref = (act.args.targets.ref or ""):upper()
+                if ref == "CASTER" or ref == "SOURCE" then
+                    actionTargets = { a.sourceId or a.source }
+                elseif ref == "TARGET" then
+                    actionTargets = { a.targetId or a.target }
+                elseif ref == "BOTH" then
+                    actionTargets = { a.sourceId or a.source, a.targetId or a.target }
+                end
+            -- Handle targets.targeter (SUMMONED, ALL_ALLIES, etc.)
+            elseif act.args.targets.targeter then
+                local Targeters = RPE.Core and RPE.Core.Targeters
+                if Targeters then
+                    local sel = Targeters:Select(act.args.targets.targeter, ctx, cast, act.args.targets.args)
+                    actionTargets = (sel and sel.targets) or {}
+                else
+                    actionTargets = {}
+                end
+            end
+        end
+
         local ok, err = pcall(function()
-            SpellActions:Run(act.key, ctx, cast, targets, runtimeArgs)
+            SpellActions:Run(act.key, ctx, cast, actionTargets, runtimeArgs)
         end)
 
         if not ok then
@@ -1613,10 +1766,23 @@ function AuraManager:TriggerEvent(eventName, ctx, sourceId, targetId, extra)
                                     amount = tonumber(args.amount or 0)
                                 end
 
+                                -- Apply fudge factor from ruleset (default: 0)
+                                local fudge = 0
+                                if RPE.ActiveRules then
+                                    local fudgeVal = RPE.ActiveRules:Get("fudge", 0)
+                                    if type(fudgeVal) == "string" then
+                                        fudge = tonumber(RPE.Core.Formula:Roll(fudgeVal, profile)) or 0
+                                    else
+                                        fudge = tonumber(fudgeVal) or 0
+                                    end
+                                end
+                                amount = amount + fudge
+                                amount = math.max(0, math.floor(amount))
+
                                 if amount > 0 and Broadcast and Broadcast.Damage then
                                     Broadcast:Damage(sourceId, {
                                         { target = unitId, amount = amount, school = args.school or "Physical" }
-                                    })
+                                    }, nil, { isFromAuraTrigger = true })
                                 end
 
                             elseif act.key == "HEAL" then
@@ -1627,32 +1793,27 @@ function AuraManager:TriggerEvent(eventName, ctx, sourceId, targetId, extra)
                                     amount = tonumber(args.amount or 0)
                                 end
 
+                                -- Apply fudge factor from ruleset (default: 0)
+                                local fudge = 0
+                                if RPE.ActiveRules then
+                                    local fudgeVal = RPE.ActiveRules:Get("fudge", 0)
+                                    if type(fudgeVal) == "string" then
+                                        fudge = tonumber(RPE.Core.Formula:Roll(fudgeVal, profile)) or 0
+                                    else
+                                        fudge = tonumber(fudgeVal) or 0
+                                    end
+                                end
+                                amount = amount + fudge
+                                amount = math.max(0, math.floor(amount))
+
                                 if amount > 0 and Broadcast and Broadcast.Heal then
                                     Broadcast:Heal(sourceId, {
                                         { target = unitId, amount = amount }
-                                    })
+                                    }, nil, { isFromAuraTrigger = true })
                                 end
 
                             elseif act.key == "APPLY_AURA" and args.auraId then
-                                RPE.Core.AuraManager:Apply(sourceId, unitId, args.auraId)
-                            
-                            elseif act.key == "GAIN_RESOURCE" then
-                                local Resources = RPE.Core and RPE.Core.Resources
-                                if Resources then
-                                    local resourceId = args.resourceId
-                                    local amount = 0
-                                    if type(args.amount) == "string" and RPE.Core.Formula then
-                                        amount = tonumber(RPE.Core.Formula:Roll(args.amount, profile)) or 0
-                                    else
-                                        amount = tonumber(args.amount or 0)
-                                    end
-                                    if resourceId and amount > 0 then
-                                        Resources:Add(resourceId, amount)
-                                        if RPE.Debug and RPE.Debug.Internal then
-                                            RPE.Debug:Internal(("[AuraManager:TriggerEvent] GAIN_RESOURCE: Added %d %s to unit %s"):format(amount, resourceId, unitId))
-                                        end
-                                    end
-                                end
+                                self:Apply(sourceId, unitId, args.auraId)
                             end
                         end
 

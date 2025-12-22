@@ -53,7 +53,8 @@
         "HISTORY",
         "ITEMS",
         "UIDropDownMenu_SetSelectedValue",
-        "RACES"
+        "RACES",
+        "RAGE"
     ],
     "Lua.diagnostics.disable": [
         "assign-type-mismatch"

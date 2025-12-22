@@ -37,7 +37,7 @@ RPE_UI.Prefabs.SetupPages = SetupPages
 local PAGE_TYPES = { "SELECT_RACE", "SELECT_CLASS", "SELECT_STATS", "SELECT_LANGUAGE", "SELECT_SPELLS", "SELECT_ITEMS", "SELECT_PROFESSIONS" }
 local PHASES = { "onStart", "onResolve", "onTick" }
 local LOGIC  = { "ALL", "ANY", "NOT" }
-local ACTION_KEYS_FALLBACK = { "DAMAGE", "HEAL", "APPLY_AURA", "REDUCE_COOLDOWN", "SUMMON", "HIDE" }
+local ACTION_KEYS_FALLBACK = { "DAMAGE", "HEAL", "APPLY_AURA", "GAIN_RESOURCE", "REDUCE_COOLDOWN", "SUMMON", "HIDE" }
 
 -- ---------------------------------------------------------------------------
 -- Utilities
@@ -208,10 +208,7 @@ local function build_field_control(self, parent, a, field)
     }); row:Add(tgt)
 
     local choices = {
-      "CASTER", "SELF", "TARGET", "PRECAST",
-      "ALLY_SINGLE", "ALLY_SINGLE_OR_SELF",
-      "ENEMY_SINGLE", "ENEMY_SINGLE_OR_SELF",
-      "ALL_ALLIES", "ALL_ENEMIES", "ALL_UNITS"
+      "CASTER", "TARGET", "PRECAST", "ALL_ALLIES", "ALL_ENEMIES", "ALL_UNITS"
     }
     local dd = Dropdown:New((tgt.frame:GetName() or "RPE_SP").."_Ref", {
       parent=tgt, width=140, height=22, value=tv.targeter, choices=choices,
@@ -524,10 +521,6 @@ local function rebuild_page_body(self)
 
   -- SELECT_RACE specific fields
   if p.pageType == "SELECT_RACE" then
-    local DBG = _G.RPE and _G.RPE.Debug
-    if DBG then DBG:Internal("[SetupPages] Building SELECT_RACE page editor") end
-    if DBG then DBG:Internal("[SetupPages] Current p.customRaces: " .. (p.customRaces and #p.customRaces or 0)) end
-    
     local raceGroup = VGroup:New(self.frame:GetName().."_RaceGroup", {
       parent=self.body, spacingY=6, alignH="LEFT", alignV="TOP", autoSize=true
     })
@@ -556,10 +549,6 @@ local function rebuild_page_body(self)
     customRacesTable:SetOnChange(function()
       if is_rebinding(self) then return end
       p.customRaces = customRacesTable:GetData()
-      if DBG then 
-        DBG:Print("[SetupPages] OnChange: Custom races updated")
-        DBG:Print("[SetupPages] p.customRaces now has " .. #(p.customRaces or {}) .. " entries")
-      end
     end)
     
     -- Store reference to table in p so we can access it in GetValue
@@ -568,10 +557,6 @@ local function rebuild_page_body(self)
 
   -- SELECT_CLASS specific fields
   if p.pageType == "SELECT_CLASS" then
-    local DBG = _G.RPE and _G.RPE.Debug
-    if DBG then DBG:Print("[SetupPages] Building SELECT_CLASS page editor") end
-    if DBG then DBG:Print("[SetupPages] Current p.customClasses: " .. (p.customClasses and #p.customClasses or 0)) end
-    
     local classGroup = VGroup:New(self.frame:GetName().."_ClassGroup", {
       parent=self.body, spacingY=6, alignH="LEFT", alignV="TOP", autoSize=true
     })
@@ -600,10 +585,6 @@ local function rebuild_page_body(self)
     customClassesTable:SetOnChange(function()
       if is_rebinding(self) then return end
       p.customClasses = customClassesTable:GetData()
-      if DBG then 
-        DBG:Print("[SetupPages] OnChange: Custom classes updated")
-        DBG:Print("[SetupPages] p.customClasses now has " .. #(p.customClasses or {}) .. " entries")
-      end
     end)
     
     -- Store reference to table in p so we can access it in GetValue
@@ -633,6 +614,14 @@ local function rebuild_page_body(self)
       parent=checkboxRow2, checked = p.restrictToClass or false,
       onChanged=function(_, b) if is_rebinding(self) then return end; p.restrictToClass = b and true or false end
     }); checkboxRow2:Add(restrictToClassCB)
+
+    local checkboxRow2b = HGroup:New(self.frame:GetName().."_CheckRow2b", { parent=spellsGroup, spacingX=8, alignH="LEFT", alignV="CENTER", autoSize=true })
+    spellsGroup:Add(checkboxRow2b)
+    label(checkboxRow2b, "Restrict to Race", 100)
+    local restrictToRaceCB = Checkbox:New(checkboxRow2b.frame:GetName().."_RestrictToRace", {
+      parent=checkboxRow2b, checked = p.restrictToRace or false,
+      onChanged=function(_, b) if is_rebinding(self) then return end; p.restrictToRace = b and true or false end
+    }); checkboxRow2b:Add(restrictToRaceCB)
 
     local checkboxRow3 = HGroup:New(self.frame:GetName().."_CheckRow3", { parent=spellsGroup, spacingX=8, alignH="LEFT", alignV="CENTER", autoSize=true })
     spellsGroup:Add(checkboxRow3)
@@ -909,6 +898,7 @@ function SetupPages:SetValue(pages)
       if p.pageType == "SELECT_SPELLS" then
         copy.allowRacial = p.allowRacial ~= false
         copy.restrictToClass = p.restrictToClass or false
+        copy.restrictToRace = p.restrictToRace or false
         copy.firstRankOnly = p.firstRankOnly or false
         copy.maxSpellPoints = p.maxSpellPoints
         copy.maxSpellsTotal = p.maxSpellsTotal
@@ -997,6 +987,7 @@ function SetupPages:GetValue()
     if p.pageType == "SELECT_SPELLS" then
       pp.allowRacial = p.allowRacial ~= false
       pp.restrictToClass = p.restrictToClass or false
+      pp.restrictToRace = p.restrictToRace or false
       pp.firstRankOnly = p.firstRankOnly or false
       pp.maxSpellPoints = p.maxSpellPoints
       pp.maxSpellsTotal = p.maxSpellsTotal

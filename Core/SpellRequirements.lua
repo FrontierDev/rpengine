@@ -63,12 +63,58 @@ local function check_equip(ctx, reqStr)
     end
     
     -- Check if equipped item matches the required type
-    local itemCategory = equippedItem.category and equippedItem.category:lower() or ""
+    local itemCategory = ""
+    if equippedItem.data and equippedItem.data.weaponType then
+        itemCategory = equippedItem.data.weaponType:lower()
+    end
     if itemCategory == itemType then
         return true
     end
     
     return false, "equipped item is not " .. itemType, "WRONG_TYPE"
+end
+
+--- Check if player has a summoned unit of a specific type.
+--- Format: "summoned.TYPE" (e.g., "summoned.Pet", "summoned.Minion")
+---@param ctx table - context with event and caster info
+---@param reqStr string - requirement string
+---@return boolean ok, string? reason, string? code
+local function check_summoned(ctx, reqStr)
+    -- Parse: summoned.TYPE
+    local parts = {}
+    for part in reqStr:gmatch("[^.]+") do
+        table.insert(parts, part)
+    end
+    
+    if #parts < 2 then
+        return false, "invalid summoned format", "REQ_INVALID"
+    end
+    
+    local requiredType = parts[2]:lower()
+    
+    -- Get the active event
+    local ev = RPE and RPE.Core and RPE.Core.ActiveEvent
+    if not (ev and ev.units) then
+        return false, "event or units not available", "NO_EVENT"
+    end
+    
+    -- Get the local player's unit ID
+    local casterId = ev:GetLocalPlayerUnitId()
+    if not casterId then
+        return false, "caster not identified", "NO_CASTER"
+    end
+    
+    -- Check if any unit was summoned by this caster and matches the type
+    for _, unit in pairs(ev.units) do
+        if unit.summonedBy and tonumber(unit.summonedBy) == tonumber(casterId) then
+            local unitType = (unit.summonType or ""):lower()
+            if unitType == requiredType then
+                return true
+            end
+        end
+    end
+    
+    return false, "no summoned unit of type " .. requiredType, "NO_SUMMONED"
 end
 
 --- Check if player has item in inventory.
@@ -127,6 +173,50 @@ local function check_inventory(ctx, reqStr)
     return false, "item not in inventory", "NOT_IN_INVENTORY"
 end
 
+--- Check if the caster unit is hidden.
+--- Format: "$hidden$"
+---@param ctx table - context with caster unit info
+---@param reqStr string - requirement string (expects "$hidden$")
+---@return boolean ok, string? reason, string? code
+local function check_hidden(ctx, reqStr)
+    -- Get the caster unit from the active event
+    local ev = RPE and RPE.Core and RPE.Core.ActiveEvent
+    if not ev then
+        return false, "active event not available", "NO_EVENT"
+    end
+    
+    -- Get the local player's unit ID
+    local casterId = nil
+    if ev.GetLocalPlayerUnitId and type(ev.GetLocalPlayerUnitId) == "function" then
+        casterId = ev:GetLocalPlayerUnitId()
+    end
+    if not casterId then
+        return false, "caster not identified", "NO_CASTER"
+    end
+    
+    -- Find the caster unit
+    local casterUnit = nil
+    if ev.units then
+        for _, unit in pairs(ev.units) do
+            if unit.id == casterId then
+                casterUnit = unit
+                break
+            end
+        end
+    end
+    
+    if not casterUnit then
+        return false, "caster unit not found", "CASTER_NOT_FOUND"
+    end
+    
+    -- Check if caster is hidden
+    if casterUnit.hidden then
+        return true
+    end
+    
+    return false, "caster is not hidden", "NOT_HIDDEN"
+end
+
 --- Evaluate a single requirement string.
 ---@param ctx table - context (player unit, equipment, inventory, etc.)
 ---@param reqStr string - requirement string to evaluate
@@ -140,8 +230,12 @@ function SpellRequirements:EvalRequirement(ctx, reqStr)
     
     if reqStr:match("^equip%.") then
         return check_equip(ctx, reqStr)
+    elseif reqStr:match("^summoned%.") then
+        return check_summoned(ctx, reqStr)
     elseif reqStr:match("^inventory%.") then
         return check_inventory(ctx, reqStr)
+    elseif reqStr == "hidden" then
+        return check_hidden(ctx, reqStr)
     else
         return false, "unknown requirement format "..tostring(reqStr), "REQ_UNKNOWN"
     end

@@ -370,6 +370,19 @@ function PlayerReactionWidget:ShowReactions(reactions)
         self:BuildUI()
     end
 
+    -- Mark player as engaged when defending
+    local playerUnit = RPE.Core and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent:GetLocalPlayerUnitId() and RPE.Common and RPE.Common:FindUnitById(RPE.Core.ActiveEvent:GetLocalPlayerUnitId())
+    if playerUnit then
+        -- Reset combat counter to keep player engaged
+        if type(playerUnit.ResetCombat) == "function" then
+            playerUnit:ResetCombat()
+        end
+        -- Update engagement state
+        if type(playerUnit.SetEngaged) == "function" then
+            playerUnit:SetEngaged(true)
+        end
+    end
+
     -- Store the attack reaction 
     self.attackReaction = reactions
 
@@ -463,6 +476,11 @@ function PlayerReactionWidget:ShowReactions(reactions)
 
             local PlayerReaction = RPE.Core and RPE.Core.PlayerReaction
             if PlayerReaction and PlayerReaction.Complete then
+                -- Store the chosen defense stat in currentReaction before completing
+                local currentReaction = PlayerReaction:GetCurrent()
+                if currentReaction then
+                    currentReaction.chosenDefenseStat = "AC"
+                end
                 -- For AC mode: pass (isHit, playerAC, attackRoll, playerAC)
                 -- isHit is whether the attack hits (attackRoll >= AC)
                 -- The "roll" parameter should be the player's AC (their defense value)
@@ -520,6 +538,45 @@ function PlayerReactionWidget:ShowReactions(reactions)
                 if statId == "DEFENCE" or statId == "AC" then
                     if RPE and RPE.Debug and RPE.Debug.Internal then
                         RPE.Debug:Internal(("PlayerReactionWidget - Threshold stat '%s' is a simple system stat, skipping"):format(tostring(statId)))
+                    end
+                -- Check if this defense stat is prevented by crowd control
+                elseif RPE and RPE.Core and RPE.Core.ActiveEvent and RPE.Core.ActiveEvent._auraManager then
+                    local playerId = RPE.Core.ActiveEvent:GetLocalPlayerUnitId()
+                    if playerId and RPE.Core.ActiveEvent._auraManager:IsDefenceStatFailing(playerId, statId) then
+                        if RPE and RPE.Debug and RPE.Debug.Internal then
+                            RPE.Debug:Internal(("PlayerReactionWidget - Defense stat '%s' is prevented by crowd control, skipping"):format(tostring(statId)))
+                        end
+                    -- Validate stat exists before adding defense option
+                    elseif not (Stats and Stats.Get and Stats:Get(statId)) then
+                        if RPE and RPE.Debug and RPE.Debug.Warning then
+                            RPE.Debug:Internal(("PlayerReactionWidget - Threshold stat '%s' not found, skipping"):format(tostring(statId)))
+                        end
+                    else
+                        -- Get icon and name from stat definition if available
+                        local icon = 132093  -- Default icon
+                        local statName = statId  -- Fallback to ID
+                        if StatRegistry then
+                            local stat = StatRegistry:Get(statId)
+                            if stat then
+                                if stat.icon then
+                                    icon = stat.icon
+                                end
+                                -- Priority: defenceName > name > ID
+                                if stat.defenceName and stat.defenceName ~= "" then
+                                    statName = stat.defenceName
+                                elseif stat.name then
+                                    statName = stat.name
+                                end
+                            end
+                        end
+                        
+                        table.insert(defenseOptions, {
+                            icon = icon,
+                            defenseType = "complex",
+                            label = statName,  -- Use the stat name, not ID
+                            statId = statId,
+                            handler = function() self:_handleComplexDefense(reactions, statId) end,
+                        })
                     end
                 -- Validate stat exists before adding defense option
                 elseif not (Stats and Stats.Get and Stats:Get(statId)) then
@@ -1373,6 +1430,12 @@ function PlayerReactionWidget:_handleSimpleDefense(reaction)
         end
     end
 
+    -- Store the chosen defense stat in currentReaction before completing
+    local currentReaction = RPE.Core and RPE.Core.PlayerReaction and RPE.Core.PlayerReaction:GetCurrent()
+    if currentReaction then
+        currentReaction.chosenDefenseStat = "DEFENCE"
+    end
+
     local PlayerReaction = RPE.Core and RPE.Core.PlayerReaction
     if PlayerReaction and PlayerReaction.Complete then
         PlayerReaction:Complete(defendSuccess, roll, lhs, totalFinalDamage)
@@ -1519,6 +1582,11 @@ function PlayerReactionWidget:_handleComplexDefense(reaction, statId)
 
     local PlayerReaction = RPE.Core and RPE.Core.PlayerReaction
     if PlayerReaction and PlayerReaction.Complete then
+        -- Store the chosen defense stat in currentReaction before completing
+        local currentReaction = PlayerReaction:GetCurrent()
+        if currentReaction then
+            currentReaction.chosenDefenseStat = statId
+        end
         PlayerReaction:Complete(defendSuccess, roll, lhs, totalFinalDamage)
     end
 end

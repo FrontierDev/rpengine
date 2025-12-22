@@ -135,16 +135,15 @@ function CharacterSheet:DrawStats(statBlock, filter, columns)
     for _, child in ipairs(statBlock.children or {}) do child:Destroy() end
     statBlock.children = {}
 
-    -- Collect visible stats
+    -- Collect visible stats from all datasets (flat profile.stats with CharacterStat objects)
     local stats = {}
     for _, stat in pairs(self.profile.stats or {}) do
-        if stat.category == filter
+        if stat and stat.category == filter
         and _G.RPE.ActiveRules:IsStatEnabled(stat.id, stat.category)
         and (stat.visible == nil or stat.visible == 1 or stat.visible == true) then
             table.insert(stats, stat)
         end
     end
-    
     table.sort(stats, function(a,b) return a.id < b.id end)
 
     local function makeEntry(parent, stat)
@@ -753,85 +752,290 @@ function CharacterSheet:ShowTraitDropdown(traitBlock)
         end
     end
     
-    RPE_UI.Common:ContextMenu(self, function(level, _)
+    -- Organize traits by category and type
+    local classTraits = {}  -- {className => [traits]}
+    local racialTraits = {} -- {raceName => [traits]}
+    local genericTraits = {} -- [traits]
+    
+    for _, trait in ipairs(traitAuras) do
+        local isRacial = false
+        local isClass = false
+        local raceType = nil
+        local classType = nil
+        
+        if trait.def.tags then
+            for _, tag in ipairs(trait.def.tags) do
+                if type(tag) == "string" then
+                    local tagLower = tag:lower()
+                    if tagLower:sub(1, 5) == "race:" then
+                        isRacial = true
+                        raceType = tag:sub(6)  -- Extract "human" from "race:human"
+                        break
+                    elseif tagLower:sub(1, 6) == "class:" then
+                        isClass = true
+                        classType = tag:sub(7)  -- Extract "warrior" from "class:warrior"
+                        break
+                    end
+                end
+            end
+        end
+        
+        if isRacial and raceType then
+            racialTraits[raceType] = racialTraits[raceType] or {}
+            table.insert(racialTraits[raceType], trait)
+        elseif isClass and classType then
+            classTraits[classType] = classTraits[classType] or {}
+            table.insert(classTraits[classType], trait)
+        else
+            table.insert(genericTraits, trait)
+        end
+    end
+    
+    -- Sort category names
+    local classNames = {}
+    for className in pairs(classTraits) do
+        table.insert(classNames, className)
+    end
+    table.sort(classNames)
+    
+    local raceNames = {}
+    for raceName in pairs(racialTraits) do
+        table.insert(raceNames, raceName)
+    end
+    table.sort(raceNames)
+    
+    -- Sort traits within each category
+    local function sortTraits(traits)
+        table.sort(traits, function(a, b)
+            return (a.def.name or a.id) < (b.def.name or b.id)
+        end)
+        return traits
+    end
+    
+    for _, className in ipairs(classNames) do
+        sortTraits(classTraits[className])
+    end
+    for _, raceName in ipairs(raceNames) do
+        sortTraits(racialTraits[raceName])
+    end
+    sortTraits(genericTraits)
+    
+    -- Store menu data on self so it persists across menu re-initialization
+    self._traitMenuData = {
+        classTraits = classTraits,
+        racialTraits = racialTraits,
+        genericTraits = genericTraits,
+        classNames = classNames,
+        raceNames = raceNames,
+        classCount = classCount,
+        racialCount = racialCount,
+        genericCount = genericCount,
+        totalTraits = totalTraits,
+        profile = self.profile,
+        AuraRegistry = AuraRegistry,
+    }
+    
+    RPE_UI.Common:ContextMenu(self, function(level, menuList)
+        local data = self._traitMenuData
+        if not data then return end
+        
         if level == 1 then
-            -- Check overall max_traits limit
+            -- Level 1: Main categories
             local maxTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_traits) or 0
-            local atMaxTotal = maxTraits > 0 and totalTraits >= maxTraits
+            local atMaxTotal = maxTraits > 0 and data.totalTraits >= maxTraits
             
-            for _, trait in ipairs(traitAuras) do
+            -- Class Traits category
+            if #data.classNames > 0 then
                 local info = UIDropDownMenu_CreateInfo()
-                info.text = trait.def.name or trait.id
-                info.icon = trait.def.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
-                
-                -- Check if this trait should be disabled
-                local isRacial = false
-                local isClass = false
-                if trait.def.tags then
-                    for _, tag in ipairs(trait.def.tags) do
-                        if type(tag) == "string" then
-                            local tagLower = tag:lower()
-                            if tagLower:sub(1, 5) == "race:" then
-                                isRacial = true
-                                break
-                            elseif tagLower:sub(1, 6) == "class:" then
-                                isClass = true
-                                break
-                            end
-                        end
-                    end
+                info.text = "Class Traits"
+                info.hasArrow = true
+                info.menuList = "CLASS_TRAITS"
+                UIDropDownMenu_AddButton(info, level)
+            end
+            
+            -- Racial Traits category
+            if #data.raceNames > 0 then
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = "Racial Traits"
+                info.hasArrow = true
+                info.menuList = "RACIAL_TRAITS"
+                UIDropDownMenu_AddButton(info, level)
+            end
+            
+            -- Generic Traits category
+            if #data.genericTraits > 0 then
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = "Generic Traits"
+                info.hasArrow = true
+                info.menuList = "GENERIC_TRAITS"
+                UIDropDownMenu_AddButton(info, level)
+            end
+            
+        elseif level == 2 then
+            -- Level 2: Class or Race subcategories, or Generic traits directly
+            if menuList == "CLASS_TRAITS" then
+                for _, className in ipairs(data.classNames) do
+                    local maxClassTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_class_traits) or 0
+                    local classDisabled = maxClassTraits > 0 and data.classCount >= maxClassTraits
+                    
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = className:sub(1, 1):upper() .. className:sub(2):lower()  -- Capitalize
+                    info.hasArrow = true
+                    info.menuList = "CLASS:" .. className
+                    info.disabled = classDisabled and not data.profile:HasTrait(data.classTraits[className][1].id)
+                    UIDropDownMenu_AddButton(info, level)
                 end
                 
-                local disabled = false
-                
-                -- First check overall max_traits limit
-                if atMaxTotal and not self.profile:HasTrait(trait.id) then
-                    disabled = true
-                else
-                    -- Then check type-specific limits
-                    if isRacial then
-                        local maxRacialTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_traits_racial) or 0
-                        disabled = maxRacialTraits > 0 and racialCount >= maxRacialTraits and not self.profile:HasTrait(trait.id)
-                    elseif isClass then
-                        local maxClassTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_traits_class) or 0
-                        disabled = maxClassTraits > 0 and classCount >= maxClassTraits and not self.profile:HasTrait(trait.id)
-                    else
-                        local maxGenericTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_generic_traits) or 0
-                        disabled = maxGenericTraits > 0 and genericCount >= maxGenericTraits and not self.profile:HasTrait(trait.id)
-                    end
+            elseif menuList == "RACIAL_TRAITS" then
+                for _, raceName in ipairs(data.raceNames) do
+                    local maxRacialTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_racial_traits) or 0
+                    local raceDisabled = maxRacialTraits > 0 and data.racialCount >= maxRacialTraits
+                    
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = raceName:sub(1, 1):upper() .. raceName:sub(2):lower()  -- Capitalize
+                    info.hasArrow = true
+                    info.menuList = "RACE:" .. raceName
+                    info.disabled = raceDisabled and not data.profile:HasTrait(data.racialTraits[raceName][1].id)
+                    UIDropDownMenu_AddButton(info, level)
                 end
                 
-                info.disabled = disabled
-                info.func = function()
-                    if not disabled then
-                        self.profile:AddTrait(trait.id)
-                        self:DrawTraits(traitBlock)
-                        
-                        -- Call the same resize logic as MainWindow:ShowTab does
-                        C_Timer.After(0, function()
-                            local mainWindow = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.MainWindow
-                            if mainWindow then
-                                if mainWindow.content and mainWindow.content.SetSize and self.sheet and self.sheet.frame then
-                                    local w = self.sheet.frame:GetWidth() + 12
-                                    local h = self.sheet.frame:GetHeight() + 12
-                                    if w and h then
-                                        local padX = mainWindow.content.autoSizePadX or 0
-                                        local padY = mainWindow.content.autoSizePadY or 0
-                                        local minW = mainWindow.footer.frame:GetWidth() or 0
+            elseif menuList == "GENERIC_TRAITS" then
+                for _, trait in ipairs(data.genericTraits) do
+                    local maxGenericTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_generic_traits) or 0
+                    local isDisabled = maxGenericTraits > 0 and data.genericCount >= maxGenericTraits and not data.profile:HasTrait(trait.id)
+                    
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = trait.def.name or trait.id
+                    info.icon = trait.def.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+                    info.disabled = isDisabled
+                    info.func = function()
+                        if not isDisabled then
+                            data.profile:AddTrait(trait.id)
+                            self:DrawTraits(traitBlock)
+                            CloseDropDownMenus()
+                            
+                            -- Call the same resize logic as MainWindow:ShowTab does
+                            C_Timer.After(0, function()
+                                local mainWindow = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.MainWindow
+                                if mainWindow then
+                                    if mainWindow.content and mainWindow.content.SetSize and self.sheet and self.sheet.frame then
+                                        local w = self.sheet.frame:GetWidth() + 12
+                                        local h = self.sheet.frame:GetHeight() + 12
+                                        if w and h then
+                                            local padX = mainWindow.content.autoSizePadX or 0
+                                            local padY = mainWindow.content.autoSizePadY or 0
+                                            local minW = mainWindow.footer.frame:GetWidth() or 0
 
-                                        -- apply padding and enforce minimum width
-                                        local cw = math.max(w + padX, minW)
-                                        local ch = h + padY
+                                            -- apply padding and enforce minimum width
+                                            local cw = math.max(w + padX, minW)
+                                            local ch = h + padY
 
-                                        mainWindow.content:SetSize(cw, ch)
-                                        mainWindow.root:SetSize(cw, ch + mainWindow.footer.frame:GetHeight())
+                                            mainWindow.content:SetSize(cw, ch)
+                                            mainWindow.root:SetSize(cw, ch + mainWindow.footer.frame:GetHeight())
+                                        end
                                     end
                                 end
-                            end
-                        end)
+                            end)
+                        end
                     end
+                    UIDropDownMenu_AddButton(info, level)
                 end
-                UIDropDownMenu_AddButton(info, level)
+            end
+            
+        elseif level == 3 then
+            -- Level 3: Individual traits within a class or race
+            local maxTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_traits) or 0
+            local atMaxTotal = maxTraits > 0 and data.totalTraits >= maxTraits
+            
+            if menuList and menuList:sub(1, 6) == "CLASS:" then
+                local className = menuList:sub(7)
+                local maxClassTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_class_traits) or 0
+                
+                for _, trait in ipairs(data.classTraits[className]) do
+                    local isDisabled = (atMaxTotal and not data.profile:HasTrait(trait.id)) or 
+                                      (maxClassTraits > 0 and data.classCount >= maxClassTraits and not data.profile:HasTrait(trait.id))
+                    
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = trait.def.name or trait.id
+                    info.icon = trait.def.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+                    info.disabled = isDisabled
+                    info.func = function()
+                        if not isDisabled then
+                            data.profile:AddTrait(trait.id)
+                            self:DrawTraits(traitBlock)
+                            CloseDropDownMenus()
+                            
+                            -- Call the same resize logic as MainWindow:ShowTab does
+                            C_Timer.After(0, function()
+                                local mainWindow = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.MainWindow
+                                if mainWindow then
+                                    if mainWindow.content and mainWindow.content.SetSize and self.sheet and self.sheet.frame then
+                                        local w = self.sheet.frame:GetWidth() + 12
+                                        local h = self.sheet.frame:GetHeight() + 12
+                                        if w and h then
+                                            local padX = mainWindow.content.autoSizePadX or 0
+                                            local padY = mainWindow.content.autoSizePadY or 0
+                                            local minW = mainWindow.footer.frame:GetWidth() or 0
+
+                                            -- apply padding and enforce minimum width
+                                            local cw = math.max(w + padX, minW)
+                                            local ch = h + padY
+
+                                            mainWindow.content:SetSize(cw, ch)
+                                            mainWindow.root:SetSize(cw, ch + mainWindow.footer.frame:GetHeight())
+                                        end
+                                    end
+                                end
+                            end)
+                        end
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+                
+            elseif menuList and menuList:sub(1, 5) == "RACE:" then
+                local raceName = menuList:sub(6)
+                local maxRacialTraits = (RPE.ActiveRules and RPE.ActiveRules.rules and RPE.ActiveRules.rules.max_racial_traits) or 0
+                
+                for _, trait in ipairs(data.racialTraits[raceName]) do
+                    local isDisabled = (atMaxTotal and not data.profile:HasTrait(trait.id)) or 
+                                      (maxRacialTraits > 0 and data.racialCount >= maxRacialTraits and not data.profile:HasTrait(trait.id))
+                    
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = trait.def.name or trait.id
+                    info.icon = trait.def.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+                    info.disabled = isDisabled
+                    info.func = function()
+                        if not isDisabled then
+                            data.profile:AddTrait(trait.id)
+                            self:DrawTraits(traitBlock)
+                            CloseDropDownMenus()
+                            
+                            -- Call the same resize logic as MainWindow:ShowTab does
+                            C_Timer.After(0, function()
+                                local mainWindow = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.MainWindow
+                                if mainWindow then
+                                    if mainWindow.content and mainWindow.content.SetSize and self.sheet and self.sheet.frame then
+                                        local w = self.sheet.frame:GetWidth() + 12
+                                        local h = self.sheet.frame:GetHeight() + 12
+                                        if w and h then
+                                            local padX = mainWindow.content.autoSizePadX or 0
+                                            local padY = mainWindow.content.autoSizePadY or 0
+                                            local minW = mainWindow.footer.frame:GetWidth() or 0
+
+                                            -- apply padding and enforce minimum width
+                                            local cw = math.max(w + padX, minW)
+                                            local ch = h + padY
+
+                                            mainWindow.content:SetSize(cw, ch)
+                                            mainWindow.root:SetSize(cw, ch + mainWindow.footer.frame:GetHeight())
+                                        end
+                                    end
+                                end
+                            end)
+                        end
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
             end
         end
     end)

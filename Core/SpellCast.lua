@@ -275,6 +275,12 @@ local function runActions(ctx, cast, actions, groupId)
                 -- Collect them instead of running immediately
                 for _, tgt in ipairs(targets) do
                     local tgtUnit = RPE.Common:FindUnitByKey(tgt)
+                    
+                    -- If FindUnitByKey fails, try finding by numeric ID directly
+                    if not tgtUnit and type(tgt) == "number" then
+                        tgtUnit = RPE.Common:FindUnitById(tgt)
+                    end
+                    
                     if tgtUnit and tgtUnit.isNPC then
                         -- Collect NPC aura effect for deferred application after damage
                         local unitId = tgtUnit.id
@@ -351,7 +357,39 @@ local function runActions(ctx, cast, actions, groupId)
                     end
                 end
                 
-                -- Skip running APPLY_AURA immediately for all targets
+                -- Still execute APPLY_AURA immediately locally (don't defer execution, only defer broadcast)
+                -- This allows triggers like ON_KILL to fire on the same turn
+                local applyAuraTargets = {}
+                for unitId in pairs(aggregatedPlayerTargets) do
+                    if aggregatedPlayerTargets[unitId].unit then
+                        table.insert(applyAuraTargets, aggregatedPlayerTargets[unitId].unit)
+                    end
+                end
+                for unitId in pairs(aggregatedNPCTargets) do
+                    if aggregatedNPCTargets[unitId] then
+                        -- Create minimal unit table for NPC
+                        table.insert(applyAuraTargets, {id = unitId, isNPC = true})
+                    end
+                end
+                
+                if applyAuraTargets and #applyAuraTargets > 0 then
+                    RPE.Debug:Internal(("Running action '%s' on %d target(s) [immediately for local triggers]"):format(act.key, #applyAuraTargets))
+                    if act._critThreshold ~= nil then
+                        act.args._critThreshold = act._critThreshold
+                    end
+                    if act._critMult ~= nil then
+                        act.args._critMult = act._critMult
+                    end
+                    if act._rolls ~= nil then
+                        act.args._rolls = act._rolls
+                    end
+                    local Actions = RPE.Core and RPE.Core.SpellActions
+                    if Actions and Actions.Run then
+                        Actions:Run(act.key, ctx, cast, applyAuraTargets, act.args)
+                    end
+                end
+                
+                -- Skip running APPLY_AURA from the normal applyTargets list (already executed above)
                 applyTargets = {}
             end
         end
@@ -544,13 +582,25 @@ function SpellCast:InitTargeting()
     self.chosenTargets  = {}
 
     local seenRefs = {}
+    local spellDefaultTargeter = self.def.targeter and self.def.targeter.default
 
     RPE.Debug:Internal(">>> InitTargeting(): Start")
     for gi, g in ipairs(self.def.groups or {}) do
+        -- First pass: check if this group has a RAID_MARKER action
+        local groupHasRaidMarker = false
+        for _, act in ipairs(g.actions or {}) do
+            local t = (act.args and act.args.targets) or {}
+            local targeter = t.targeter or nil
+            if targeter == "RAID_MARKER" or targeter == "raid_marker" then
+                groupHasRaidMarker = true
+                break
+            end
+        end
+
         for ai, act in ipairs(g.actions or {}) do
             local t = (act.args and act.args.targets) or {}
             local targeter = t.targeter or nil
-            
+
             -- Normalize targeting to a canonical ref
             local ref
             if t.ref then
@@ -558,7 +608,18 @@ function SpellCast:InitTargeting()
             elseif targeter == "PRECAST" or targeter == "precast" then
                 ref = "precast"
             elseif targeter == "TARGET" or targeter == "target" then
-                ref = "precast"  -- TARGET uses spell-level precast targets
+                -- TARGET uses RAID_MARKER ref if this group has RAID_MARKER action, otherwise spell-level targeter
+                if groupHasRaidMarker then
+                    ref = "raid_marker"
+                elseif spellDefaultTargeter == "RAID_MARKER" or spellDefaultTargeter == "raid_marker" then
+                    ref = "raid_marker"
+                else
+                    ref = "precast"
+                end
+            elseif targeter == "RAID_MARKER" or targeter == "raid_marker" then
+                ref = "raid_marker"
+            elseif targeter == "CASTER" or targeter == "caster" then
+                ref = "caster"
             else
                 -- For other targeters, create per-action refs to prompt separately
                 ref = "action_" .. gi .. "_" .. ai
@@ -574,7 +635,25 @@ function SpellCast:InitTargeting()
                 tostring(t.flags or "nil")
             ))
 
-            if not seenRefs[ref] then
+            -- Detect instant-resolve targeters
+            local instantTargeters = {
+                ALL_ALLIES = true,
+                ALL_ENEMIES = true,
+                ALL_UNITS = true,
+                CASTER = true,
+                SUMMONED = true,
+            }
+            if targeter and instantTargeters[targeter] then
+                -- Auto-resolve: fill targetSets immediately, skip prompt
+                if not self.targetSets[ref] then
+                    local sel = Targeters:Select(targeter, {}, self, t.args)
+                    self.targetSets[ref] = sel and sel.targets or {}
+                    RPE.Debug:Internal("    >> Auto-resolved targets for instant targeter: " .. targeter)
+                end
+                act._resolvedRef = ref
+                seenRefs[ref] = true
+                -- Do NOT add to pendingTargets (no prompt)
+            elseif not seenRefs[ref] then
                 seenRefs[ref] = true
                 act._resolvedRef = ref
                 table.insert(self.pendingTargets, {
@@ -623,12 +702,23 @@ function SpellCast:RequestNextTargetSet(ctx)
         return
     end
 
+    -- Extract targeter name for the TargetWindow to know which auto-selection behavior to use
+    local targeterName = nil
+    if spec.action and spec.action.args and spec.action.args.targets then
+        targeterName = spec.action.args.targets.targeter
+    end
+    -- Fall back to spell-level targeter if action doesn't have explicit targets
+    if not targeterName and self.def and self.def.targeter then
+        targeterName = self.def.targeter.default
+    end
+
     TW:Open({
         spellIcon    = self.def.icon,
         spellName    = self.def.name,
         maxTargets   = spec.maxTargets,
         flags        = spec.flags,
         casterUnitId = self.caster,
+        targeter     = targeterName,
         onConfirm  = function(keys)
             self.targetSets[spec.ref] = keys
             if TW and TW.Hide then
@@ -750,7 +840,7 @@ function SpellCast:Start(ctx, currentTurn)
     -- Only spend resources if this cast has a resources context (player casts)
     -- NPCs don't spend resources, so ctx.resources will be nil for them
     if ctx.resources then 
-        ctx.resources:Spend(self._costSnapshot, "onStart")
+        ctx.resources:Spend(self._costSnapshot, "onStart", self.def)
     end
 
     for _, g in ipairs(self.def.groups or {}) do
@@ -798,6 +888,24 @@ function SpellCast:Start(ctx, currentTurn)
         end
         CB = RPE.Core.Windows and RPE.Core.Windows.CastBarWidget
         if CB and CB.Begin then CB:Begin(self, ctx) end
+
+        -- Broadcast casting information to group
+        local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+        if Broadcast then
+            -- Get primary target (first from precast or self)
+            local targetId = nil
+            if self.targetSets and self.targetSets.precast and #self.targetSets.precast > 0 then
+                local firstTargetKey = self.targetSets.precast[1]
+                if firstTargetKey then
+                    local ev = RPE.Core.ActiveEvent
+                    if ev and ev.units and ev.units[firstTargetKey] then
+                        targetId = ev.units[firstTargetKey].id
+                    end
+                end
+            end
+            
+            Broadcast:SendCasting(self.caster, self.def.id, self.def.name, self.def.icon, self.remainingTurns, tonumber(self.def.cast.turns) or 1, targetId)
+        end
     end
 
     return true
@@ -808,7 +916,7 @@ function SpellCast:Tick(ctx, currentTurn)
     if not self.remainingTurns or self.remainingTurns <= 0 then return false end
     local ct = self.def.cast or { type = "INSTANT" }
 
-    if ctx.resources then ctx.resources:Spend(self._costSnapshot, "perTick") end
+    if ctx.resources then ctx.resources:Spend(self._costSnapshot, "perTick", self.def) end
 
     if ct.type == "CHANNEL" and self.nextTickTurn and currentTurn >= self.nextTickTurn then
         for _, g in ipairs(self.def.groups or {}) do
@@ -836,6 +944,24 @@ function SpellCast:Tick(ctx, currentTurn)
         if RPE.Debug and RPE.Debug.Print then
             RPE.Debug:Internal(('[SpellCast:Tick] Decremented remainingTurns to %d'):format(self.remainingTurns))
         end
+        
+        -- Broadcast updated cast progress to group
+        local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+        if Broadcast then
+            -- Get primary target (first from precast or self)
+            local targetId = nil
+            if self.targetSets and self.targetSets.precast and #self.targetSets.precast > 0 then
+                local firstTargetKey = self.targetSets.precast[1]
+                if firstTargetKey then
+                    local ev = RPE.Core.ActiveEvent
+                    if ev and ev.units and ev.units[firstTargetKey] then
+                        targetId = ev.units[firstTargetKey].id
+                    end
+                end
+            end
+            
+            Broadcast:SendCasting(self.caster, self.def.id, self.def.name, self.def.icon, self.remainingTurns, tonumber(self.def.cast.turns) or 1, targetId)
+        end
     end
 
     -- Update cast bar if it exists (for UI display)
@@ -859,10 +985,22 @@ end
 
 -- Stage 4: Resolve
 function SpellCast:Resolve(ctx, currentTurn)
-    if ctx.resources then ctx.resources:Spend(self._costSnapshot, "onResolve") end
+    -- Check if this cast was interrupted (via unit flag or spell flag)
+    local casterUnit = RPE.Common:FindUnitById(self.caster)
+    local isInterrupted = self.wasInterrupted or (casterUnit and casterUnit._wasInterrupted)
+    
+    if isInterrupted then
+        if RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(("Resolve skipped: Cast was interrupted"):format())
+        end
+        -- Clear the interrupt flag so it doesn't affect future casts
+        if casterUnit then
+            casterUnit._wasInterrupted = nil
+        end
+    else
+        if ctx.resources then ctx.resources:Spend(self._costSnapshot, "onResolve", self.def) end
 
-    for i, g in ipairs(self.def.groups or {}) do
-        if g.phase == "onResolve" then
+        for i, g in ipairs(self.def.groups or {}) do
             local ok, reason, code = evalGroupRequirements(ctx, self, g)
             if ok then
                 RPE.Debug:Internal(("→ Running group %d (onResolve)"):format(i))
@@ -876,7 +1014,6 @@ function SpellCast:Resolve(ctx, currentTurn)
     end
 
     -- Unhide the caster if they are currently hidden
-    local casterUnit = RPE.Common:FindUnitById(self.caster)
     if casterUnit and casterUnit.hidden then
         casterUnit.hidden = false
         
@@ -902,6 +1039,12 @@ function SpellCast:Resolve(ctx, currentTurn)
         ctx.event:ClearCast(self.caster)
     end
 
+    -- Broadcast clear casting to group
+    local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+    if Broadcast then
+        Broadcast:SendClearCasting(self.caster)
+    end
+
     RPE.Debug:Internal(("Resolving %s at Rank %d"):format(self.def.name or "?", self.def.rank or 1))
 end
 
@@ -922,6 +1065,12 @@ function SpellCast:Interrupt(ctx, reason)
     -- Clear cast from registry
     if ctx.event and ctx.event.ClearCast then
         ctx.event:ClearCast(self.caster)
+    end
+
+    -- Broadcast clear casting to group
+    local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+    if Broadcast then
+        Broadcast:SendClearCasting(self.caster)
     end
 
     local CB = RPE.Core.Windows and RPE.Core.Windows.CastBarWidget
@@ -1368,6 +1517,19 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
                 end
             end
             misses[#misses+1] = ref
+            
+            -- Display "Miss" floating text for NPC targets only (player targets handled via reaction system)
+            if isNPC and tgtUnit then
+                local fct = RPE.Core and RPE.Core.CombatText and RPE.Core.CombatText.Screen
+                if fct then
+                    fct:AddText("Miss", {
+                        color = { 1.0, 1.0, 1.0, 1.0 },  -- white
+                        duration = 1.5,
+                        distance = 60,
+                        direction = "UP"  -- floating upwards
+                    })
+                end
+            end
         end
     end
 
@@ -1423,6 +1585,72 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
             end
             
             local school = (act.args.school) or "Physical"
+            -- If school is a weapon token like "$wep.ranged$", resolve to the caster's
+            -- equipped weapon's damageSchool property (if present).
+            if type(school) == "string" then
+                local slot = school:match("^%$wep%.([%w_]+)%$")
+                if slot then
+                    local norm = string.lower(slot)
+                    if norm == "mh" then norm = "mainhand"
+                    elseif norm == "oh" then norm = "offhand"
+                    elseif norm == "rng" or norm == "wand" then norm = "ranged" end
+
+                    -- Try to resolve equipped item from profile (GetEquipped API) or equipment table
+                    local item = nil
+                    if profile and type(profile.GetEquipped) == "function" then
+                        local ok, id = pcall(profile.GetEquipped, profile, norm)
+                        if ok and id then
+                            if type(id) == "table" then item = id end
+                            if type(id) == "string" then
+                                local reg = RPE.Core and RPE.Core.ItemRegistry
+                                if reg and type(reg.Get) == "function" then
+                                    local ok2, def = pcall(reg.Get, reg, id)
+                                    if ok2 and def then item = def end
+                                end
+                            end
+                        end
+                    end
+                    if not item and profile and type(profile.equipment) == "table" then
+                        local ent = profile.equipment[norm]
+                        if ent then
+                            if type(ent) == "table" then item = ent end
+                            if type(ent) == "string" then
+                                local reg = RPE.Core and RPE.Core.ItemRegistry
+                                if reg and type(reg.Get) == "function" then
+                                    local ok2, def = pcall(reg.Get, reg, ent)
+                                    if ok2 and def then item = def end
+                                end
+                            end
+                        end
+                    end
+
+                    if item then
+                        local d = (type(item) == "table") and (item.data or item) or {}
+                        local ds = d.damageSchool or d.school or d.damage_school
+                        if ds and type(ds) == "string" and ds ~= "" then
+                            school = ds
+                        else
+                            school = "Physical"  -- default if item has no damage school
+                        end
+                    else
+                        school = "Physical"  -- default if weapon not found
+                    end
+                end
+            end
+            
+            -- Apply fudge factor from ruleset (default: 0)
+            local fudge = 0
+            if RPE.ActiveRules then
+                local fudgeVal = RPE.ActiveRules:Get("fudge", 0)
+                if type(fudgeVal) == "string" then
+                    local Formula = RPE.Core and RPE.Core.Formula
+                    fudge = (Formula and Formula.Roll and tonumber(Formula:Roll(fudgeVal, profile))) or 0
+                else
+                    fudge = tonumber(fudgeVal) or 0
+                end
+            end
+            amt = amt + fudge
+            
             amt = math.max(0, math.floor(amt))
             if amt > 0 then
                 damageBySchool[school] = (damageBySchool[school] or 0) + amt
@@ -1483,6 +1711,19 @@ function SpellCast:CheckHit(ctx, cast, act, targets)
                                     else
                                         amt = tonumber(trigger.action.args.amount) or 0
                                     end
+                                    
+                                    -- Apply fudge factor from ruleset (default: 0)
+                                    local fudge = 0
+                                    if RPE.ActiveRules then
+                                        local fudgeVal = RPE.ActiveRules:Get("fudge", 0)
+                                        if type(fudgeVal) == "string" then
+                                            local Formula = RPE.Core and RPE.Core.Formula
+                                            fudge = (Formula and Formula.Roll and tonumber(Formula:Roll(fudgeVal, profile))) or 0
+                                        else
+                                            fudge = tonumber(fudgeVal) or 0
+                                        end
+                                    end
+                                    amt = amt + fudge
                                     
                                     local school = (trigger.action.args.school) or "Physical"
                                     amt = math.max(0, math.floor(amt))

@@ -36,7 +36,22 @@ end
 ---@return table|nil
 function ItemRegistry:Get(id)
     self:Init()
-    return self._items[id]
+    if not id then return nil end
+    -- Direct lookup first
+    local v = self._items[id]
+    if v then return v end
+    -- Fallback: attempt to match legacy/id variants by numeric suffix (handles old vs canonical id forms)
+    local idDigits = tostring(id):gsub('%D','')
+    if idDigits == '' then return nil end
+    for _, obj in pairs(self._items) do
+        if obj and obj.id then
+            local objDigits = tostring(obj.id):gsub('%D','')
+            if objDigits == idDigits then
+                return obj
+            end
+        end
+    end
+    return nil
 end
 
 --- Return the backing map (read-only by convention).
@@ -65,7 +80,7 @@ end
 --- @return table|nil the equipped item definition, or nil if nothing equipped
 function ItemRegistry:GetEquipped(slot)
     self:Init()
-    slot = (slot or ""):upper()
+    slot = (slot or ""):lower()
     
     -- Try to get active player profile
     local profile = nil
@@ -176,7 +191,12 @@ function ItemRegistry:RefreshFromDataset(ds)
     for id, entry in pairs(ds.items) do
         local obj = _itemFromDatasetEntry(id, entry)
         if obj and obj.id then
+            -- Index by canonical id
             newMap[obj.id] = obj
+            -- Also index by the dataset's entry key so callers using the dataset key still resolve
+            if id ~= obj.id then
+                newMap[id] = obj
+            end
             count = count + 1
         end
     end
@@ -215,6 +235,9 @@ function ItemRegistry:RefreshFromDatasetNames(datasetNames)
                 if obj and obj.id then
                     -- later datasets override earlier ones
                     newMap[obj.id] = obj
+                    if id ~= obj.id then
+                        newMap[id] = obj
+                    end
                 end
             end
         end

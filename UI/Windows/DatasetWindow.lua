@@ -155,13 +155,13 @@ local function _toggleDatasetActive(name)
             local mergedDS = DB.LoadActiveForCurrentCharacter and DB.LoadActiveForCurrentCharacter() or nil
             if mergedDS and mergedDS.extra and mergedDS.extra.stats then
                 local synced = 0
+                local datasetName = mergedDS.name or "_unknown"
                 for statId, statDef in pairs(mergedDS.extra.stats) do
                     if statDef then
-                        -- Get or create stat on profile with proper category
-                        local stat = profile:GetStat(statId, statDef.category or "PRIMARY")
+                        -- Get or create stat on profile with proper category, per dataset
+                        local stat = profile:GetStat(statId, statDef.category or "PRIMARY", datasetName)
                         if stat then
                             synced = synced + 1
-                            
                             -- Prepare data to set (will preserve setupBonus automatically since SetData doesn't touch it)
                             local dataToSet = {
                                 id              = statId,
@@ -180,24 +180,23 @@ local function _toggleDatasetActive(name)
                                 itemTooltipPriority = statDef.itemTooltipPriority,
                                 itemLevelWeight     = statDef.itemLevelWeight,
                             }
-                            
                             stat:SetData(dataToSet)
-                            
                             -- Set sourceDataset directly (not in SetData)
-                            if statDef.sourceDataset then stat.sourceDataset = statDef.sourceDataset end
+                            stat.sourceDataset = datasetName
                         end
                     end
                 end
-                
                 -- Remove stats that are no longer in active datasets (deactivated stat cleanup)
                 if not isActive then
-                    for statId, stat in pairs(profile.stats or {}) do
-                        if stat.sourceDataset == name then
-                            profile.stats[statId] = nil
+                    -- Remove all stats that have sourceDataset == datasetName
+                    if profile and profile.stats then
+                        for k, s in pairs(profile.stats) do
+                            if s and s.sourceDataset == datasetName then
+                                profile.stats[k] = nil
+                            end
                         end
                     end
                 end
-                
                 if RPE.Profile.ProfileDB.SaveProfile then
                     pcall(function() RPE.Profile.ProfileDB.SaveProfile(profile) end)
                 end

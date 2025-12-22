@@ -4,6 +4,14 @@ RPE.Core = RPE.Core or {}
 
 local AuraRegistry = assert(RPE.Core.AuraRegistry, "AuraRegistry required")
 
+local function _activeProfile()
+    if RPE and RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive then
+        local ok, p = pcall(RPE.Profile.DB.GetOrCreateActive)
+        if ok and p then return p end
+    end
+    return nil
+end
+
 ---@class Aura
 ---@field id string         -- def id
 ---@field def table
@@ -42,9 +50,12 @@ function Aura.New(def, sourceId, targetId, nowTurn, opts)
     local o = {
         id         = def.id,
         def        = def,
+        _def       = def,
+        description= def.description,
+        _descTemplate = def.description or "",
         instanceId = nextId(),
-        sourceId     = tonumber(sourceId),
-        targetId     = tonumber(targetId),
+        sourceId     = sourceId,
+        targetId     = targetId,
         startTurn  = nowTurn,
         stacks     = math.max(1, tonumber(opts.stacks) or 1),
         charges    = opts.charges,            -- optional
@@ -139,9 +150,193 @@ function Aura:ToState()
     }
 end
 
+
+-- ===== Description rendering helpers (mirrors Spell.lua style) ===========
+function Aura:_flattenTriggers()
+    local flat = {}
+    for ti, trig in ipairs((self._def and self._def.triggers) or {}) do
+        table.insert(flat, { trig=trig, ti=ti, idx=#flat+1 })
+    end
+    return flat
+end
+
+function Aura:_resolveActionProperty(entry, propPath, vars)
+    local trig = entry.trig
+    local act = trig and trig.action or nil
+    if not act then return "$["..tostring(entry.idx).."]."..tostring(propPath).."$" end
+    local args = act.args or {}
+
+    local profile = vars and vars.profile
+    local Formula = RPE.Core and RPE.Core.Formula
+
+    if propPath == "school" then
+        local raw = args.school or "Physical"
+        if type(raw) == "string" then
+            local slot = raw:match("^%$wep%.([%w_]+)%$")
+            if slot then
+                local norm = string.lower(slot)
+                if norm == "mh" then norm = "mainhand"
+                elseif norm == "oh" then norm = "offhand"
+                elseif norm == "rng" or norm == "bow" then norm = "ranged" end
+
+                local item = nil
+                if profile and type(profile.GetEquipped) == "function" then
+                    local ok, id = pcall(profile.GetEquipped, profile, norm)
+                    if ok and id then
+                        if type(id) == "table" then item = id end
+                        if type(id) == "string" then
+                            local reg = RPE.Core and RPE.Core.ItemRegistry
+                            if reg and type(reg.Get) == "function" then
+                                local ok2, defit = pcall(reg.Get, reg, id)
+                                if ok2 and defit then item = defit end
+                            end
+                        end
+                    end
+                end
+                if not item and profile and type(profile.equipment) == "table" then
+                    local ent = profile.equipment[norm]
+                    if ent then
+                        if type(ent) == "table" then item = ent end
+                        if type(ent) == "string" then
+                            local reg = RPE.Core and RPE.Core.ItemRegistry
+                            if reg and type(reg.Get) == "function" then
+                                local ok2, defit = pcall(reg.Get, reg, ent)
+                                if ok2 and defit then item = defit end
+                            end
+                        end
+                    end
+                end
+                if item then
+                    local d = (type(item) == "table") and (item.data or item) or {}
+                    local ds = d.damageSchool or d.school or d.damage_school
+                    if ds and ds ~= "" then return tostring(ds) end
+                end
+                return "Physical"
+            end
+        end
+        return tostring(raw)
+    end
+
+    if propPath == "amount" or propPath:match("^amount%.") then
+        if not Formula then return tostring(args.amount or "") end
+        local parsed = Formula:Parse(args.amount, profile)
+        if not parsed then return "0" end
+        if propPath == "amount.min" then return tostring(parsed.min or parsed.value or 0)
+        elseif propPath == "amount.max" then return tostring(parsed.max or parsed.value or 0)
+        elseif propPath == "amount.avg" then
+            local a = parsed.min or parsed.value or 0
+            local b = parsed.max or parsed.value or 0
+            return tostring(math.floor(((a+b)/2)+0.5))
+        else
+            return Formula:Format(parsed)
+        end
+    end
+
+    if propPath == "auraId" then
+        return tostring(args.auraId or args.resourceId or "")
+    end
+
+    local v = args
+    for seg in string.gmatch(propPath, "[^%.]+") do
+        if type(v) == "table" then v = v[seg] else v = nil break end
+    end
+    if v ~= nil then return tostring(v) end
+
+    return "$["..tostring(entry.idx).."]."..tostring(propPath).."$"
+end
+
+function Aura:RenderDescription(vars, tmpl)
+    local template = tmpl or self._descTemplate or self.description or ""    
+    if template == "" then return "" end
+    local flat = self:_flattenTriggers()
+    local function repl(idxStr, propPath)
+        local idx = tonumber(idxStr)
+        local entry = flat[idx]
+        if not entry then
+            return "$["..idxStr.."]."..propPath.."$"
+        end
+        return self:_resolveActionProperty(entry, propPath, vars) or "?"
+    end
+
+    vars = vars or {}
+    if vars.profile == nil then
+        local tu = select(1, Common:FindUnitById(self.targetId))
+        vars.profile = Common:ProfileForUnit(tu) or (_activeProfile and _activeProfile())
+    end
+
+    return template:gsub("%$%[(%d+)%]%.([%w_%.]+)%$", repl)
+end
+
+function Aura:RefreshDescription(vars)
+    return self:RenderDescription(vars)
+end
+
+-- Static method to render description from a raw aura definition table
+function Aura.RenderDescriptionFromDef(def, vars, tmpl)
+    local template = tmpl or (def and def.description) or ""
+    if template == "" then return "" end
+    local flat = {}
+    if def and def.triggers then
+        for ti, trig in ipairs(def.triggers) do
+            table.insert(flat, { trig=trig, ti=ti, idx=#flat+1 })
+        end
+    end
+    local function repl(idxStr, propPath)
+        local idx = tonumber(idxStr)
+        local entry = flat[idx]
+        if not entry then
+            return "$["..idxStr.."]."..propPath.."$"
+        end
+        local trig = entry.trig
+        local act = trig and trig.action or nil
+        if not act then return "$["..idxStr.."]."..propPath.."$" end
+        local args = act.args or {}
+        local profile = vars and vars.profile
+        local Formula = RPE.Core and RPE.Core.Formula
+        if propPath == "school" then
+            local raw = args.school or "Physical"
+            if type(raw) == "string" then
+                local slot = raw:match("^%$wep%.([%w_]+)%$")
+                if slot then
+                    -- For UI tooltips, default to Physical since no equipped items context
+                    return "Physical"
+                end
+            end
+            return tostring(raw)
+        elseif propPath == "amount" or propPath:match("^amount%.") then
+            if not Formula then return tostring(args.amount or "") end
+            local parsed = Formula:Parse(args.amount, profile)
+            if not parsed then return "0" end
+            if propPath == "amount.min" then return tostring(parsed.min or parsed.value or 0)
+            elseif propPath == "amount.max" then return tostring(parsed.max or parsed.value or 0)
+            elseif propPath == "amount.avg" then
+                local a = parsed.min or parsed.value or 0
+                local b = parsed.max or parsed.value or 0
+                return tostring(math.floor(((a+b)/2)+0.5))
+            else
+                return Formula:Format(parsed)
+            end
+        elseif propPath == "auraId" then
+            return tostring(args.auraId or args.resourceId or "")
+        else
+            local v = args
+            for seg in string.gmatch(propPath, "[^%.]+") do
+                if type(v) == "table" then v = v[seg] else v = nil break end
+            end
+            if v ~= nil then return tostring(v) end
+        end
+        return "$["..idxStr.."]."..propPath.."$"
+    end
+    vars = vars or {}
+    if vars.profile == nil then vars.profile = _activeProfile() end
+    return template:gsub("%$%[(%d+)%]%.([%w_%.]+)%$", repl)
+end
+
+
 -- ===== Tooltip ==============================================================
 function Aura:GetTooltip()
-    local def = self.def or AuraRegistry:Get(self.id) or {}
+    local def = AuraRegistry:Get(self.id) or self.def or {}
+    if not self._def then self._def = def end
 
     -- Prefer the target unit's profile (so $stat.*$ matches the bearer of the aura).
     local profile = (function()
@@ -153,19 +348,9 @@ function Aura:GetTooltip()
     local spec  = { title = def.name or self.id or "Aura", lines = {} }
     local lines = spec.lines
 
-    -- Description (gold, wrapped) — resolve $stat.FOO$ against the profile
-    local desc = tostring(def.description or "")
+    -- Description (gold, wrapped)
+    local desc = self:RenderDescription({ profile = profile }, def.description or "") or ""
     if desc ~= "" then
-        desc = desc:gsub("%$stat%.([%w_]+)%$", function(statId)
-            local s = profile and profile.stats and profile.stats[statId]
-            local v = s and s:GetValue(profile) or 0
-            -- Show integers plainly; otherwise round to 0 decimals like spells typically do
-            if math.type and math.type(v) == "integer" then
-                return tostring(v)
-            else
-                return string.format("%.0f", v)
-            end
-        end)
         table.insert(lines, { text = desc, r = 1, g = 0.82, b = 0, wrap = true })
     end
 

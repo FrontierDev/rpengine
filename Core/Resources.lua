@@ -4,7 +4,8 @@ RPE.Core = RPE.Core or {}
 
 ---@class Resources
 ---@field pool table<string, number>  -- [resourceId] = current value
-local Resources = { pool = {} }
+---@field _loadingProfile boolean     -- Guard against recursive profile loading
+local Resources = { pool = {}, _loadingProfile = false }
 RPE.Core.Resources = Resources
 
 -- === Internal ===
@@ -17,25 +18,35 @@ end
 
 --- Initialize resource pool to their base values from stat definitions.
 function Resources:Init()
+    -- Guard against recursive profile loading
+    if self._loadingProfile then return end
+    self._loadingProfile = true
+    
     local profile = RPE.Profile.DB.GetOrCreateActive()
-    if not profile then return end
+    
+    if not profile then 
+        self._loadingProfile = false
+        return 
+    end
 
     self.pool = {}
-    
-    -- First, try to initialize from profile.stats
+    -- First, try to initialize from all stats in profile.stats (flat composite keys)
     local foundAny = false
-    for id, stat in pairs(profile.stats or {}) do
-        if stat.category == "RESOURCE" then
-            local baseVal = stat:GetValue(profile)  -- Gets the full computed value (base + mods)
-            self.pool[string.upper(id)] = baseVal
-            foundAny = true
+    for _, stat in pairs(profile.stats or {}) do
+        if stat and stat.category == "RESOURCE" then
+            local baseVal = stat:GetValue(profile)
+            local resId = string.upper(tostring(stat.id or ""))
+            if resId ~= "" then
+                self.pool[resId] = baseVal
+                foundAny = true
+            end
         end
     end
-    
+
     -- Ensure always-used resources are always in the pool (even if not in profile.stats)
     -- HEALTH is always available; ACTION/BONUS_ACTION/REACTION only if allowed by rules
     if not self.pool["HEALTH"] then
-        local stat = profile.stats and profile.stats["HEALTH"]
+        local stat = profile and profile.GetStat and profile:GetStat("HEALTH")
         if stat then
             self.pool["HEALTH"] = stat:GetValue(profile)
         else
@@ -48,7 +59,7 @@ function Resources:Init()
             end
         end
     end
-    
+
     -- Check ActiveRules for ACTION, BONUS_ACTION, REACTION
     local ActiveRules = RPE.ActiveRules
     local actionLikeResources = { "ACTION", "BONUS_ACTION", "REACTION" }
@@ -56,7 +67,7 @@ function Resources:Init()
         -- Only initialize if allowed by ruleset
         local allowed = ActiveRules and ActiveRules:IsStatEnabled(resId, "RESOURCE")
         if allowed and not self.pool[resId] then
-            local stat = profile.stats and profile.stats[resId]
+            local stat = profile and profile.GetStat and profile:GetStat(resId)
             if stat then
                 self.pool[resId] = stat:GetValue(profile)
             else
@@ -70,7 +81,7 @@ function Resources:Init()
             end
         end
     end
-    
+
     -- Fallback: if no resources found in profile.stats, initialize from StatRegistry definitions
     if not foundAny then
         local StatRegistry = RPE.Core and RPE.Core.StatRegistry
@@ -84,6 +95,8 @@ function Resources:Init()
             end
         end
     end
+    
+    self._loadingProfile = false
 end
 
 function Resources:Has(resId)
@@ -93,22 +106,53 @@ function Resources:Has(resId)
 end
 
 --- Get current + max for a resource.
+--- Get current + max for a resource.
 function Resources:Get(resId)
-    local profile = getProfile()
     local cur = self.pool[resId] or 0
     
-    -- Try to get stat from profile first
-    local stat = profile and profile.stats and profile.stats[resId]
-    local max = (stat and stat:GetMaxValue(profile)) or 0
-    
-    -- If max is 0 (stat missing), try to get it from StatRegistry definition
-    if max == 0 then
+    -- Guard against recursive profile loading during layout
+    if self._loadingProfile then
+        -- Return current value + fallback max from StatRegistry
         local StatRegistry = RPE.Core and RPE.Core.StatRegistry
         local statDef = StatRegistry and StatRegistry:Get(resId)
-        if statDef and statDef.max then
-            -- Get max value directly from definition
+        local max = (statDef and statDef.max and (type(statDef.max) == "number" and statDef.max or statDef.max.default)) or 0
+        return cur, tonumber(max) or 0
+    end
+    
+    self._loadingProfile = true
+    local profile = getProfile()
+    self._loadingProfile = false
+    
+    local StatRegistry = RPE.Core and RPE.Core.StatRegistry
+    local statDef = StatRegistry and StatRegistry:Get(resId)
+    local max = 0
+    
+    if statDef then
+        -- Try to evaluate max from profile if available
+        if profile and profile.GetStat then
+            local stat = profile:GetStat(resId)
+            if stat and stat.GetMaxValue then
+                max = stat:GetMaxValue(profile) or 0
+            end
+        end
+        
+        -- Fallback: if no profile value, use statDef.max
+        if max == 0 then
             if type(statDef.max) == "number" then
                 max = statDef.max
+            elseif type(statDef.max) == "table" then
+                -- If max is a reference to another stat (e.g., { ref = "MAX_MANA" })
+                if statDef.max.ref then
+                    local maxStatDef = StatRegistry:Get(statDef.max.ref)
+                    max = (maxStatDef and maxStatDef.base) or 0
+                -- If max is a formula expression with expr and default fields, use the default
+                elseif statDef.max.expr and statDef.max.default then
+                    max = tonumber(statDef.max.default) or 0
+                else
+                    max = 0
+                end
+            else
+                max = 0
             end
         end
     end
@@ -123,7 +167,8 @@ function Resources:Set(resId, value)
     local key = string.upper(tostring(resId or "")); if key == "" then return 0, 0 end
 
     -- compute current max from profile (auras/gear already applied to profile stats)
-    local max = (profile.stats[key] and profile.stats[key]:GetMaxValue(profile)) or 0
+    local stat = profile and profile.GetStat and profile:GetStat(key)
+    local max = (stat and stat:GetMaxValue(profile)) or 0
     local v   = math.floor(tonumber(value) or 0)
     if max > 0 then v = math.max(0, math.min(v, max)) else v = math.max(0, v) end
 
@@ -139,6 +184,11 @@ function Resources:Set(resId, value)
             if RPE.Debug and RPE.Debug.Internal then
                 RPE.Debug:Internal(("[Resources:Set] Refreshed PlayerUnitWidget after %s change: %d -> %d"):format(key, prev, v))
             end
+        end
+        -- Refresh the ActionBarWidget to update spell availability states
+        local ABW = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+        if ABW and ABW.RefreshRequirements then
+            ABW:RefreshRequirements()
         end
     end
 
@@ -190,6 +240,12 @@ local function evalCostAmount(spell, cost, profile)
     if cost.perRank and cost.perRank ~= "" and rank > 1 then
         perVal = (Formula:Roll(cost.perRank, profile) or 0) * (rank - 1)
     end
+    
+    if RPE and RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(("[evalCostAmount] expr='%s' base=%d perRank='%s' perVal=%d rank=%d result=%d"):format(
+            tostring(cost.amount or ""), base, tostring(cost.perRank or ""), perVal, rank, base + perVal))
+    end
+    
     return base + perVal
 end
 
@@ -271,7 +327,7 @@ function Resources:GetDisplayedResources(profile)
     -- If no custom display settings, use defaults
     if #displayed == 0 then
         displayed = { "HEALTH" }
-        if profile and profile.stats and profile.stats["MANA"] then
+        if profile and profile.GetStat and profile:GetStat("MANA") then
             table.insert(displayed, "MANA")
         end
     end
@@ -304,12 +360,13 @@ end
 function Resources:CanAfford(costs, spell, profile)
     profile = profile or RPE.Profile.DB.GetOrCreateActive()
     local usedResources = self:GetUsedResources(profile)
+    local alwaysCheck = { HEALTH = true, ACTION = true, BONUS_ACTION = true, REACTION = true }
     
     for _, c in ipairs(costs or {}) do
         local resId = string.upper(c.resource)
         
-        -- Only check costs for resources the player "uses"
-        if usedResources[resId] then
+        -- Check costs for action economy resources OR resources the player "uses"
+        if alwaysCheck[resId] or usedResources[resId] then
             local need
             if spell then
                 need = evalCostAmount(spell, c, profile)
@@ -334,15 +391,54 @@ function Resources:Spend(costs, when, spell, profile)
         if not c.when or c.when == when then
             local amt = spell and evalCostAmount(spell, c, profile) or (tonumber(c.amount) or 0)
             local key = string.upper(c.resource)
+            local prev = self.pool[key] or 0
             self.pool[key] = math.max(0, (self.pool[key] or 0) - amt)
-            local max = (profile.stats[key] and profile.stats[key]:GetMaxValue(profile)) or 0
-            -- RPE.Debug:Print(("Spent %s %s → %d/%d remaining"):format(
-            --     tostring(amt), key, self.pool[key], max
-            -- ))
+            local stat = profile and profile.GetStat and profile:GetStat(key)
+            local max = (stat and stat:GetMaxValue(profile)) or 0
+            
+            if RPE and RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal(("[Resources:Spend] Spent %d %s during %s: %d → %d"):format(
+                    amt, key, when or "unknown", prev, self.pool[key]))
+            end
+            
+            -- Special handling for HEALTH: update the player unit and broadcast the change
+            if key == "HEALTH" then
+                local ev = RPE.Core.ActiveEvent
+                if ev then
+                    local myId = ev:GetLocalPlayerUnitId()
+                    if myId then
+                        local playerUnit = nil
+                        for _, u in pairs(ev.units) do
+                            if tonumber(u.id) == tonumber(myId) then
+                                playerUnit = u
+                                break
+                            end
+                        end
+                        if playerUnit then
+                            playerUnit.hp = self.pool[key]
+                            if RPE and RPE.Debug and RPE.Debug.Internal then
+                                RPE.Debug:Internal(("[Resources:Spend] Updated player unit health: %d → %d"):format(
+                                    prev, self.pool[key]))
+                            end
+                            -- Broadcast the health change
+                            local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+                            if B and B.UpdateUnitHealth then
+                                B:UpdateUnitHealth(myId, playerUnit.hp, playerUnit.hpMax)
+                            end
+                        end
+                    end
+                end
+            end
+            
             refresh = true
         end
     end
-    if refresh then RPE.Core.Windows.PlayerUnitWidget:Refresh() end
+    if refresh then 
+        local PUW = RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget
+        if PUW and PUW.Refresh then PUW:Refresh() end
+        local ABW = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+        if ABW and ABW.RefreshRequirements then ABW:RefreshRequirements() end
+    end
 end
 
 
@@ -354,12 +450,18 @@ function Resources:Refund(costs, spell, profile)
         if c.refundOnInterrupt then
             local amt = evalCostAmount(spell, c, profile)
             local key = string.upper(c.resource)
-            local max = profile.stats[key] and profile.stats[key]:GetMaxValue(profile) or 0
+            local stat = profile and profile.GetStat and profile:GetStat(key)
+            local max = stat and stat:GetMaxValue(profile) or 0
             self.pool[key] = math.min(max, (self.pool[key] or 0) + amt)
             refresh = true
         end
     end
-    if refresh then RPE.Core.Windows.PlayerUnitWidget:Refresh() end
+    if refresh then 
+        local PUW = RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget
+        if PUW and PUW.Refresh then PUW:Refresh() end
+        local ABW = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+        if ABW and ABW.RefreshRequirements then ABW:RefreshRequirements() end
+    end
 end
 
 --- Regenerate each turn according to recovery.
@@ -373,17 +475,18 @@ function Resources:OnPlayerTurnStart()
     local refresh = false
     
     -- First, regenerate resources that are in profile.stats
-    for id, stat in pairs(profile.stats or {}) do
-        if stat.category == "RESOURCE" then
-            local cur, max = self.pool[id] or 0, stat:GetMaxValue(profile)
+    for _, stat in pairs(profile.stats or {}) do
+        if stat and stat.category == "RESOURCE" then
+            local statId = string.upper(tostring(stat.id or ""))
+            local cur, max = self.pool[statId] or 0, stat:GetMaxValue(profile)
             local regen = stat:GetRecovery(profile) or 0
 
             if regen ~= 0 then
                 -- Round to nearest integer before clamping
                 local newVal = math.floor(cur + regen + 0.5)
-                self.pool[id] = math.min(max, newVal)
+                self.pool[statId] = math.min(max, newVal)
 
-                if id == "HEALTH" then
+                if statId == "HEALTH" then
                     local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
                     if B and B.UpdateUnitHealth then
                         -- Calculate total absorption from player's absorption shields
@@ -402,7 +505,7 @@ function Resources:OnPlayerTurnStart()
                                 end
                             end
                         end
-                        B:UpdateUnitHealth(nil, self.pool[id], max, totalAbsorption)
+                        B:UpdateUnitHealth(nil, self.pool[statId], max, totalAbsorption)
                     end
                 end
 

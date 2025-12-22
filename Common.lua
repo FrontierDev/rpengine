@@ -26,6 +26,7 @@ Common.InlineIcons = {
     Cancel = "|TInterface\\Buttons\\UI-GroupLoot-Pass-Up:12:12|t",
     Dice = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\dice.png:12:12|t",
     Combat = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\parry.png:12:12|t",
+    Target = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\target.png:12:12|t",
     Socket_Red = ("|T%s:12:12|t"):format(Common.SocketTextures.Red),
     Socket_Blue = ("|T%s:12:12|t"):format(Common.SocketTextures.Blue),
     Socket_Yellow = ("|T%s:12:12|t"):format(Common.SocketTextures.Yellow),
@@ -703,5 +704,37 @@ function Common:DebugTRP3Lookup(unit)
         end
     end
 
+    return out
+end
+
+--- Deep-merge any number of tables into a new table.
+-- Later tables override earlier values. Table values are merged recursively.
+-- Non-table values are replaced by later values. Inputs are not mutated.
+-- @usage local merged = Common:MergeTables(tbl1, tbl2, tbl3)
+function Common:MergeTables(...)
+    local function isTable(t) return type(t) == "table" end
+
+    local function mergeInto(dst, src)
+        for k, v in pairs(src) do
+            if isTable(v) and isTable(dst[k]) then
+                mergeInto(dst[k], v)
+            elseif isTable(v) then
+                -- copy the table to avoid aliasing the source
+                local copy = {}
+                mergeInto(copy, v)
+                dst[k] = copy
+            else
+                dst[k] = v
+            end
+        end
+    end
+
+    local out = {}
+    for i = 1, select('#', ...) do
+        local t = select(i, ...)
+        if isTable(t) then
+            mergeInto(out, t)
+        end
+    end
     return out
 end

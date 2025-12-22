@@ -21,9 +21,17 @@ RPE_UI.Prefabs.HoverStatEntry = HoverStatEntry
 
 local function resolveBound(bound, profile)
     if type(bound) == "number" then return bound end
-    if type(bound) == "table" and bound.ref and profile and profile.stats then
-        local ref = profile.stats[bound.ref]
-        if ref and ref.GetValue then return ref:GetValue(profile) end
+    if type(bound) == "table" and bound.ref and profile then
+        -- Prefer profile:GetStat (respects active datasets), fallback to scanning flat profile.stats
+        if type(profile.GetStat) == "function" then
+            local ref = profile:GetStat(bound.ref)
+            if ref and ref.GetValue then return ref:GetValue(profile) end
+        end
+        if profile.stats then
+            for _, st in pairs(profile.stats) do
+                if st and st.id == bound.ref and st.GetValue then return st:GetValue(profile) end
+            end
+        end
     end
     return nil
 end

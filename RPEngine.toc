@@ -21,6 +21,10 @@ Data/Export.lua
 
 ## Classic RPT/RPE Dataset
 Data/Classic/Stats.lua
+Data/Classic/Items.lua
+Data/Classic/Spells.lua
+Data/Classic/Auras.lua
+Data/Classic/NPC.lua
 Data/DefaultClassic.lua
 
 ## DnD 5th Edition Dataset
@@ -197,6 +201,3 @@ UI/Windows/ChanterReceiverWindow.lua
 UI/Windows/TrainerWindow.lua
 UI/Windows/ShopWindow.lua
 UI/Windows/SetupWindow.lua
-
-## Test
-Test/TestStats.lua

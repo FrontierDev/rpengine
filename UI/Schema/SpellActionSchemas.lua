@@ -65,6 +65,7 @@ Schemas.APPLY_AURA = {
         { id="perRank", label="Per Rank", type="number", required=false, min=0, max=9999, step=1, default=0 },
     },
 }
+
 -- REDUCE_COOLDOWN ------------------------------------------------------------
 Schemas.REDUCE_COOLDOWN = {
     key    = "REDUCE_COOLDOWN",
@@ -90,6 +91,15 @@ Schemas.HIDE = {
     },
 }
 
+-- GAIN_RESOURCE -----------------------------------------------------------------------
+Schemas.GAIN_RESOURCE = {
+    key    = "GAIN_RESOURCE",
+    fields = {
+        { id="auraId",   label="Resource ID", type="input", required=true, placeholder="e.g. MANA or STAM" },
+        { id="amount",   label="Amount",      type="input", required=true, placeholder="e.g. 5 or 1d4+STAT" },
+    },
+}
+
 -- REMOVE_AURA ----------------------------------------------------------------
 Schemas.REMOVE_AURA = {
     key    = "REMOVE_AURA",
@@ -105,6 +115,14 @@ Schemas.SHIELD = {
         { id="amount",  label="Amount",  type="input",  required=true, placeholder="e.g. 10 or 1d10+PROF" },
         { id="perRank", label="Per Rank", type="number", required=false, min=0, max=9999, step=1, default=0 },
         { id="duration", label="Duration (turns)", type="number", required=false, min=1, max=100, step=1, default=1 },
+    },
+}
+
+-- INTERRUPT ---------------------------------------------------------------
+Schemas.INTERRUPT = {
+    key    = "INTERRUPT",
+    fields = {
+        -- INTERRUPT has no arguments; it interrupts the target unit's spell casting
     },
 }
 

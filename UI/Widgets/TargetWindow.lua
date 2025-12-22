@@ -34,6 +34,8 @@ local IconBtn  = RPE_UI.Elements.IconButton
 ---@field _onConfirm fun(keys: string[])
 ---@field _onCancel fun()
 ---@field _casterUnitId integer|nil Unit ID of the caster (for team context when casting as another unit)
+---@field _referenceTeam integer The team ID used to determine allies vs enemies
+---@field _targeter string|nil The targeter name (e.g., "RAID_MARKER") for conditional UI behavior
 local TargetWindow = {}
 _G.RPE_UI.Windows.TargetWindow = TargetWindow
 TargetWindow.__index = TargetWindow
@@ -66,6 +68,18 @@ local function getSelfKey()
 end
 
 local function countSel(t) local c=0; for _ in pairs(t) do c=c+1 end; return c end
+
+local function unitMatchesFlags(unit, flags, referenceTeam)
+    -- Check if unit matches the provided flags (A=ally, E=enemy, etc.)
+    if not flags or not next(flags) then return true end
+    
+    local isAlly = unit.team == referenceTeam
+    if flags["A"] and isAlly then return true end
+    if flags["E"] and not isAlly then return true end
+    if flags["AM"] and isAlly then return true end  -- Ally but not self
+    if flags["EM"] and not isAlly then return true end
+    return false
+end
 
 -- ---------------------------------------------------------------------------
 -- UI
@@ -202,6 +216,7 @@ function TargetWindow:BuildUI(opts)
     self._selected, self._flags = {}, {}
     self._maxTargets, self._currentTab = 1, "ALLIES"
     self._unitProvider = function() return {}, {} end
+    self._portraitsByKey = {}  -- Map unit key -> portrait frame for updating visuals
 
     if RPE_UI.Common and RPE_UI.Common.RegisterWindow then
         RPE_UI.Common:RegisterWindow(self)
@@ -218,32 +233,33 @@ function TargetWindow:Open(opts)
     self._flags       = parseFlags(opts.flags or {})
     self._maxTargets  = tonumber(opts.maxTargets or 1) or 1
     self._casterUnitId = tonumber(opts.casterUnitId) or nil
+    self._targeter    = opts.targeter or nil
+    
+    -- Determine and store the reference team
+    local ev = RPE.Core.ActiveEvent
+    self._referenceTeam = 1
+    if ev and ev.units then
+        if self._casterUnitId then
+            for _, u in pairs(ev.units) do
+                if tonumber(u.id) == self._casterUnitId then
+                    self._referenceTeam = u.team or 1
+                    break
+                end
+            end
+        else
+            if ev.localPlayerKey and ev.units[ev.localPlayerKey] then
+                self._referenceTeam = ev.units[ev.localPlayerKey].team or 1
+            end
+        end
+    end
+    
     self._unitProvider = opts.unitProvider or function()
         local ev = RPE.Core.ActiveEvent
         if not ev or not ev.units then return {}, {} end
         local allies, enemies = {}, {}
         
-        -- Determine the reference team: if casterUnitId is set, use that unit's team; otherwise use local player's team
-        local referenceTeam = 1
-        if self._casterUnitId then
-            local casterUnit = nil
-            for _, u in pairs(ev.units) do
-                if tonumber(u.id) == self._casterUnitId then
-                    casterUnit = u
-                    break
-                end
-            end
-            if casterUnit then
-                referenceTeam = casterUnit.team or 1
-            end
-        else
-            if ev.localPlayerKey and ev.units[ev.localPlayerKey] then
-                referenceTeam = ev.units[ev.localPlayerKey].team or 1
-            end
-        end
-        
         for _, u in pairs(ev.units) do
-            if u.team == referenceTeam then table.insert(allies, u)
+            if u.team == self._referenceTeam then table.insert(allies, u)
             else table.insert(enemies, u) end
         end
         return allies, enemies
@@ -318,6 +334,10 @@ function TargetWindow:_RebuildGrid()
         local c = self.grid.children[i]; if c.Destroy then c:Destroy() end
         table.remove(self.grid.children, i)
     end
+    
+    -- Clear portrait map
+    wipe(self._portraitsByKey)
+    
     local ev = RPE.Core.ActiveEvent
     if not ev or not ev.units then return end
 
@@ -401,22 +421,64 @@ function TargetWindow:_RebuildGrid()
                     portrait:SetDisabled(false)
                     portrait.frame:EnableMouse(true)
                     
+                    -- Store portrait reference for later updates
+                    self._portraitsByKey[u.key] = portrait.frame
+                    
                     -- Override OnClick to prevent unit control activation (only target selection in TargetWindow)
                     portrait.frame:SetScript("OnClick", function()
                         -- Do nothing; target selection handled by OnMouseDown
                     end)
                     
                     portrait.frame:SetScript("OnMouseDown", function()
-                        if self._selected[u.key] then
+                        local isDeselecting = self._selected[u.key]
+                        local currentEv = RPE.Core.ActiveEvent
+                        
+                        if isDeselecting then
                             self._selected[u.key] = nil
                             portrait.frame:SetAlpha(0.5)
+                            
+                            -- If using RAID_MARKER targeter and unit has a raid marker, deselect all with same marker
+                            if self._targeter == "RAID_MARKER" and u.raidMarker and currentEv and currentEv.units then
+                                for _, otherU in pairs(currentEv.units) do
+                                    if otherU.raidMarker == u.raidMarker and otherU.key ~= u.key then
+                                        self._selected[otherU.key] = nil
+                                        -- Update visual of related portrait
+                                        if self._portraitsByKey[otherU.key] then
+                                            self._portraitsByKey[otherU.key]:SetAlpha(0.5)
+                                        end
+                                    end
+                                end
+                            end
                         else
-                            if countSel(self._selected) >= self._maxTargets then
+                            -- Check if unit matches the flags
+                            if not unitMatchesFlags(u, self._flags, self._referenceTeam) then
+                                UIErrorsFrame:AddMessage("That target is not valid for this spell.", 1,1,0)
+                                return
+                            end
+                            
+                            -- For RAID_MARKER, ignore maxTargets limit; for others, enforce it
+                            if self._targeter ~= "RAID_MARKER" and countSel(self._selected) >= self._maxTargets then
                                 UIErrorsFrame:AddMessage("You cannot select any more targets.", 1,1,0)
                                 return
                             end
                             self._selected[u.key] = true
                             portrait.frame:SetAlpha(1.0)
+                            
+                            -- If using RAID_MARKER targeter and unit has a raid marker, select all with same marker
+                            if self._targeter == "RAID_MARKER" and u.raidMarker and currentEv and currentEv.units then
+                                for _, otherU in pairs(currentEv.units) do
+                                    if otherU.raidMarker == u.raidMarker and otherU.key ~= u.key then
+                                        -- Check if this related unit also matches the flags
+                                        if unitMatchesFlags(otherU, self._flags, self._referenceTeam) then
+                                            self._selected[otherU.key] = true
+                                            -- Update visual of related portrait
+                                            if self._portraitsByKey[otherU.key] then
+                                                self._portraitsByKey[otherU.key]:SetAlpha(1.0)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
                         end
                         self:_updateCounters()
                     end)

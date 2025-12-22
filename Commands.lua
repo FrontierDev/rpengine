@@ -144,6 +144,44 @@ SlashCmdList["RPE"] = function(msg)
                 Clipboard:Show()
             else
         end
+        elseif arg == "npcinfo" then
+            -- Print information about the current target (safe calls)
+            local exists = false
+            pcall(function() exists = UnitExists("target") end)
+            if not exists then
+                print("No target selected.")
+                return
+            end
+
+            local ok, name = pcall(UnitName, "target")
+            if not ok or not name then name = "(unknown)" end
+
+            local guid
+            ok, guid = pcall(UnitGUID, "target")
+            if not ok then guid = "(no GUID)" end
+
+            local npcId
+            if type(guid) == "string" then
+                -- try common GUID patterns to extract an NPC id
+                npcId = guid:match("%-(%d+)%-%x+$") or guid:match("%-(%d+)$")
+            end
+
+            local level = "?"
+            ok, level = pcall(UnitLevel, "target") if not ok then level = "?" end
+
+            local classif = "?"
+            ok, classif = pcall(UnitClassification, "target") if not ok then classif = "?" end
+
+            local ctype = "?"
+            ok, ctype = pcall(UnitCreatureType, "target") if not ok then ctype = "?" end
+
+            local hp, hpmax = "?", "?"
+            ok, hp = pcall(UnitHealth, "target") if not ok then hp = "?" end
+            ok, hpmax = pcall(UnitHealthMax, "target") if not ok then hpmax = "?" end
+
+            print(string.format("Target: %s | level=%s | guid=%s | npcId=%s | type=%s | classification=%s | HP=%s/%s",
+                tostring(name), tostring(level), tostring(guid), tostring(npcId or ""), tostring(ctype), tostring(classif), tostring(hp), tostring(hpmax)
+            ))
     else
     end
 end

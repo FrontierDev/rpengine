@@ -95,7 +95,19 @@ local function buildRuleFunc(expr, depth)
     return function(profile)
         local env = {
             __lookup = function(id)
-                local s = profile and profile.stats and profile.stats[id]
+                local s = nil
+                if profile and profile.GetStat then
+                    s = profile:GetStat(id)
+                else
+                    if profile and profile.stats then
+                        for _, st in pairs(profile.stats) do
+                            if st and st.id == id then
+                                s = st
+                                break
+                            end
+                        end
+                    end
+                end
                 if not s then return 0 end
                 return s:GetValue(profile)
             end,
@@ -230,8 +242,13 @@ function CharacterStat:_resolveBase(profile)
     if v.kind == "literal" then
         return tonumber(v.value) or 0
     elseif v.kind == "ref" then
-        -- Reference to another stat: get its current value
-        local s = profile and profile.stats and profile.stats[v.ref]
+        -- Reference to another stat: get its current value (respect active datasets)
+        local s = profile and profile.GetStat and profile:GetStat(v.ref) or nil
+        if not s and profile and profile.stats then
+            for _, st in pairs(profile.stats) do
+                if st and st.id == v.ref then s = st; break end
+            end
+        end
         return s and s:GetValue(profile) or (tonumber(v.default) or 0)
     elseif v.kind == "rule" then
         -- Look up rule string from active ruleset
@@ -308,7 +325,12 @@ local function resolveBoundVariant(self, v, profile, cachePrefix)
     if v.kind == "number" then
         return tonumber(v.value) or nil
     elseif v.kind == "ref" then
-        local s = profile and profile.stats and profile.stats[v.ref]
+        local s = profile and profile.GetStat and profile:GetStat(v.ref) or nil
+        if not s and profile and profile.stats then
+            for _, st in pairs(profile.stats) do
+                if st and st.id == v.ref then s = st; break end
+            end
+        end
         return s and s:GetValue(profile) or nil
     elseif v.kind == "rule" then
         local rules = RPE.ActiveRules and RPE.ActiveRules.rules
@@ -541,7 +563,12 @@ function CharacterStat:GetMaxValue(profile)
     -- If max is a ref, defer to that stat unchanged
     if type(self._maxVariant) == "table" and self._maxVariant.kind == "ref" then
         local refId = self._maxVariant.ref
-        local s = profile and profile.stats and profile.stats[refId]
+        local s = profile and profile.GetStat and profile:GetStat(refId) or nil
+        if not s and profile and profile.stats then
+            for _, st in pairs(profile.stats) do
+                if st and st.id == refId then s = st; break end
+            end
+        end
         return s and s:GetValue(profile) or 0
     end
 
@@ -576,7 +603,11 @@ end
 function RPE.Stats:Get(id)
     local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
     if not profile then return nil end
-    return profile.stats and profile.stats[id]
+    if profile and profile.GetStat then return profile:GetStat(id) end
+    if profile and profile.stats then
+        for _, st in pairs(profile.stats) do if st and st.id == id then return st end end
+    end
+    return nil
 end
 
 --- Public getter for recovery (mirrors GetValue pattern, but only returns the configured recovery rate/value).

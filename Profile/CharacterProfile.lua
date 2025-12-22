@@ -13,25 +13,6 @@ local CharacterStat = (RPE.Stats and RPE.Stats.CharacterStat) or error("Characte
 ---@field spec string           -- current specialization
 ---@field recipes string[]      -- list of known recipe IDs
 
----@class CharacterProfile
----@field name string
----@field stats table<string, CharacterStat>   -- keyed by stat id
----@field items table<number, {id:string, qty:number, mods:table|nil}>
----@field equipment table<string, string>      -- equipment: keyed by slot, value = item id
----@field traits string[]                      -- list of trait (aura) IDs
----@field race string|nil                      -- selected race id
----@field raceTraits string[]|nil              -- list of racial trait IDs
----@field class string|nil                     -- selected class id
----@field classTraits string[]|nil             -- list of class trait IDs
----@field notes string|nil
----@field createdAt number
----@field updatedAt number
----@field paletteName string
----@field resourceDisplaySettings table<string, {use: string[], show: string[]}>  -- keyed by dataset combination; use = resources checked for spell costs, show = resources displayed
----@field professions {                       -- always present
----   cooking: CharacterProfession,
----   fishing: CharacterProfession,
----   firstaid: CharacterProfession }        -- player-chosen
 local CharacterProfile = {}
 CharacterProfile.__index = CharacterProfile
 RPE.Profile.CharacterProfile = CharacterProfile
@@ -42,13 +23,13 @@ local function normalizeStats(statsIn)
     local out = {}
     if type(statsIn) ~= "table" then return out end
 
-    for id, v in pairs(statsIn) do
+    for key, v in pairs(statsIn) do
         if type(v) == "number" then
             -- Legacy: plain base value
-            out[id] = CharacterStat:New(id, "PRIMARY", v)
+            out[key] = CharacterStat:New(key, "PRIMARY", v)
         elseif type(v) == "table" then
             -- Serialized CharacterStat-style table
-            out[id] = CharacterStat.FromTable(v)
+            out[key] = CharacterStat.FromTable(v)
         end
     end
     return out
@@ -152,12 +133,45 @@ function CharacterProfile:New(name, opts)
         spells      = opts.spells or {}, 
         actionBar   = opts.actionBar or {},
         resourceDisplaySettings = opts.resourceDisplaySettings or {},
+        _initializing = true,  -- Flag to suppress UI callbacks during initialization
     }, self)
     
     -- Ensure resourceDisplaySettings has proper defaults if empty
     self:_InitializeResourceDisplaySettings()
 
+    -- Normalize any saved item ids to canonical forms
+    pcall(function()
+        if type(o.NormalizeSavedIds) == "function" then pcall(o.NormalizeSavedIds, o) end
+    end)
+
+    o._initializing = false  -- Mark initialization complete
     return o
+end
+
+--- Convert any saved item ids in `items` and `equipment` to the registry's canonical id form.
+function CharacterProfile:NormalizeSavedIds()
+    local reg = _G.RPE and _G.RPE.Core and _G.RPE.Core.ItemRegistry
+    if not reg or type(reg.Get) ~= "function" then return end
+
+    -- Normalize inventory slot ids
+    if type(self.items) == "table" then
+        for _, slot in ipairs(self.items) do
+            if slot and type(slot.id) == "string" then
+                local obj = reg:Get(slot.id)
+                if obj and obj.id then slot.id = obj.id end
+            end
+        end
+    end
+
+    -- Normalize equipment mapping
+    if type(self.equipment) == "table" then
+        for s, id in pairs(self.equipment) do
+            if type(id) == "string" then
+                local obj = reg:Get(id)
+                if obj and obj.id then self.equipment[s] = obj.id end
+            end
+        end
+    end
 end
 
 --- Normalize resource display settings, converting old array format to new {use, show} format.
@@ -263,13 +277,17 @@ end
 function CharacterProfile:RecalculateEquipmentStats()
     RPE.Debug:Internal(string.format("Recalculating equipment stats for profile: %s", self.name or "?"))
 
-    -- Clear all existing equip mods
-    RPE.Core.StatModifiers.equip = {}
+    -- Ensure the global structure exists
+    RPE.Core.StatModifiers.equip = RPE.Core.StatModifiers.equip or {}
+
+    -- Clear only this profile's equip mods (don't clobber other profiles)
+    local pid = self.name
+    RPE.Core.StatModifiers.equip[pid] = {}
 
     for slot, itemId in pairs(self.equipment or {}) do
         local item = RPE.Core.ItemRegistry and RPE.Core.ItemRegistry:Get(itemId)
         if item then
-            -- Re-apply its equip mods
+            -- Re-apply its equip mods into this profile's table
             for k, v in pairs(item.data or {}) do
                 if type(k) == "string" and k:match("^stat%_") then
                     local statId = k:sub(6) -- strip "stat_"
@@ -279,7 +297,12 @@ function CharacterProfile:RecalculateEquipmentStats()
                         if stat then
                             -- Check ruleset
                             if RPE.ActiveRules and RPE.ActiveRules:IsStatEnabled(statId, stat.category) then
-                                stat:SetEquipMod((stat.equipMod or 0) + delta)
+                                local mods = RPE.Core.StatModifiers.equip[pid]
+                                mods[statId] = (mods[statId] or 0) + delta
+                                -- Only trigger UI updates if we're not initializing
+                                if not self._initializing and _G.RPE.Core.Windows.StatisticSheet then
+                                    _G.RPE.Core.Windows.StatisticSheet.OnStatChanged(statId)
+                                end
                             end
                         end
                     end
@@ -307,57 +330,88 @@ function CharacterProfile:SetPaletteName(name)
 end
 
 -- --- Stat API (object-based) -----------------------------------------------
---- Get or create a stat object.
----@param id string
+
+--- Get or create a stat object using composite key sourceDataset.statId.
+---@param statId string
 ---@param category StatCategory|nil
+---@param sourceDataset string|nil
 ---@return CharacterStat
-function CharacterProfile:GetStat(id, category)
-    local s = self.stats[id]
-    if not s then
-        s = CharacterStat:New(id, category or "PRIMARY", 0)
-        self.stats[id] = s
+
+--- Get or create a stat object using composite key sourceDataset.statId.
+--- If sourceDataset is nil, search active datasets in order and return the first found.
+---@param statId string
+---@param category StatCategory|nil
+---@param sourceDataset string|nil
+---@return CharacterStat|nil
+function CharacterProfile:GetStat(statId, category, sourceDataset)
+    assert(statId and type(statId) == "string", "GetStat: statId required")
+    local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+    if not sourceDataset then
+        -- Search active datasets in order
+        local active = (DatasetDB and DatasetDB.GetActiveNamesForCurrentCharacter and DatasetDB:GetActiveNamesForCurrentCharacter()) or {}
+        for _, ds in ipairs(active) do
+            local key = ds .. "." .. statId
+            local s = self.stats[key]
+            if s then return s end
+        end
+        return nil
+    else
+        local key = sourceDataset .. "." .. statId
+        local s = self.stats[key]
+        if not s then
+            s = CharacterStat:New(statId, category or "PRIMARY", 0)
+            s.sourceDataset = sourceDataset
+            self.stats[key] = s
+        end
+        return s
     end
-    return s
 end
 
 --- Convenience: set base value (persisted).
-function CharacterProfile:SetStatBase(id, value, category)
-    local s = self:GetStat(id, category)
+
+function CharacterProfile:SetStatBase(statId, value, category, sourceDataset)
+    local s = self:GetStat(statId, category, sourceDataset)
     s:SetBase(tonumber(value) or 0)
     touch(self)
 end
 
 --- Convenience: set equipment modifier (transient).
-function CharacterProfile:SetStatEquipMod(id, value)
-    local s = self:GetStat(id)
+
+function CharacterProfile:SetStatEquipMod(statId, value, sourceDataset)
+    local s = self:GetStat(statId, nil, sourceDataset)
     s:SetEquipMod(tonumber(value) or 0)
 end
 
 --- Convenience: set aura modifier (transient).
-function CharacterProfile:SetStatAuraMod(id, value)
-    local s = self:GetStat(id)
+
+function CharacterProfile:SetStatAuraMod(statId, value, sourceDataset)
+    local s = self:GetStat(statId, nil, sourceDataset)
     s:SetAuraMod(tonumber(value) or 0)
 end
 
 --- Convenience: effective value (clamped).
-function CharacterProfile:GetStatValue(id)
-    local s = self.stats[id]
-    return s and s:GetValue(self) or 0
+
+
+function CharacterProfile:GetStatValue(statId, sourceDataset)
+    local stat = self:GetStat(statId, nil, sourceDataset)
+    return stat and stat:GetValue(self) or 0
 end
 
 --- Clear all transient modifiers (equipment + auras).
+
 function CharacterProfile:ClearTransientMods()
     for _, s in pairs(self.stats) do
         s:SetEquipMod(0)
-        s:SetAuraMod(self, 0)   -- <<< pass profile
+        s:SetAuraMod(self, 0)
     end
 end
 
 --- Optional: export just base values for UI/debug.
+
 function CharacterProfile:GetBaseStatTable()
     local t = {}
-    for id, s in pairs(self.stats) do
-        t[id] = s.base
+    for key, s in pairs(self.stats) do
+        t[key] = s.base
     end
     return t
 end
@@ -1118,8 +1172,8 @@ end
 ---@return table
 function CharacterProfile:ToTable()
     local statsOut = {}
-    for id, s in pairs(self.stats or {}) do
-        statsOut[id] = s:ToTable()
+    for key, s in pairs(self.stats or {}) do
+        statsOut[key] = s:ToTable()
     end
 
     local itemsOut = {}

@@ -114,9 +114,12 @@ local function _getAvailableResources()
     
     -- Add all other RESOURCE category stats from the active profile
     if profile and profile.stats then
-        for statId, stat in pairs(profile.stats) do
-            if stat and stat.category == "RESOURCE" and not statId:match("^MAX_") and not alwaysInclude[statId] then
-                table.insert(resources, statId)
+        for _, stat in pairs(profile.stats) do
+            if stat and stat.category == "RESOURCE" then
+                local sid = stat.id and tostring(stat.id) or nil
+                if sid and not sid:match("^MAX_") and not alwaysInclude[sid] then
+                    table.insert(resources, sid)
+                end
             end
         end
     end
@@ -668,7 +671,19 @@ function SpellEditorSheet:BuildUI(opts)
                             elseif level == 2 and menuList == "PREVIEW_RANK" then
                                 -- Try to get spell from registry first, fallback to dataset
                                 local spell = entry and self:GetOrReconstructSpell(entry.id)
-                                local maxR  = (spell and spell.maxRanks) or 1
+                                
+                                -- Get maxRanks from dataset definition using unlockLevel and rankInterval
+                                local ds = self:GetEditingDataset()
+                                local spellDef = (ds and ds.spells and entry and ds.spells[entry.id]) or {}
+                                local unlockLevel = tonumber(spellDef.unlockLevel) or 1
+                                local rankInterval = tonumber(spellDef.rankInterval) or 1
+                                
+                                -- If rankInterval is 0, spell doesn't rank up (only 1 rank)
+                                local maxR = 1
+                                if rankInterval > 0 then
+                                    local maxPlayerLevels = tonumber(RPE.ActiveRules:Get("max_player_levels") or 20)
+                                    maxR = math.floor((maxPlayerLevels - unlockLevel) / rankInterval) + 1
+                                end
 
                                 for r = 1, maxR do
                                     UIDropDownMenu_AddButton({
@@ -677,14 +692,9 @@ function SpellEditorSheet:BuildUI(opts)
                                         func = function()
                                             if not spell then return end
 
-                                            -- Clone and force rank
-                                            local cloneTbl = spell:Serialize()
-                                            local SpellCore = _G.RPE and _G.RPE.Core and _G.RPE.Core.Spell
-                                            local tmp = SpellCore and SpellCore.FromTable and SpellCore.FromTable(cloneTbl)
-                                            if tmp then tmp.rank = r end
-
-                                            if tmp and RPE.Common and RPE.Common.ShowTooltip then
-                                                RPE.Common:ShowTooltip(slot.frame, tmp:GetTooltip())
+                                            -- Pass rank directly to GetTooltip instead of modifying the spell object
+                                            if spell and RPE.Common and RPE.Common.ShowTooltip then
+                                                RPE.Common:ShowTooltip(slot.frame, spell:GetTooltip(r))
                                             end
                                         end,
                                     }, level)

@@ -154,13 +154,14 @@ local function _displayToValue(str)
 end
 
 local function _parseMitigation(v)
-    -- Mitigation can be: table with { normal, critical, fail } where each is an expression (literal, stat ref, or formula)
+    -- Mitigation can be: table with { normal, critical, fail, combatText } where each is an expression (literal, stat ref, or formula)
     -- Or nil/empty
     if type(v) == "table" then
         local normal = v.normal or 0
         local critical = v.critical or 0
         local fail = v.fail or 0
-        return { normal = normal, critical = critical, fail = fail }
+        local combatText = v.combatText or "Defend"
+        return { normal = normal, critical = critical, fail = fail, combatText = combatText }
     end
     return nil
 end
@@ -169,7 +170,7 @@ local function _syncStatToProfile(statId, statDef)
     if not (statId and statDef) then return end
     local profile = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DB and _G.RPE.Profile.DB.GetOrCreateActive and _G.RPE.Profile.DB:GetOrCreateActive()
     if not profile then return end
-    local stat = profile:GetStat(statId, statDef.category or "PRIMARY")
+    local stat = profile:GetStat(statId, statDef.category or "PRIMARY", statDef.sourceDataset)
     if not stat then return end
     stat:SetData({
         id=statId, name=statDef.name, category=statDef.category, base=statDef.base, min=statDef.min, max=statDef.max,
@@ -186,6 +187,10 @@ local function _saveStat(ds, statId, v)
     if not (ds and statId and v) then return nil end
     ds.extra = ds.extra or {}; ds.extra.stats = ds.extra.stats or {}
     local ds_name = ds.name or ""
+    local mitigationTable = _parseMitigation(v.mitigation)
+    if mitigationTable then
+        mitigationTable.combatText = (v.mitigationCombatText and v.mitigationCombatText ~= "") and v.mitigationCombatText or "Defend"
+    end
     ds.extra.stats[statId] = {
         id              = statId,
         name            = _trim(v.name or statId),
@@ -199,7 +204,7 @@ local function _saveStat(ds, statId, v)
         tooltip         = v.tooltip or "",
         recovery        = _parseRecovery(v.recovery),
         pct             = (v.pct == 1 or v.pct == true or v.pct == "1") and 1 or 0,
-        mitigation      = _parseMitigation(v.mitigation),
+        mitigation      = mitigationTable,
         defenceName     = v.defenceName or "",
         data            = v.data or {},
         sourceDataset   = ds_name,
@@ -243,10 +248,12 @@ local function _buildEditSchema(statId, def)
     local mitigationNormalValue = ""
     local mitigationCriticalValue = ""
     local mitigationFailValue = ""
+    local mitigationCombatText = "Defend"
     if type(def.mitigation) == "table" then
         mitigationNormalValue = _valueToDisplay(def.mitigation.normal)
         mitigationCriticalValue = _valueToDisplay(def.mitigation.critical)
         mitigationFailValue = _valueToDisplay(def.mitigation.fail)
+        mitigationCombatText = def.mitigation.combatText or "Defend"
     end
     
     -- Determine base value type and values
@@ -298,6 +305,8 @@ local function _buildEditSchema(statId, def)
                 { id="mitigationHeader", label="Damage Reduction (only applies to DEFENSE/RESISTANCE stats)", type="label" },
                 { id="defenceName", label="Defence Name", type="input", default=def.defenceName or "", 
                   hint="Name shown on player reaction widget (e.g., 'Fire Resistance'). If empty, uses stat name." },
+                { id="mitigationCombatText", label="Combat Text", type="input", default=mitigationCombatText, 
+                  hint="Text displayed when this defense is successful (e.g., 'Fire Resistance', 'Parry'). Default: 'Defend'" },
                 { id="mitigationNormalValue", label="Mitigation", type="input", default=mitigationNormalValue, 
                   hint="Expression that modifies incoming damage. $value$ is the damage amount (e.g., $value$*0.5 reduces by 50%, $value$-$stat.ARMOR$ for flat reduction)" },
                 { id="mitigationCriticalValue", label="Crit. Mitigation", type="input", default=mitigationCriticalValue, 
@@ -449,13 +458,17 @@ local function _buildRow(self, idx)
                                     if mitigationNormalValue ~= 0 or mitigationCriticalValue ~= 0 then
                                         values.mitigation = {
                                             normal = mitigationNormalValue,
-                                            critical = mitigationCriticalValue
+                                            critical = mitigationCriticalValue,
+                                            fail = _displayToValue(values.mitigationFailValue or ""),
+                                            combatText = (values.mitigationCombatText and values.mitigationCombatText ~= "") and values.mitigationCombatText or "Defend"
                                         }
                                     else
                                         values.mitigation = nil
                                     end
                                     values.mitigationNormalValue = nil
                                     values.mitigationCriticalValue = nil
+                                    values.mitigationFailValue = nil
+                                    values.mitigationCombatText = nil
                                     values.mitigationHeader = nil
                                     
                                     local ds2 = self:GetEditingDataset()
@@ -596,13 +609,17 @@ function StatEditorSheet:BuildUI(opts)
                 if mitigationNormalValue ~= 0 or mitigationCriticalValue ~= 0 then
                     values.mitigation = {
                         normal = mitigationNormalValue,
-                        critical = mitigationCriticalValue
+                        critical = mitigationCriticalValue,
+                        fail = _displayToValue(values.mitigationFailValue or ""),
+                        combatText = (values.mitigationCombatText and values.mitigationCombatText ~= "") and values.mitigationCombatText or "Defend"
                     }
                 else
                     values.mitigation = nil
                 end
                 values.mitigationNormalValue = nil
                 values.mitigationCriticalValue = nil
+                values.mitigationFailValue = nil
+                values.mitigationCombatText = nil
                 values.mitigationHeader = nil
                 
                 local okId = _saveStat(ds, newStatId, values)

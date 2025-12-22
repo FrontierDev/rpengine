@@ -24,7 +24,7 @@ RPE_UI.Prefabs.SpellGroups = SpellGroups
 -- ---------------------------------------------------------------------------
 local PHASES = { "onStart", "onResolve", "onTick" }
 local LOGIC  = { "ALL", "ANY", "NOT" }
-local ACTION_KEYS_FALLBACK = { "DAMAGE", "HEAL", "APPLY_AURA", "REDUCE_COOLDOWN", "SUMMON", "HIDE" }
+local ACTION_KEYS_FALLBACK = { "DAMAGE", "HEAL", "APPLY_AURA", "GAIN_RESOURCE", "REDUCE_COOLDOWN", "SUMMON", "HIDE", "INTERRUPT" }
 
 -- ---------------------------------------------------------------------------
 -- Utilities
@@ -211,9 +211,7 @@ local function build_field_control(self, parent, a, field)
     }); row:Add(tgt)
 
     local choices = {
-      "CASTER", "SELF", "TARGET", "PRECAST",
-      "ALLY_SINGLE", "ALLY_SINGLE_OR_SELF",
-      "ENEMY_SINGLE", "ENEMY_SINGLE_OR_SELF",
+      "CASTER", "TARGET", "PRECAST",
       "ALL_ALLIES", "ALL_ENEMIES", "ALL_UNITS"
     }
     local dd = Dropdown:New((tgt.frame:GetName() or "RPE_SG").."_Ref", {

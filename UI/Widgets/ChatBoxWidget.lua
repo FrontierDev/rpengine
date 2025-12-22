@@ -1280,6 +1280,101 @@ function ChatBoxWidget:PushCombatMessage(message)
     end
 end
 
+--- Push a player turn start message to the chat log
+-- @param turn number The current turn number
+function ChatBoxWidget:PushPlayerTurnStartMessage(turn)
+    if not self.log then return end
+    
+    local message = string.format("→ Your turn started (Turn %d)", turn)
+    
+    -- Get textBonus color from palette (default green)
+    local r, g, b = 0.55, 0.95, 0.65
+    if RPE_UI and RPE_UI.Colors and RPE_UI.Colors.Get then
+        local pr, pg, pb, pa = RPE_UI.Colors.Get("textBonus")
+        if pr then r, g, b = pr, pg, pb end
+    end
+    
+    table.insert(self._chatHistory, {
+        text = message,
+        r = r,
+        g = g,
+        b = b,
+        ctype = "COMBAT",
+        level = "Info",
+    })
+    
+    local shouldShow = true
+    if self._filterMode and self._chatFilters then
+        shouldShow = not self._chatFilters["COMBAT"]
+    end
+    if self.currentTab == "Chat" and shouldShow then
+        self.log:AddMessage(message, r, g, b)
+    end
+end
+
+--- Push a player turn end message to the chat log
+function ChatBoxWidget:PushPlayerTurnEndMessage()
+    if not self.log then return end
+    
+    local message = "← Your turn ended"
+    
+    -- Get textMalus color from palette (default red)
+    local r, g, b = 0.95, 0.55, 0.55
+    if RPE_UI and RPE_UI.Colors and RPE_UI.Colors.Get then
+        local pr, pg, pb, pa = RPE_UI.Colors.Get("textMalus")
+        if pr then r, g, b = pr, pg, pb end
+    end
+    
+    table.insert(self._chatHistory, {
+        text = message,
+        r = r,
+        g = g,
+        b = b,
+        ctype = "COMBAT",
+        level = "Info",
+    })
+    
+    local shouldShow = true
+    if self._filterMode and self._chatFilters then
+        shouldShow = not self._chatFilters["COMBAT"]
+    end
+    if self.currentTab == "Chat" and shouldShow then
+        self.log:AddMessage(message, r, g, b)
+    end
+end
+
+--- Push a summoned unit turn start message to the chat log
+-- @param unitName string The name of the summoned unit
+function ChatBoxWidget:PushSummonedTurnStartMessage(unitName)
+    if not self.log then return end
+    
+    local message = string.format("→ %s's turn started", unitName or "Summoned unit")
+    
+    -- Get textModified color from palette (default blue)
+    local r, g, b = 0.55, 0.75, 0.95
+    if RPE_UI and RPE_UI.Colors and RPE_UI.Colors.Get then
+        local pr, pg, pb, pa = RPE_UI.Colors.Get("textModified")
+        if pr then r, g, b = pr, pg, pb end
+    end
+    
+    table.insert(self._chatHistory, {
+        text = message,
+        r = r,
+        g = g,
+        b = b,
+        ctype = "COMBAT",
+        level = "Info",
+    })
+    
+    local shouldShow = true
+    if self._filterMode and self._chatFilters then
+        shouldShow = not self._chatFilters["COMBAT"]
+    end
+    if self.currentTab == "Chat" and shouldShow then
+        self.log:AddMessage(message, r, g, b)
+    end
+end
+
 --- Push a debug message to the Debug tab of the chat log
 -- @param message string The debug message text
 -- @param level string "Info", "Warning", "Error", or "Dice" (defaults to "Info")

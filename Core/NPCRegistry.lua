@@ -141,6 +141,7 @@ function NPCRegistry:BuildUnitSeed(npcId, overrides)
         active     = overrides.active ~= nil and overrides.active or (proto.active ~= nil and proto.active or false),
         hidden     = overrides.hidden ~= nil and overrides.hidden or (proto.hidden ~= nil and proto.hidden or false),
         flying     = overrides.flying ~= nil and overrides.flying or (proto.flying ~= nil and proto.flying or false),
+        summonType = overrides.summonType or proto.summonType or "None",
         stats      = {},
         spells     = (type(proto.spells) == "table") and proto.spells or nil,
     }
@@ -151,20 +152,6 @@ function NPCRegistry:BuildUnitSeed(npcId, overrides)
     end
     if type(overrides.stats) == "table" then 
         _copyShallow(seed.stats, overrides.stats) 
-    end
-
-    -- If rules define 'npc_stats', ensure all listed keys exist so Unit:SeedNPCStats
-    -- won't overwrite provided values. Missing ones will be left absent so Unit can seed them.
-    local rules = RPE.ActiveRules
-    if rules and rules.Get then
-        local list = rules:Get("npc_stats")
-        if type(list) == "table" then
-            for _, statId in ipairs(list) do
-                if seed.stats[statId] == nil and type(proto.stats) == "table" and proto.stats[statId] ~= nil then
-                    seed.stats[statId] = tonumber(proto.stats[statId]) or proto.stats[statId]
-                end
-            end
-        end
     end
 
     -- Include model data for 3D portraits
@@ -186,18 +173,6 @@ function NPCRegistry:SpawnUnitInstance(numericUnitId, npcId, overrides)
     assert(Unit and Unit.New, "NPCRegistry:SpawnUnitInstance requires Unit.lua loaded")
     local seed = self:BuildUnitSeed(npcId, overrides)
     return Unit.New(numericUnitId, seed)
-end
-
--- ---------------------------------------------
--- Debug slash
--- ---------------------------------------------
-SLASH_RPENPCS1 = "/rpenpcs"
-SlashCmdList["RPENPCS"] = function(msg)
-    local self = NPCRegistry
-    local n = 0
-    for id, proto in pairs(self.defs or {}) do
-        n = n + 1
-    end
 end
 
 return NPCRegistry

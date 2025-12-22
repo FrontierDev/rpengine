@@ -352,21 +352,25 @@ function ActionBarWidget:RefreshRequirements()
                 slot:SetEnabled(slot:MeetsAllRequirements())
             end
 
+            -- Show/hide reaction glow based on whether help is being called
+            local shouldShowReactionGlow = false
             if ((RPE.Core._helpRequestsThisTurn or 0) > 0) or RPE.Core._isDefendingThisTurn then
                 local spell = SR:Get(slot.action.spellId)
                 if spell and spell.tags then
-                    local isReactionSpell = false
                     for _, tag in ipairs(spell.tags) do
                         local lowerTag = tag:lower()
                         if lowerTag == "assist" or lowerTag == "reaction" then
-                            isReactionSpell = true
+                            shouldShowReactionGlow = true
                             break
                         end
                     end
-                    if isReactionSpell then
-                        slot:ShowReactionGlow()
-                    end
                 end
+            end
+            
+            if shouldShowReactionGlow then
+                slot:ShowReactionGlow()
+            else
+                slot:HideReactionGlow()
             end
         end
     end
