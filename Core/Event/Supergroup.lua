@@ -5,6 +5,7 @@ RPE.Core = RPE.Core or {}
 ---@class Supergroup
 ---@field members table<string, true>   -- set of "name-realm" (lowercased)
 ---@field _list string[]                -- stable array view of members
+---@field _trackedMembers table<string, true>  -- track online members to detect disconnects
 local Supergroup = {}
 Supergroup.__index = Supergroup
 RPE.Core.Supergroup = Supergroup
@@ -13,6 +14,7 @@ RPE.Core.Supergroup = Supergroup
 RPE.Core.ActiveSupergroup = RPE.Core.ActiveSupergroup or setmetatable({
     members = {},
     _list   = {},
+    _trackedMembers = {},
 }, Supergroup)
 
 -- ==========================================================
@@ -143,6 +145,90 @@ function Supergroup:Rebuild()
     self:MergeFromMyGroup()
     rebuildList(self)
     SyncEventWithMembers(self)
+end
+
+--- Check for members who have gone offline and update the event accordingly.
+function Supergroup:CheckForOfflineMembers()
+    if not IsInGroup() then return end
+    
+    local currentMembers = {}
+    
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            local unitToken = "raid" .. i
+            local name, realm = UnitName(unitToken)
+            if name then
+                local lower = ToFullKey(name, realm)
+                if lower and UnitIsConnected(unitToken) then
+                    currentMembers[lower] = true
+                end
+            end
+        end
+    elseif IsInGroup() then
+        for i = 1, GetNumGroupMembers() - 1 do
+            local unitToken = "party" .. i
+            local name, realm = UnitName(unitToken)
+            if name then
+                local lower = ToFullKey(name, realm)
+                if lower and UnitIsConnected(unitToken) then
+                    currentMembers[lower] = true
+                end
+            end
+        end
+    end
+    
+    -- Add the local player (always connected)
+    local meKey = TokenToKey("player")
+    if meKey then
+        currentMembers[meKey] = true
+    end
+    
+    -- Check for members who were online but are now gone (disconnect or logout)
+    for memberKey in pairs(self._trackedMembers or {}) do
+        if not currentMembers[memberKey] then
+            -- This member went offline
+            if RPE and RPE.Core and RPE.Core.ActiveEvent then
+                local ev = RPE.Core.ActiveEvent
+                if ev.units and ev.units[memberKey] then
+                    local unitId = ev.units[memberKey].id or "?"
+                    if ev.turn and ev.turn > 0 then
+                        -- Event is running: mark inactive
+                        ev.units[memberKey].active = false
+                        RPE.Debug:Print(string.format("%s has been marked as inactive (left the game).", memberKey, unitId))
+                    else
+                        -- Event not started: remove from list
+                        ev.units[memberKey] = nil
+                        RPE.Debug:Print(string.format("%s has been removed from the event (left the game).", memberKey, unitId))
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Check for members who came back online (were offline but are now online)
+    for memberKey in pairs(currentMembers) do
+        if not (self._trackedMembers and self._trackedMembers[memberKey]) then
+            -- This member just came online
+            RPE.Debug:Print(string.format("%s has come online.", memberKey))
+            if RPE and RPE.Core and RPE.Core.ActiveEvent then
+                local ev = RPE.Core.ActiveEvent
+                if ev.turn and ev.turn > 0 then
+                    -- Event is running: resync the player
+                    if ev.units and ev.units[memberKey] then
+                        ev.units[memberKey].active = true
+                    end
+                    local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+                    if Broadcast and Broadcast.ResyncPlayer then
+                        Broadcast:ResyncPlayer(memberKey)
+                        RPE.Debug:Print(string.format("%s has rejoined the event.", memberKey))
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Update tracked members for next check
+    self._trackedMembers = currentMembers
 end
 
 -- ==========================================================

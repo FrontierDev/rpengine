@@ -456,16 +456,58 @@ function ActionBarWidget:BuildUI(opts)
 
     -- Root window (Alt+Z-safe when ImmersionMode is enabled)
     local parentFrame = (RPE.Core and RPE.Core.ImmersionMode) and WorldFrame or UIParent
+    
+    -- Check for saved position first
+    local ProfileDB = RPE and RPE.Profile and RPE.Profile.DB
+    local savedPos = nil
+    if ProfileDB and ProfileDB.GetOrCreateActive then
+        local profile = ProfileDB.GetOrCreateActive()
+        savedPos = profile and profile.windowPositions and profile.windowPositions["RPE_ActionBar_Window"]
+    end
+    
     self.root = Window:New("RPE_ActionBar_Window", {
         parent = parentFrame,
         width  = 1, height = 1,
         autoSize = true,
         noBackground = true,
-        point  = opts.point or "BOTTOM",
-        pointRelative = opts.rel or "BOTTOM",
-        x = opts.x or 0,
-        y = opts.y or 120,
+        point  = savedPos and savedPos.point or (opts.point or "BOTTOM"),
+        pointRelative = savedPos and savedPos.relativePoint or (opts.rel or "BOTTOM"),
+        x = savedPos and savedPos.x or (opts.x or 0),
+        y = savedPos and savedPos.y or (opts.y or 120),
     })
+    
+    -- Make the action bar movable
+    local rootFrame = self.root.frame
+    if rootFrame then
+        rootFrame:SetMovable(true)
+        rootFrame:EnableMouse(true)
+        rootFrame:RegisterForDrag("LeftButton")
+        rootFrame:SetScript("OnDragStart", function(frame)
+            frame:StartMoving()
+        end)
+        rootFrame:SetScript("OnDragStop", function(frame)
+            frame:StopMovingOrSizing()
+            -- Save window position to character profile
+            local ProfileDB = RPE and RPE.Profile and RPE.Profile.DB
+            if ProfileDB and ProfileDB.GetOrCreateActive and ProfileDB.SaveProfile then
+                local profile = ProfileDB.GetOrCreateActive()
+                if profile then
+                    profile.windowPositions = profile.windowPositions or {}
+                    local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint()
+                    if point then
+                        profile.windowPositions["RPE_ActionBar_Window"] = {
+                            point = point,
+                            relativePoint = relativePoint,
+                            x = xOfs,
+                            y = yOfs
+                        }
+                        -- Save the profile immediately
+                        ProfileDB.SaveProfile(profile)
+                    end
+                end
+            end
+        end)
+    end
 
     -- Immersion polish (match UI scale + mouse gating on Alt+Z)
     if parentFrame == WorldFrame then
@@ -657,6 +699,29 @@ function ActionBarWidget:BuildUI(opts)
     })
     self.exitTempBtn:Hide()
 
+    -- End turn button (positioned to right of action bar)
+    self.endTurnBtn = IconBtn:New("RPE_ActionBar_EndTurn", {
+        parent = self.root,
+        x = 16,
+        width  = 32,
+        height = 32,
+        icon   = "Interface\\Addons\\RPEngine\\UI\\Textures\\hourglass.png",
+        noBackground = true, noBorder = true,
+        hasBackground = false, hasBorder = false,
+        tooltip = "End Turn",
+        onClick = function()
+            self:_EndTurn()
+        end,
+    })
+    
+    -- Set end turn button colors: white by default, light grey on hover
+    if self.endTurnBtn and self.endTurnBtn.SetColor then
+        self.endTurnBtn:SetColor(1, 1, 1, 1)  -- white
+        self.endTurnBtn._hoverR = 0.8
+        self.endTurnBtn._hoverG = 0.8
+        self.endTurnBtn._hoverB = 0.8
+    end
+
     -- Styled chrome behind the bar
     self:_EnsureChrome()
 
@@ -703,6 +768,12 @@ function ActionBarWidget:Layout()
     if self.exitTempBtn and self.slots[1] and self.slots[1].button then
         self.exitTempBtn.frame:ClearAllPoints()
         self.exitTempBtn.frame:SetPoint("RIGHT", self.slots[1].button, "LEFT", -8, 0)
+    end
+
+    -- Position the end turn button to the right of the last slot
+    if self.endTurnBtn and self.slots[self.numSlots] and self.slots[self.numSlots].button then
+        self.endTurnBtn.frame:ClearAllPoints()
+        self.endTurnBtn.frame:SetPoint("LEFT", self.slots[self.numSlots].button, "RIGHT", 8, 0)
     end
 
     -- Size & position chrome to wrap the bar with padding
@@ -776,11 +847,14 @@ end
 ---@param controlledUnitId integer|nil Unit ID of the controlled unit (for multi-unit casting)
 ---@param controlledUnitName string|nil Name of the controlled unit (for speak dialog)
 function ActionBarWidget:SetTemporaryActions(actions, label, tintColor, controlledUnitId, controlledUnitName)
-    self._originalActions = self.actions or {}
+    -- Only save original actions if we're not already in temporary mode
+    if not self._originalActions then
+        self._originalActions = self.actions or {}
+    end
     
     -- Save the current cast bar state before switching (in case player was casting)
     local CB = RPE.Core.Windows and RPE.Core.Windows.CastBarWidget
-    if CB then
+    if CB and not self._originalCastBarCast then
         self._originalCastBarCast = CB.currentCast
     end
     
@@ -1469,6 +1543,48 @@ function ActionBarWidget:_ToggleUnitFlag(flag)
     if EUS and EUS.Refresh then
         EUS:Refresh()
     end
+end
+
+--- End the current player's turn (or controlled unit's turn if in temporary mode)
+function ActionBarWidget:_EndTurn()
+    local event = RPE.Core.ActiveEvent
+    if not (event and event.ticks and event.tickIndex and event.ticks[event.tickIndex]) then return end
+    
+    local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+    if not Broadcast or not Broadcast.EndTurn then
+        RPE.Debug:Internal("EndTurn broadcast not available")
+        return
+    end
+    
+    -- Darken the button immediately to show it was clicked
+    if self.endTurnBtn then
+        self.endTurnBtn:SetColor(0.3, 0.3, 0.3, 0.6)
+        self.endTurnBtn:Lock()
+    end
+    
+    -- If in temporary mode, end the controlled unit's turn
+    if self._controlledUnitId then
+        Broadcast:EndTurn(self._controlledUnitId)
+        return
+    end
+    
+    -- Otherwise, end the player's turn
+    local localPlayerKey = event.localPlayerKey
+    local playerUnit = nil
+    for _, tickUnit in ipairs(event.ticks[event.tickIndex]) do
+        if tickUnit.key == localPlayerKey then
+            playerUnit = tickUnit
+            break
+        end
+    end
+    
+    if not playerUnit then
+        RPE.Debug:Internal("Not your turn - cannot end turn")
+        return
+    end
+    
+    -- Broadcast end turn to the group with the player's unit ID
+    Broadcast:EndTurn(playerUnit.id)
 end
 
 return ActionBarWidget

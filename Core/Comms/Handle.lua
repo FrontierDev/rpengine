@@ -317,7 +317,8 @@ Comms:RegisterHandler("DATASET_META", function(data, sender)
     local version = tonumber(args[3]) or 1
     local author = args[4]
     local notes = args[5]
-    local autoActivate = (args[6] == "1")  -- Default to true if not specified
+    local description = args[6]
+    local autoActivate = (args[7] == "1")  -- Default to true if not specified
     
     if not name or name == "" then
         RPE.Debug:Error("[Handle] DATASET_META missing name")
@@ -330,6 +331,7 @@ Comms:RegisterHandler("DATASET_META", function(data, sender)
     ds.version = version
     ds.author = author ~= "" and author or nil
     ds.notes = notes ~= "" and notes or nil
+    ds.description = description ~= "" and description or nil
     
     -- Clear existing data for fresh import
     ds.items = {}
@@ -630,49 +632,130 @@ Comms:RegisterHandler("DATASET_COMPLETE", function(data, sender)
     end
     
     local counts = ds:Counts()
-    RPE.Debug:Print(string.format("[Handle] Completed dataset '%s' from %s (%d items, %d spells, %d auras, %d npcs)%s", 
-        name, sender, counts.items, counts.spells, counts.auras, counts.npcs,
-        shouldActivate and " [activated by ruleset]" or " [saved, not activated]"))
-    
-    -- Debug: log first item if exists
-    if ds.items then
-        local firstId = next(ds.items)
-        if firstId then
-            local firstItem = ds.items[firstId]
-            RPE.Debug:Internal(string.format("[Handle] First item in dataset: id=%s, has_icon=%s", firstId, (type(firstItem) == "table" and firstItem.icon) or "N/A"))
+    local extraCounts = {}
+    for categoryName, categoryItems in pairs(ds.extra or {}) do
+        if type(categoryItems) == "table" then
+            local count = 0
+            for _ in pairs(categoryItems) do count = count + 1 end
+            table.insert(extraCounts, categoryName .. "=" .. count)
         end
     end
+    local extraStr = (#extraCounts > 0) and (", " .. table.concat(extraCounts, ", ")) or ""
+    RPE.Debug:Print(string.format("Completed dataset '%s' from %s (%d items, %d spells, %d auras, %d npcs%s)%s", 
+        name, sender, counts.items, counts.spells, counts.auras, counts.npcs, extraStr,
+        shouldActivate and " [activated by ruleset]" or " [saved, not activated]"))
     
     -- Clean up
     _inProgressDatasets[sender][name] = nil
 end)
 
+Comms:RegisterHandler("DATASET_SETUP_WIZARD", function(data, sender)
+    local args = { strsplit(";", data) }
+    local name = args[1]
+    local wizardStr = args[2]
+    
+    if not _inProgressDatasets[sender] or not _inProgressDatasets[sender][name] then
+        RPE.Debug:Internal(string.format("[Handle] DATASET_SETUP_WIZARD for unknown dataset '%s' from %s", name, sender))
+        return
+    end
+    
+    local tracking = _inProgressDatasets[sender][name]
+    local ds = tracking.ds or tracking
+    
+    if wizardStr and wizardStr ~= "" then
+        local setupWizard = _deserialize(wizardStr)
+        if setupWizard then
+            ds.setupWizard = setupWizard
+            RPE.Debug:Internal(string.format("[Handle] Received setupWizard for dataset '%s'", name))
+        else
+            RPE.Debug:Warning(string.format("[Handle] Failed to deserialize setupWizard for dataset '%s'", name))
+        end
+    end
+end)
+
+Comms:RegisterHandler("DATASET_META_FLAGS", function(data, sender)
+    local args = { strsplit(";", data) }
+    local name = args[1]
+    local description = args[2]
+    local securityLevel = args[3]
+    
+    if not _inProgressDatasets[sender] or not _inProgressDatasets[sender][name] then
+        RPE.Debug:Internal(string.format("[Handle] DATASET_META_FLAGS for unknown dataset '%s' from %s", name, sender))
+        return
+    end
+    
+    local tracking = _inProgressDatasets[sender][name]
+    local ds = tracking.ds or tracking
+    
+    -- Set metadata fields
+    ds.description = description or ""
+    ds.securityLevel = securityLevel or "Open"
+    
+    RPE.Debug:Internal(string.format("[Handle] DATASET_META_FLAGS: '%s' from %s | description: '%s' | securityLevel: %s", 
+        name, sender, tostring(ds.description), tostring(ds.securityLevel)))
+end)
+
 Comms:RegisterHandler("START_EVENT", function(data, sender)
+
     RPE.Debug:Internal(string.format("[Handle] START_EVENT FULL DATA (length %d):\n%s", #data, data))
     local args = { strsplit(";", data) }
     local id   = args[1]
     local name = args[2]
 
-    -- Determine if subtext and difficulty are present (new format)
-    local subtext, difficulty, teamNamesStr, startIdx
-    if args[5] ~= nil and tonumber(args[5]) == nil then
-        -- New format: subtext and difficulty present
-        subtext      = _unesc(args[3] or "")
-        difficulty   = args[4] or "NORMAL"
-        teamNamesStr = args[5] or ""
-        startIdx     = 6
+    -- Check if turn/tickIndex are present (resync format includes them after difficulty)
+    local subtext, difficulty, turnOrderType, turn, tickIndex, teamNamesStr, startIdx, isResyncFormat
+    
+    -- Try to detect resync format: args[5] and args[6] are turn/tickIndex (numbers)
+    if args[5] ~= nil and tonumber(args[5]) ~= nil then
+        -- Resync format: id, name, subtext, difficulty, turnOrderType, turn, tickIndex, teamNames, units...
+        subtext       = _unesc(args[3] or "")
+        difficulty    = args[4] or "NORMAL"
+        turnOrderType = args[5] or "INITIATIVE"
+        turn          = tonumber(args[6]) or 1
+        tickIndex     = tonumber(args[7]) or 0
+        teamNamesStr  = args[8] or ""
+        startIdx      = 9
+        isResyncFormat = true
+    elseif args[6] ~= nil and tonumber(args[6]) == nil then
+        -- New format: subtext, difficulty, and turnOrderType present, no turn/tick
+        subtext       = _unesc(args[3] or "")
+        difficulty    = args[4] or "NORMAL"
+        turnOrderType = args[5] or "INITIATIVE"
+        turn          = 1
+        tickIndex     = 0
+        teamNamesStr  = args[6] or ""
+        startIdx      = 7
+        isResyncFormat = false
+    elseif args[5] ~= nil and tonumber(args[5]) == nil then
+        -- Older new format: subtext and difficulty present but no turnOrderType
+        subtext       = _unesc(args[3] or "")
+        difficulty    = args[4] or "NORMAL"
+        turnOrderType = "INITIATIVE"
+        turn          = 1
+        tickIndex     = 0
+        teamNamesStr  = args[5] or ""
+        startIdx      = 6
+        isResyncFormat = false
     elseif args[4] ~= nil and tonumber(args[4]) == nil then
-        -- Older new format: subtext present but no difficulty
-        subtext      = _unesc(args[3] or "")
-        difficulty   = "NORMAL"
-        teamNamesStr = args[4] or ""
-        startIdx     = 5
-    else
         -- Oldest format: no subtext or difficulty
-        subtext      = ""
-        difficulty   = "NORMAL"
-        teamNamesStr = args[3] or ""
-        startIdx     = 4
+        subtext       = _unesc(args[3] or "")
+        difficulty    = "NORMAL"
+        turnOrderType = "INITIATIVE"
+        turn          = 1
+        tickIndex     = 0
+        teamNamesStr  = args[4] or ""
+        startIdx      = 5
+        isResyncFormat = false
+    else
+        -- Fallback
+        subtext       = ""
+        difficulty    = "NORMAL"
+        turnOrderType = "INITIATIVE"
+        turn          = 1
+        tickIndex     = 0
+        teamNamesStr  = args[3] or ""
+        startIdx      = 4
+        isResyncFormat = false
     end
 
     local teamNames = {}
@@ -736,18 +819,41 @@ Comms:RegisterHandler("START_EVENT", function(data, sender)
         -- New: parse summonedBy
         u.summonedBy = tonumber(args[i]) or 0; i = i + 1
         
+        -- Only parse auras if this is a resync format (which includes turn/tickIndex)
+        u.auras = {}
+        if isResyncFormat and i <= #args then
+            local aurasStr = args[i] or ""; i = i + 1
+            if aurasStr ~= "" then
+                for auraEntry in string.gmatch(aurasStr, "([^,]+)") do
+                    local auraId, instanceId, stacks, duration = auraEntry:match("^([^|]+)|([^|]+)|([^|]+)|([^|]*)$")
+                    if auraId and auraId ~= "" then
+                        table.insert(u.auras, {
+                            id = auraId,
+                            instanceId = instanceId,
+                            stacks = tonumber(stacks) or 1,
+                            duration = tonumber(duration) or 0
+                        })
+                    end
+                end
+            end
+        end
+        
         units[#units+1] = u
     end
 
     RPE.Core.ActiveEvent:OnStart({
-        id        = id,
-        name      = name,
-        subtext   = subtext,
-        difficulty = difficulty,
-        teamNames = teamNames,
+        id            = id,
+        name          = name,
+        subtext       = subtext,
+        difficulty    = difficulty,
+        turnOrderType = turnOrderType,
+        teamNames     = teamNames,
         units     = units,
+        turn      = turn,
+        tickIndex = tickIndex,
     })
 end)
+
 
 
 
@@ -954,6 +1060,98 @@ Comms:RegisterHandler("END_EVENT", function(data, sender)
     ev:OnEndClient()
 end)
 
+Comms:RegisterHandler("END_TURN", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] END_TURN FULL DATA:\n%s", data))
+
+    local ev = RPE.Core.ActiveEvent
+    if not ev then
+        RPE.Debug:Error("[Handle] END_TURN but no ActiveEvent.")
+        return
+    end
+
+    local args = { strsplit(";", data) }
+    local unitId = tonumber(args[1]) or 0
+    
+    if unitId == 0 then
+        RPE.Debug:Error("[Handle] END_TURN missing unit ID.")
+        return
+    end
+
+    -- Find the unit and update its portrait to show turn ended
+    local unit = nil
+    for _, u in pairs(ev.units) do
+        if tonumber(u.id) == unitId then
+            unit = u
+            break
+        end
+    end
+    
+    if not unit then
+        RPE.Debug:Error(string.format("[Handle] END_TURN: Unit %d not found.", unitId))
+        return
+    end
+
+    RPE.Debug:Internal(string.format("Unit %d (%s) ended their turn.", unitId, unit.name or "Unknown"))
+    
+    -- Update portraits in EventWidget
+    if RPE.Core.Windows and RPE.Core.Windows.EventWidget then
+        local eventWidget = RPE.Core.Windows.EventWidget
+        if eventWidget.portraitsByKey and unit.key then
+            local portrait = eventWidget.portraitsByKey[unit.key]
+            if portrait and portrait.SetTurnIndicator then
+                portrait:SetTurnIndicator("ended")
+            end
+        end
+    end
+    
+    -- Update portraits in UnitFrameWidget (for NPCs)
+    if RPE.Core.Windows and RPE.Core.Windows.UnitFrameWidget then
+        local unitFrameWidget = RPE.Core.Windows.UnitFrameWidget
+        if unitFrameWidget.portraitsByKey and unit.key then
+            local portrait = unitFrameWidget.portraitsByKey[unit.key]
+            if portrait and portrait.SetTurnIndicator then
+                portrait:SetTurnIndicator("ended")
+            end
+        end
+    end
+    
+    -- Update portraits in TargetWindow
+    if RPE.Core.Windows and RPE.Core.Windows.TargetWindow then
+        local targetWindow = RPE.Core.Windows.TargetWindow
+        if targetWindow.portraitsByKey and unit.key then
+            local portrait = targetWindow.portraitsByKey[unit.key]
+            if portrait and portrait.SetTurnIndicator then
+                portrait:SetTurnIndicator("ended")
+            end
+        end
+    end
+end)
+
+Comms:RegisterHandler("INTERMISSION", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] INTERMISSION FULL DATA:\n%s", data))
+
+    local args = { strsplit(";", data) }
+    local isIntermission = args[1] == "1"
+
+    local ev = RPE.Core.ActiveEvent
+    if not ev then
+        RPE.Debug:Error("[Handle] INTERMISSION but no ActiveEvent.")
+        return
+    end
+
+    ev.isIntermission = isIntermission
+    
+    -- Update the EventWidget to reflect intermission state
+    local widget = RPE.Core.Windows and RPE.Core.Windows.EventWidget
+    if widget and widget.ShowIntermission then
+        if isIntermission then
+            widget:ShowIntermission()
+        else
+            widget:HideIntermission()
+        end
+    end
+end)
+
 -- APPLY
 Comms:RegisterHandler("AURA_APPLY", function(data, sender)
     RPE.Debug:Internal(string.format("[Handle] AURA_APPLY FULL DATA:\n%s", data))
@@ -961,6 +1159,7 @@ Comms:RegisterHandler("AURA_APPLY", function(data, sender)
     local args = { strsplit(";", data) }
     local sId, tId = tonumber(args[1]) or 0, tonumber(args[2]) or 0
     local auraId, stacks, desc = args[3], tonumber(args[5]) or 0, _unesc(args[6] or "")
+    local rank = tonumber(args[7]) or 1
 
     if tId == 0 or not auraId or auraId == "" then 
         RPE.Debug:Error("[Handle:AURA_APPLY] Aura ID was not valid.")
@@ -972,6 +1171,7 @@ Comms:RegisterHandler("AURA_APPLY", function(data, sender)
     local ok, err = pcall(function()
         mgr:Apply(sId ~= 0 and sId or nil, tId, auraId, {
             stacks = (stacks > 0) and stacks or nil,
+            rank = rank,
             -- description is UI-only; your tooltip can read desc from the aura instance if you store it,
             -- or just use local AuraRegistry text. We're not mutating instance here.
         })
@@ -1150,6 +1350,12 @@ Comms:RegisterHandler("DAMAGE", function(data, sender)
                 
                 target:ApplyDamage(remainingDamage, isCrit, absorbedAmount)
                 if sId ~= 0 then target:AddThreat(sId, tDelta) end
+                
+                -- Track stats for the event
+                if ev and ev.TrackDamage then
+                    ev:TrackDamage(sId, totalAmount)
+                    ev:TrackThreat(sId, tDelta)
+                end
 
                 local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
                 
@@ -1259,6 +1465,11 @@ Comms:RegisterHandler("HEAL", function(data, sender)
             if target then
                 target:Heal(amount, isCrit)
                 if sId ~= 0 then target:AddThreat(sId, -tDelta) end -- heals often reduce threat vs damage
+                
+                -- Track stats for the event
+                if ev and ev.TrackHealing then
+                    ev:TrackHealing(sId, amount)
+                end
 
                 local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
                 
@@ -2465,23 +2676,51 @@ Comms:RegisterHandler("CALL_HELP_END", function(data, sender)
     end
 end)
 
-Comms:RegisterHandler("TRP_NAME", function(raw, sender)
-    -- Raw is a semicolon-joined payload; first field is the display name
-    local trpName = nil
-    if type(raw) == "string" then
-        trpName = (select(1, strsplit(";", raw))) or raw
-    else
-        trpName = tostring(raw or "")
-    end
+Comms:RegisterHandler("HELLO", function(raw, sender)
+    -- Raw is a semicolon-joined payload; first field is the display name, second is the hash
+    local args = { strsplit(";", raw) }
+    local trpName = args[1] or ""
+    local senderHash = args[2] or ""
+
+    local myName = UnitName("player")
 
     if not trpName or trpName == "" then return end
 
-    -- Only the leader should apply incoming TRP names to EventUnit objects
-    if not (RPE and RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then return end
+    -- Generate my own hash for comparison
+    local myHash = ""
+    if RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast and RPE.Core.Comms.Broadcast._generateDatasetRulesetHash then
+        myHash = RPE.Core.Comms.Broadcast:_generateDatasetRulesetHash()
+    end
+    
+    -- Check if hashes match
+    if senderHash ~= myHash then
+        RPE.Debug:Warning(string.format("Automatically syncing with %s due to rule or data mismatch. Please wait!", sender, myHash, senderHash))
+        
+        -- Convert sender to canonical key format for sync tracking
+        local senderKey = sender:lower()
+        
+        -- Initiate automatic sync
+        if RPE.Core.Comms.Broadcast._autoSyncPlayer then
+            RPE.Core.Comms.Broadcast:_autoSyncPlayer(senderKey, sender)
+        end
+    else
+        -- Clear any existing hash mismatch lock for this player since they now have matching hash
+        local senderKey = sender:lower()
+        if RPE.Core.Comms.Broadcast._syncOperations and RPE.Core.Comms.Broadcast._syncOperations[senderKey] then
+            local syncOp = RPE.Core.Comms.Broadcast._syncOperations[senderKey]
+            if syncOp.step == "locked" then
+                RPE.Core.Comms.Broadcast._syncOperations[senderKey] = nil
+                RPE.Core.Comms.Broadcast:_refreshEventControlSheet()
+                RPE.Debug:Internal(string.format("Rule and data mismatch lock cleared for %s", sender))
+            end
+        end
+    end
 
     -- Resolve sender to an event unit id (uses _toUnitId helper above)
     local senderUnitId = _toUnitId(sender) or 0
-    if senderUnitId == 0 then return end
+    if senderUnitId == 0 then 
+        return 
+    end
 
     local ev = RPE and RPE.Core and RPE.Core.ActiveEvent
     if not ev or not ev.units then return end
@@ -2497,8 +2736,51 @@ Comms:RegisterHandler("TRP_NAME", function(raw, sender)
                     end
                 end
             end
-            RPE.Debug:Internal(string.format("[Broadcast] Applied TRP name '%s' to unit id %d (sender=%s)", trpName, senderUnitId, sender))
             break
+        end
+    end
+end)
+
+-- SYNC_PAUSE: playerName ; action ("START" or "END")
+Comms:RegisterHandler("SYNC_PAUSE", function(data, sender)
+    if not data or #data < 2 then return end
+    
+    local targetPlayerName = data[1]
+    local action = data[2]
+    
+    -- Get my name to check if I should ignore this message
+    local myName, myRealm = UnitName("player")
+    if not myName then return end
+    local myFullName = myRealm and myRealm ~= "" and (myName .. "-" .. myRealm:gsub("%s+", "")) or (myName .. "-" .. GetRealmName():gsub("%s+", ""))
+    
+    -- Don't show for the leader (sender)
+    if sender == myFullName then
+        return
+    end
+    
+    -- Don't show for the target player
+    if targetPlayerName == myFullName or targetPlayerName == myName then
+        return
+    end
+    
+    -- Don't show if I'm currently syncing to anyone
+    local broadcast = RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
+    if broadcast and broadcast._syncOperations then
+        for _, syncOp in pairs(broadcast._syncOperations) do
+            if syncOp.step ~= "locked" then -- I'm actively syncing
+                return
+            end
+        end
+    end
+    
+    -- Show/hide loading widget
+    local loadingWidget = RPE_UI and RPE_UI.Widgets and RPE_UI.Widgets.LoadingWidget
+    if loadingWidget then
+        if action == "START" then
+            loadingWidget:SetProgress("Event Paused")
+            loadingWidget:Show()
+        elseif action == "END" then
+            loadingWidget:Hide()
         end
     end
 end)
@@ -2597,5 +2879,71 @@ Comms:RegisterHandler("CLEAR_CASTING", function(data, sender)
         if ufwPortrait and ufwPortrait.ClearCast then
             ufwPortrait:ClearCast()
         end
+    end
+end)
+
+-- Handle unified LFRP broadcast (location + settings in one message)
+Comms:RegisterHandler("LFRP_BROADCAST", function(raw, sender)
+    local args = { strsplit(";", raw) }
+    if #args < 10 then return end
+    
+    -- Parse location
+    local mapID = tonumber(args[1]) or 0
+    local x = tonumber(args[2]) or 0
+    local y = tonumber(args[3]) or 0
+    
+    -- Parse TRP name and guild name
+    local trpName = args[4] or ""
+    local guildName = args[5] or ""
+    
+    -- Parse iAm IDs (comma-separated)
+    local iAmStr = args[6] or ""
+    local iAmIds = {}
+    if iAmStr ~= "" then
+        for idStr in iAmStr:gmatch("[^,]+") do
+            table.insert(iAmIds, tonumber(idStr) or 0)
+        end
+    end
+    while #iAmIds < 5 do
+        table.insert(iAmIds, 0)
+    end
+    
+    -- Parse lookingFor IDs (comma-separated)
+    local lookingForStr = args[7] or ""
+    local lookingForIds = {}
+    if lookingForStr ~= "" then
+        for idStr in lookingForStr:gmatch("[^,]+") do
+            table.insert(lookingForIds, tonumber(idStr) or 0)
+        end
+    end
+    while #lookingForIds < 5 do
+        table.insert(lookingForIds, 0)
+    end
+    
+    -- Parse recruiting and approachable flags
+    local recruiting = tonumber(args[8]) or 0
+    local approachable = tonumber(args[9]) or 0
+    local broadcastLocation = (args[10] == "1") or false
+    
+    -- Extract character name from sender for fallback display
+    local characterName = sender:match("^([^-]+)") or sender
+    
+    -- Add or update pin with location
+    local PinManager = RPE.Core and RPE.Core.LFRP and RPE.Core.LFRP.PinManager
+    if PinManager then
+        -- Use TRP name if available, otherwise use character name
+        local displayName = (trpName and trpName ~= "") and trpName or characterName
+        PinManager:AddPin(mapID, x, y, "Interface\\AddOns\\RPEngine\\UI\\Textures\\rpe.png", displayName, sender, broadcastLocation)
+        
+        -- Update settings
+        PinManager:UpdatePlayerSettings(sender, {
+            trpName = trpName,
+            guildName = guildName,
+            iAm = iAmIds,
+            lookingFor = lookingForIds,
+            recruiting = recruiting,
+            approachable = approachable,
+            broadcastLocation = broadcastLocation,
+        })
     end
 end)

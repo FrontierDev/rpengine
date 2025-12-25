@@ -57,8 +57,8 @@ function EventWidget:_EnsurePortrait(unit)
 
     local p = self.portraitsByKey[unit.key]
     if not p or not p.frame then
-        -- Create once under the stable host element
-        p = unit:CreatePortrait(self.portraitHost, self.portraitSize)
+        -- Create once under the stable host element, passing noHealthBar flag for non-combat
+        p = unit:CreatePortrait(self.portraitHost, self.portraitSize, self.portraitNoHealthBar)
         self.portraitsByKey[unit.key] = p
     else
         -- Ensure it stays parented to the stable host (belt & braces)
@@ -153,6 +153,8 @@ function EventWidget:BuildUI(opts)
     self.data.eventSubtext = opts.eventSubtext
     self.data.difficulty = opts.difficulty
     self.data.showTurnProgress = opts.showTurnProgress or false
+    self.data.turnNumber = opts.turnNumber or 1
+    self.data.isNonCombat = opts.isNonCombat or false
 
     -- Root window
     self.root = Window:New("RPE_EventWidget_Window", {
@@ -356,8 +358,29 @@ function EventWidget:BuildHeader(nextStep)
         self.eventNameText.frame:GetHeight() or 0
     ))
 
-    -- fade in this group, then continue
-    FadeInFrame(self.header.frame, 0.5, nextStep)
+    -- Hide header for non-combat events
+    if self.data.isNonCombat then
+        self.header.frame:Hide()
+    end
+
+    -- Create intermission text right after header
+    self.intermissionText = Text:New("RPE_EventWidget_Intermission", {
+        parent       = self.content,
+        text         = "INTERMISSION",
+        fontTemplate = "GameFontHighlightLarge",
+        justifyH     = "CENTER",
+        autoSize     = true,
+    })
+    C.ApplyText(self.intermissionText.fs, "textMuted")
+    self.content:Add(self.intermissionText)
+    self.intermissionText:Hide()
+
+    -- fade in this group, then continue (skip fade for non-combat)
+    if self.data.isNonCombat then
+        if nextStep then nextStep() end
+    else
+        FadeInFrame(self.header.frame, 0.5, nextStep)
+    end
 end
 
 function EventWidget:BuildBalance(nextStep)
@@ -385,10 +408,32 @@ function EventWidget:BuildBalance(nextStep)
         colors = {"team1", "team2"}
     })
 
-    FadeInFrame(self.progressGroup.frame, 0.5, nextStep)
+    -- Hide progress bar for non-combat events
+    if self.data.isNonCombat then
+        self.progressGroup.frame:Hide()
+    end
+
+    -- fade in progress bar, then continue (skip fade for non-combat)
+    if self.data.isNonCombat then
+        if nextStep then nextStep() end
+    else
+        FadeInFrame(self.progressGroup.frame, 0.5, nextStep)
+    end
 end
 
 function EventWidget:BuildPortraitRow(nextStep)
+    -- For non-combat events, get custom portrait size from rules
+    local portraitSize = 48
+    local portraitNoHealthBar = false
+    
+    if self.data.isNonCombat then
+        portraitNoHealthBar = true
+        local customSize = RPE.ActiveRules and RPE.ActiveRules:Get("portrait_size")
+        if customSize and tonumber(customSize) then
+            portraitSize = tonumber(customSize)
+        end
+    end
+    
     self.portraitRow = HGroup:New("RPE_EventWidget_PortraitRow", {
         parent   = self.content,
         autoSize = true,
@@ -406,7 +451,8 @@ function EventWidget:BuildPortraitRow(nextStep)
 
     -- Cache + layout settings
     self.portraitsByKey = self.portraitsByKey or {}  -- key -> UnitPortrait
-    self.portraitSize   = 48
+    self.portraitSize   = portraitSize
+    self.portraitNoHealthBar = portraitNoHealthBar
     self.portraitGap    = 28  -- spacing between portrait groups
 
     FadeInFrame(self.portraitRow.frame, 0.5, function()
@@ -445,6 +491,41 @@ function EventWidget:RefreshPortraitRow(doFade)
     end)
 
     self:_ShowUnits(list, doFade and true or false)
+end
+
+function EventWidget:ShowIntermission()
+    -- Hide portraits and progress bar
+    for _, p in pairs(self.portraitsByKey or {}) do
+        if p and p.frame then
+            p:Hide()
+        end
+    end
+    if self.progressGroup and self.progressGroup.frame then
+        self.progressGroup.frame:Hide()
+    end
+    
+    -- Show intermission text (already created in BuildHeader)
+    if self.intermissionText and self.intermissionText.frame then
+        self.intermissionText:Show()
+        FadeInFrame(self.intermissionText.frame, 0.5)
+    end
+end
+
+function EventWidget:HideIntermission()
+    -- Hide intermission text
+    if self.intermissionText and self.intermissionText.frame then
+        self.intermissionText:Hide()
+    end
+    
+    -- Show progress bar and portraits again (skip for non-combat)
+    if not self.data.isNonCombat then
+        if self.progressGroup and self.progressGroup.frame then
+            FadeInFrame(self.progressGroup.frame, 0.5)
+        end
+    end
+    
+    -- Show and layout portraits
+    self:RefreshPortraitRow(true)
 end
 
 

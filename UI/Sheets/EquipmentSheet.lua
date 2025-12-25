@@ -227,7 +227,10 @@ local function _payloadForSetItem(v)
 end
 
 function EquipmentSheet:Refresh()
-    local equipment = (Common and Common.GetEquipment and Common:GetEquipment()) or {}
+    local profile = RPE.Profile.DB.GetOrCreateActive()
+    if not profile then return end
+    
+    local equipment = profile.equipment or {}
 
     -- Build a normalized view of the equipment table: "mainhand"/"main_hand"/"MainHand" -> "mainhand"
     local eq = {}
@@ -240,6 +243,17 @@ function EquipmentSheet:Refresh()
         local normKey   = _normSlotKey(slotKey)
         local equipped  = eq[normKey]
         slotWidget:SetItem(_payloadForSetItem(equipped))
+        
+        -- Store the slot key on the widget so tooltips can access it
+        slotWidget._equipmentSlot = slotKey
+        
+        -- Get the instance GUID for this equipped item so tooltips can show modifications
+        local instanceGuid = nil
+        if profile.equippedInstanceGuids then
+            -- Try both the raw slot key and normalized version
+            instanceGuid = profile.equippedInstanceGuids[slotKey] or profile.equippedInstanceGuids[normKey]
+        end
+        slotWidget:SetInstanceGuid(instanceGuid)
     end
 end
 

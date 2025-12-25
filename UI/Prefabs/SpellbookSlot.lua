@@ -20,7 +20,7 @@ RPE_UI.Prefabs.SpellbookSlot = SpellbookSlot
 
 local function _getNumActionBarSlots()
     local slots = _G.RPE and _G.RPE.ActiveRules and _G.RPE.ActiveRules.Get
-        and _G.RPE.ActiveRules:Get("action_bar_slots") or 12
+        and _G.RPE.ActiveRules:Get("action_bar_slots") or 5
     return tonumber(slots) or 12
 end
 

@@ -110,8 +110,11 @@ local function _valueToDisplay(val)
             return "$" .. val.ref
         end
         return ""
-    elseif val == math.huge then
+    elseif val == math.huge or val == nil then
+        -- nil represents +infinity in stored format
         return "inf"
+    elseif val == -math.huge then
+        return "-inf"
     else
         return tostring(val or 0)
     end
@@ -191,13 +194,30 @@ local function _saveStat(ds, statId, v)
     if mitigationTable then
         mitigationTable.combatText = (v.mitigationCombatText and v.mitigationCombatText ~= "") and v.mitigationCombatText or "Defend"
     end
+    
+    -- Handle min/max: if they're already numbers (from pre-conversion), use directly
+    -- Otherwise, parse them as display strings
+    local minVal = v.min
+    if type(minVal) == "string" then
+        minVal = _displayToValue(minVal)
+    end
+    
+    local maxVal = v.max
+    if type(maxVal) == "string" then
+        maxVal = _displayToValue(maxVal)
+    end
+    
+    -- Convert math.huge to nil for storage (matches dataset format)
+    if minVal == -math.huge then minVal = nil end
+    if maxVal == math.huge then maxVal = nil end
+    
     ds.extra.stats[statId] = {
         id              = statId,
         name            = _trim(v.name or statId),
         category        = v.category or "PRIMARY",
-        base            = _displayToValue(v.base),
-        min             = _displayToValue(v.min),
-        max             = _displayToValue(v.max),
+        base            = (type(v.base) == "string") and _displayToValue(v.base) or v.base,
+        min             = minVal,
+        max             = maxVal,
         visible         = (v.visible == 1 or v.visible == true or v.visible == "1") and 1 or 0,
         icon            = v.icon or "",
         description     = v.description or "",
@@ -319,6 +339,15 @@ local function _buildEditSchema(statId, def)
                   default=def.itemTooltipFormat or "", hint="e.g., '$value$ Strength'" },
                 { id="itemTooltipPriority", label="Priority", type="number", 
                   default=tonumber(def.itemTooltipPriority) or 0 },
+                { id="itemTooltipColorR", label="Color (R)", type="number", min=0, max=1, step=0.01,
+                  default=(type(def.itemTooltipColor) == "table" and def.itemTooltipColor[1]) or 1,
+                  hint="Red channel (0-1)" },
+                { id="itemTooltipColorG", label="Color (G)", type="number", min=0, max=1, step=0.01,
+                  default=(type(def.itemTooltipColor) == "table" and def.itemTooltipColor[2]) or 1,
+                  hint="Green channel (0-1)" },
+                { id="itemTooltipColorB", label="Color (B)", type="number", min=0, max=1, step=0.01,
+                  default=(type(def.itemTooltipColor) == "table" and def.itemTooltipColor[3]) or 1,
+                  hint="Blue channel (0-1)" },
                 { id="itemLevelWeight", label="Level Weight", type="number",
                   default=tonumber(def.itemLevelWeight) or 0 },
             }},
@@ -372,144 +401,354 @@ local function _buildRow(self, idx)
             local entry = row._entry
             if not entry or not (Common and Common.ContextMenu) then return end
 
-            Common:ContextMenu(row.frame or UIParent, function(level)
-                if level ~= 1 then return end
+            Common:ContextMenu(row.frame or UIParent, function(level, menuList)
+                if level == 1 then
+                    -- Title
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = entry.name or entry.id
+                    UIDropDownMenu_AddButton(info, level)
 
-                -- Title
-                local info = UIDropDownMenu_CreateInfo()
-                info.isTitle = true; info.notCheckable = true
-                info.text = entry.name or entry.id
-                UIDropDownMenu_AddButton(info, level)
+                    -- Copy from other datasets
+                    local copyFrom = UIDropDownMenu_CreateInfo()
+                    copyFrom.notCheckable = true
+                    copyFrom.text = "Copy from..."
+                    copyFrom.hasArrow = true
+                    copyFrom.menuList = "COPY_FROM_DATASET"
+                    UIDropDownMenu_AddButton(copyFrom, level)
 
-                -- Edit
-                UIDropDownMenu_AddButton({
-                    text = "Edit",
-                    notCheckable = true,
-                    func = function()
-                        local DW = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.DatasetWindow
-                        if DW and DW.ShowWizard then
-                            local ds   = self:GetEditingDataset()
-                            local full = (ds and ds.extra and ds.extra.stats and ds.extra.stats[entry.id]) or entry
-                            -- Normalize pct/visible fields: ensure they are ALWAYS 0 unless explicitly 1
-                            if full then
-                                full.pct = (full.pct == 1 or full.pct == true or full.pct == "1") and 1 or 0
-                                full.visible = (full.visible == 1 or full.visible == true or full.visible == "1") and 1 or 0
+                    -- Edit
+                    UIDropDownMenu_AddButton({
+                        text = "Edit",
+                        notCheckable = true,
+                        func = function()
+                            local DW = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.DatasetWindow
+                            if DW and DW.ShowWizard then
+                                local ds   = self:GetEditingDataset()
+                                local full = (ds and ds.extra and ds.extra.stats and ds.extra.stats[entry.id]) or entry
+                                -- Normalize pct/visible fields: ensure they are ALWAYS 0 unless explicitly 1
+                                if full then
+                                    full.pct = (full.pct == 1 or full.pct == true or full.pct == "1") and 1 or 0
+                                    full.visible = (full.visible == 1 or full.visible == true or full.visible == "1") and 1 or 0
+                                end
+                                DW:ShowWizard({
+                                    schema = _buildEditSchema(entry.id, full),
+                                    isEdit = true,
+                                    onSave = function(values)
+                                        -- Normalize checkbox values from form to numeric 1 or 0 (never true/false/nil)
+                                        -- Explicitly convert anything that's not 1/true/"1" to 0
+                                        if values.visible == 1 or values.visible == true or values.visible == "1" then
+                                            values.visible = 1
+                                        else
+                                            values.visible = 0
+                                        end
+                                        if values.pct == 1 or values.pct == true or values.pct == "1" then
+                                            values.pct = 1
+                                        else
+                                            values.pct = 0
+                                        end
+                                        
+                                        -- Handle stat ID: auto-generate from name if blank
+                                        local newStatId = _trim(values.id or "")
+                                        if newStatId == "" then
+                                            newStatId = _generateStatId(values.name)
+                                        end
+                                        if newStatId == "" then
+                                            return  -- Can't save without a valid ID
+                                        end
+                                        values.id = nil  -- Remove from values, we'll use newStatId
+                                        
+                                        -- Handle empty min/max: empty min becomes -inf, empty max becomes +inf
+                                        if not values.min or values.min == "" then
+                                            values.min = -math.huge
+                                        else
+                                            values.min = _displayToValue(values.min)  -- Convert display string to value (handles $REF)
+                                        end
+                                        if not values.max or values.max == "" then
+                                            values.max = math.huge
+                                        else
+                                            values.max = _displayToValue(values.max)  -- Convert display string to value (handles $REF)
+                                        end
+                                        
+                                        -- Reconstruct base: if baseKey is empty, it's a literal number; otherwise it's a rule/expr/ref
+                                        if values.baseKey and values.baseKey ~= "" then
+                                            values.base = { ruleKey = values.baseKey, default = tonumber(values.baseDefault) or 0 }
+                                        else
+                                            values.base = tonumber(values.baseDefault) or 0
+                                        end
+                                        values.baseKey = nil
+                                        values.baseDefault = nil
+                                        
+                                        -- Reconstruct recovery from separate fields
+                                        if values.ruleKey and values.ruleKey ~= "" then
+                                            values.recovery = { ruleKey = values.ruleKey, default = tonumber(values.recoveryDefault) or 0 }
+                                        else
+                                            values.recovery = nil
+                                        end
+                                        values.ruleKey = nil
+                                        values.recoveryDefault = nil
+                                        
+                                        -- Reconstruct mitigation from separate fields
+                                        local mitigationNormalValue = _displayToValue(values.mitigationNormalValue or "")
+                                        local mitigationCriticalValue = _displayToValue(values.mitigationCriticalValue or "")
+                                        if mitigationNormalValue ~= 0 or mitigationCriticalValue ~= 0 then
+                                            values.mitigation = {
+                                                normal = mitigationNormalValue,
+                                                critical = mitigationCriticalValue,
+                                                fail = _displayToValue(values.mitigationFailValue or ""),
+                                                combatText = (values.mitigationCombatText and values.mitigationCombatText ~= "") and values.mitigationCombatText or "Defend"
+                                            }
+                                        else
+                                            values.mitigation = nil
+                                        end
+                                        values.mitigationNormalValue = nil
+                                        values.mitigationCriticalValue = nil
+                                        values.mitigationFailValue = nil
+                                        values.mitigationCombatText = nil
+                                        values.mitigationHeader = nil
+                                        
+                                        -- Reconstruct itemTooltipColor from RGB fields
+                                        local colorR = tonumber(values.itemTooltipColorR) or 1
+                                        local colorG = tonumber(values.itemTooltipColorG) or 1
+                                        local colorB = tonumber(values.itemTooltipColorB) or 1
+                                        values.itemTooltipColor = { colorR, colorG, colorB }
+                                        values.itemTooltipColorR = nil
+                                        values.itemTooltipColorG = nil
+                                        values.itemTooltipColorB = nil
+                                        
+                                        local ds2 = self:GetEditingDataset()
+                                        -- If ID changed, delete the old entry and save with new ID
+                                        if newStatId ~= entry.id and ds2 and ds2.extra and ds2.extra.stats then
+                                            ds2.extra.stats[entry.id] = nil
+                                        end
+                                        local okId = _saveStat(ds2, newStatId, values)
+                                        if okId and _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then
+                                            pcall(_G.RPE.Profile.DatasetDB.Save, ds2)
+                                            _syncStatToProfile(newStatId, ds2.extra.stats[newStatId])
+                                        end
+                                        -- Refresh stat registry
+                                        if _G.RPE.Core and _G.RPE.Core.StatRegistry then
+                                            pcall(function() _G.RPE.Core.StatRegistry:RefreshFromActiveDatasets() end)
+                                        end
+                                        self:Refresh()
+                                    end,
+                                })
                             end
-                            DW:ShowWizard({
-                                schema = _buildEditSchema(entry.id, full),
-                                isEdit = true,
-                                onSave = function(values)
-                                    -- Normalize checkbox values from form to numeric 1 or 0 (never true/false/nil)
-                                    -- Explicitly convert anything that's not 1/true/"1" to 0
-                                    if values.visible == 1 or values.visible == true or values.visible == "1" then
-                                        values.visible = 1
-                                    else
-                                        values.visible = 0
-                                    end
-                                    if values.pct == 1 or values.pct == true or values.pct == "1" then
-                                        values.pct = 1
-                                    else
-                                        values.pct = 0
-                                    end
-                                    
-                                    -- Handle stat ID: auto-generate from name if blank
-                                    local newStatId = _trim(values.id or "")
-                                    if newStatId == "" then
-                                        newStatId = _generateStatId(values.name)
-                                    end
-                                    if newStatId == "" then
-                                        return  -- Can't save without a valid ID
-                                    end
-                                    values.id = nil  -- Remove from values, we'll use newStatId
-                                    
-                                    -- Handle empty min/max: empty min becomes -inf, empty max becomes +inf
-                                    if not values.min or values.min == "" then
-                                        values.min = -math.huge
-                                    else
-                                        values.min = _displayToValue(values.min)  -- Convert display string to value (handles $REF)
-                                    end
-                                    if not values.max or values.max == "" then
-                                        values.max = math.huge
-                                    else
-                                        values.max = _displayToValue(values.max)  -- Convert display string to value (handles $REF)
-                                    end
-                                    
-                                    -- Reconstruct base: if baseKey is empty, it's a literal number; otherwise it's a rule/expr/ref
-                                    if values.baseKey and values.baseKey ~= "" then
-                                        values.base = { ruleKey = values.baseKey, default = tonumber(values.baseDefault) or 0 }
-                                    else
-                                        values.base = tonumber(values.baseDefault) or 0
-                                    end
-                                    values.baseKey = nil
-                                    values.baseDefault = nil
-                                    
-                                    -- Reconstruct recovery from separate fields
-                                    if values.ruleKey and values.ruleKey ~= "" then
-                                        values.recovery = { ruleKey = values.ruleKey, default = tonumber(values.recoveryDefault) or 0 }
-                                    else
-                                        values.recovery = nil
-                                    end
-                                    values.ruleKey = nil
-                                    values.recoveryDefault = nil
-                                    
-                                    -- Reconstruct mitigation from separate fields
-                                    local mitigationNormalValue = _displayToValue(values.mitigationNormalValue or "")
-                                    local mitigationCriticalValue = _displayToValue(values.mitigationCriticalValue or "")
-                                    if mitigationNormalValue ~= 0 or mitigationCriticalValue ~= 0 then
-                                        values.mitigation = {
-                                            normal = mitigationNormalValue,
-                                            critical = mitigationCriticalValue,
-                                            fail = _displayToValue(values.mitigationFailValue or ""),
-                                            combatText = (values.mitigationCombatText and values.mitigationCombatText ~= "") and values.mitigationCombatText or "Defend"
-                                        }
-                                    else
-                                        values.mitigation = nil
-                                    end
-                                    values.mitigationNormalValue = nil
-                                    values.mitigationCriticalValue = nil
-                                    values.mitigationFailValue = nil
-                                    values.mitigationCombatText = nil
-                                    values.mitigationHeader = nil
-                                    
-                                    local ds2 = self:GetEditingDataset()
-                                    -- If ID changed, delete the old entry and save with new ID
-                                    if newStatId ~= entry.id and ds2 and ds2.extra and ds2.extra.stats then
-                                        ds2.extra.stats[entry.id] = nil
-                                    end
-                                    local okId = _saveStat(ds2, newStatId, values)
-                                    if okId and _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then
-                                        pcall(_G.RPE.Profile.DatasetDB.Save, ds2)
-                                        _syncStatToProfile(newStatId, ds2.extra.stats[newStatId])
-                                    end
-                                    -- Refresh stat registry
-                                    if _G.RPE.Core and _G.RPE.Core.StatRegistry then
-                                        pcall(function() _G.RPE.Core.StatRegistry:RefreshFromActiveDatasets() end)
-                                    end
-                                    self:Refresh()
-                                end,
-                            })
-                        end
-                    end,
-                }, level)
+                        end,
+                    }, level)
 
-                -- Delete
-                UIDropDownMenu_AddButton({
-                    text = "|cffff4040Delete Entry|r",
-                    notCheckable = true,
-                    func = function()
-                        local ds = self:GetEditingDataset()
-                        if not (ds and ds.extra and ds.extra.stats and ds.extra.stats[entry.id]) then return end
-                        ds.extra.stats[entry.id] = nil
-                        if _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then
-                            pcall(_G.RPE.Profile.DatasetDB.Save, ds)
+                    -- Delete
+                    UIDropDownMenu_AddButton({
+                        text = "|cffff4040Delete Entry|r",
+                        notCheckable = true,
+                        func = function()
+                            local ds = self:GetEditingDataset()
+                            if not (ds and ds.extra and ds.extra.stats and ds.extra.stats[entry.id]) then return end
+                            ds.extra.stats[entry.id] = nil
+                            if _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then
+                                pcall(_G.RPE.Profile.DatasetDB.Save, ds)
+                            end
+                            -- Refresh stat registry
+                            if _G.RPE.Core and _G.RPE.Core.StatRegistry then
+                                pcall(function() _G.RPE.Core.StatRegistry:RefreshFromActiveDatasets() end)
+                            end
+                            self:Refresh()
+                        end,
+                    }, level)
+                elseif level == 2 and menuList == "COPY_FROM_DATASET" then
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select Dataset"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if DB and DB.ListNames then
+                        local names = DB:ListNames()
+                        table.sort(names)
+                        for _, dsName in ipairs(names) do
+                            local btn = UIDropDownMenu_CreateInfo()
+                            btn.notCheckable = true
+                            btn.text = dsName
+                            btn.value = dsName
+                            btn.menuList = "COPY_FROM_STATS"
+                            btn.hasArrow = true
+                            UIDropDownMenu_AddButton(btn, level)
                         end
-                        -- Refresh stat registry
-                        if _G.RPE.Core and _G.RPE.Core.StatRegistry then
-                            pcall(function() _G.RPE.Core.StatRegistry:RefreshFromActiveDatasets() end)
+                    end
+                elseif level == 3 and menuList == "COPY_FROM_STATS" then
+                    local sourceDatasetName = UIDROPDOWNMENU_MENU_VALUE
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if not (DB and sourceDatasetName) then return end
+
+                    local sourceDataset
+                    for _, fn in ipairs({ "GetByName", "GetByKey", "Get" }) do
+                        local func = DB[fn]
+                        if type(func) == "function" then
+                            local ok, ds = pcall(func, DB, sourceDatasetName)
+                            if ok and ds then sourceDataset = ds; break end
+                            local ok2, ds2 = pcall(func, sourceDatasetName)
+                            if ok2 and ds2 then sourceDataset = ds2; break end
                         end
-                        self:Refresh()
-                    end,
-                }, level)
+                    end
+
+                    if not (sourceDataset and sourceDataset.extra and sourceDataset.extra.stats) then return end
+
+                    local statList = {}
+                    for statId, statDef in pairs(sourceDataset.extra.stats) do
+                        table.insert(statList, {
+                            id = statId,
+                            name = statDef.name or statId,
+                        })
+                    end
+
+                    table.sort(statList, function(a, b)
+                        local an = tostring(a.name or ""):lower()
+                        local bn = tostring(b.name or ""):lower()
+                        if an ~= bn then return an < bn end
+                        return tostring(a.id) < tostring(b.id)
+                    end)
+
+                    local groupSize = 20
+                    local groups = {}
+                    for i = 1, #statList, groupSize do
+                        local group = {}
+                        for j = 0, groupSize - 1 do
+                            if statList[i + j] then
+                                table.insert(group, statList[i + j])
+                            end
+                        end
+                        if #group > 0 then
+                            table.insert(groups, group)
+                        end
+                    end
+
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select Group"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    for groupIdx, group in ipairs(groups) do
+                        local firstStat = group[1]
+                        local lastStat = group[#group]
+                        local firstName = (tostring(firstStat.name or "")):sub(1, 1):upper()
+                        local lastName = (tostring(lastStat.name or "")):sub(1, 2):upper()
+                        local rangeLabel = firstName .. "-" .. lastName
+
+                        local btn = UIDropDownMenu_CreateInfo()
+                        btn.notCheckable = true
+                        btn.text = rangeLabel
+                        btn.value = sourceDatasetName .. "|" .. groupIdx
+                        btn.menuList = "COPY_FROM_STAT_GROUP"
+                        btn.hasArrow = true
+                        UIDropDownMenu_AddButton(btn, level)
+                    end
+                elseif level == 4 and menuList == "COPY_FROM_STAT_GROUP" then
+                    local encodedValue = UIDROPDOWNMENU_MENU_VALUE
+                    local sourceDatasetName, groupIdxStr = encodedValue:match("^(.+)|(.+)$")
+                    local groupIdx = tonumber(groupIdxStr)
+
+                    if not (sourceDatasetName and groupIdx) then return end
+
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if not DB then return end
+
+                    local sourceDataset
+                    for _, fn in ipairs({ "GetByName", "GetByKey", "Get" }) do
+                        local func = DB[fn]
+                        if type(func) == "function" then
+                            local ok, ds = pcall(func, DB, sourceDatasetName)
+                            if ok and ds then sourceDataset = ds; break end
+                            local ok2, ds2 = pcall(func, sourceDatasetName)
+                            if ok2 and ds2 then sourceDataset = ds2; break end
+                        end
+                    end
+
+                    if not (sourceDataset and sourceDataset.extra and sourceDataset.extra.stats) then return end
+
+                    local statList = {}
+                    for statId, statDef in pairs(sourceDataset.extra.stats) do
+                        table.insert(statList, {
+                            id = statId,
+                            name = statDef.name or statId,
+                        })
+                    end
+
+                    table.sort(statList, function(a, b)
+                        local an = tostring(a.name or ""):lower()
+                        local bn = tostring(b.name or ""):lower()
+                        if an ~= bn then return an < bn end
+                        return tostring(a.id) < tostring(b.id)
+                    end)
+
+                    local groupSize = 20
+                    local groups = {}
+                    for i = 1, #statList, groupSize do
+                        local group = {}
+                        for j = 0, groupSize - 1 do
+                            if statList[i + j] then
+                                table.insert(group, statList[i + j])
+                            end
+                        end
+                        if #group > 0 then
+                            table.insert(groups, group)
+                        end
+                    end
+
+                    local selectedGroup = groups[groupIdx]
+                    if not selectedGroup then return end
+
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select Stat"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    for _, statRef in ipairs(selectedGroup) do
+                        local btn = UIDropDownMenu_CreateInfo()
+                        btn.notCheckable = true
+                        btn.text = statRef.name
+                        btn.func = function()
+                            local targetDs = self:GetEditingDataset()
+                            if not (targetDs and sourceDataset and sourceDataset.extra and sourceDataset.extra.stats and sourceDataset.extra.stats[statRef.id]) then
+                                return
+                            end
+
+                            local sourceStatDef = sourceDataset.extra.stats[statRef.id]
+
+                            -- Replace the current stat entry's data
+                            targetDs.extra = targetDs.extra or {}
+                            targetDs.extra.stats = targetDs.extra.stats or {}
+                            targetDs.extra.stats[entry.id] = {}
+                            for k, v in pairs(sourceStatDef) do
+                                if type(v) == "table" then
+                                    targetDs.extra.stats[entry.id][k] = {}
+                                    for k2, v2 in pairs(v) do
+                                        targetDs.extra.stats[entry.id][k][k2] = v2
+                                    end
+                                else
+                                    targetDs.extra.stats[entry.id][k] = v
+                                end
+                            end
+                            targetDs.extra.stats[entry.id].id = entry.id
+
+                            local DB2 = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                            if DB2 and DB2.Save then pcall(DB2.Save, targetDs) end
+
+                            local reg = _G.RPE and _G.RPE.Core and _G.RPE.Core.StatRegistry
+                            if reg and reg.RefreshFromActiveDatasets then
+                                reg:RefreshFromActiveDatasets()
+                            elseif reg and reg.Init then
+                                reg:Init()
+                            end
+
+                            self:Refresh()
+
+                            if RPE and RPE.Debug and RPE.Debug.Internal then
+                                RPE.Debug:Internal("Stat replaced: " .. statRef.name .. " -> " .. entry.id)
+                            end
+                        end
+                        UIDropDownMenu_AddButton(btn, level)
+                    end
+                end
             end)
         end,
     })
@@ -621,6 +860,15 @@ function StatEditorSheet:BuildUI(opts)
                 values.mitigationFailValue = nil
                 values.mitigationCombatText = nil
                 values.mitigationHeader = nil
+                
+                -- Reconstruct itemTooltipColor from RGB fields
+                local colorR = tonumber(values.itemTooltipColorR) or 1
+                local colorG = tonumber(values.itemTooltipColorG) or 1
+                local colorB = tonumber(values.itemTooltipColorB) or 1
+                values.itemTooltipColor = { colorR, colorG, colorB }
+                values.itemTooltipColorR = nil
+                values.itemTooltipColorG = nil
+                values.itemTooltipColorB = nil
                 
                 local okId = _saveStat(ds, newStatId, values)
                 if okId and _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then

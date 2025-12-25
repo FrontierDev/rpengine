@@ -736,6 +736,18 @@ local function rebuild_page_body(self)
       end
     })
     categoryRow:Add(categoryDD)
+
+    -- Spare Change checkbox (leftover copper adjustment)
+    local spareChangeRow = HGroup:New(self.frame:GetName().."_SpareChangeRow", { parent=itemsGroup, spacingX=8, alignH="LEFT", alignV="CENTER", autoSize=true })
+    itemsGroup:Add(spareChangeRow)
+    label(spareChangeRow, "Apply Spare Change", 130)
+    local spareChangeCB = Checkbox:New(spareChangeRow.frame:GetName().."_SpareChange", {
+      parent=spareChangeRow, checked = not not p.spareChange,
+      onChanged=function(_, b)
+        if is_rebinding(self) then return end
+        p.spareChange = b and true or false
+      end
+    }); spareChangeRow:Add(spareChangeCB)
   end
 
   -- SELECT_PROFESSIONS specific fields
@@ -1000,6 +1012,7 @@ function SetupPages:GetValue()
       pp.excludeTags = p.excludeTags or ""
       pp.maxRarity = p.maxRarity or "legendary"
       pp.allowedCategory = p.allowedCategory or ""
+      pp.spareChange = p.spareChange or false
     end
     
     -- Add SELECT_PROFESSIONS specific fields

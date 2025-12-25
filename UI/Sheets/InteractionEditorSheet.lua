@@ -187,12 +187,20 @@ local function _buildRow(self, i)
             local e = row._entry
             if not e or not Common or not Common.ContextMenu then return end
 
-            Common:ContextMenu(row.frame or UIParent, function(level)
+            Common:ContextMenu(row.frame or UIParent, function(level, menuList)
                 if level == 1 then
                     local info = UIDropDownMenu_CreateInfo()
                     info.isTitle, info.notCheckable = true, true
                     info.text = e.target or e.id
                     UIDropDownMenu_AddButton(info, level)
+
+                    -- Copy from other datasets
+                    local copyFrom = UIDropDownMenu_CreateInfo()
+                    copyFrom.notCheckable = true
+                    copyFrom.text = "Copy from..."
+                    copyFrom.hasArrow = true
+                    copyFrom.menuList = "COPY_FROM_DATASET"
+                    UIDropDownMenu_AddButton(copyFrom, level)
 
                     UIDropDownMenu_AddButton({
                         text = "Edit", notCheckable = true,
@@ -245,6 +253,192 @@ local function _buildRow(self, i)
                             self:Refresh()
                         end,
                     }, level)
+                elseif level == 2 and menuList == "COPY_FROM_DATASET" then
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select Dataset"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if DB and DB.ListNames then
+                        local names = DB:ListNames()
+                        table.sort(names)
+                        for _, dsName in ipairs(names) do
+                            local btn = UIDropDownMenu_CreateInfo()
+                            btn.notCheckable = true
+                            btn.text = dsName
+                            btn.value = dsName
+                            btn.menuList = "COPY_FROM_INTERACTIONS"
+                            btn.hasArrow = true
+                            UIDropDownMenu_AddButton(btn, level)
+                        end
+                    end
+                elseif level == 3 and menuList == "COPY_FROM_INTERACTIONS" then
+                    local sourceDatasetName = UIDROPDOWNMENU_MENU_VALUE
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if not (DB and sourceDatasetName) then return end
+
+                    local sourceDataset
+                    for _, fn in ipairs({ "GetByName", "GetByKey", "Get" }) do
+                        local func = DB[fn]
+                        if type(func) == "function" then
+                            local ok, ds = pcall(func, DB, sourceDatasetName)
+                            if ok and ds then sourceDataset = ds; break end
+                            local ok2, ds2 = pcall(func, sourceDatasetName)
+                            if ok2 and ds2 then sourceDataset = ds2; break end
+                        end
+                    end
+
+                    if not (sourceDataset and sourceDataset.extra and sourceDataset.extra.interactions) then return end
+
+                    local interactionList = {}
+                    for interactionId, interactionDef in pairs(sourceDataset.extra.interactions) do
+                        table.insert(interactionList, {
+                            id = interactionId,
+                            target = interactionDef.target or interactionId,
+                        })
+                    end
+
+                    table.sort(interactionList, function(a, b)
+                        local an = tostring(a.target or ""):lower()
+                        local bn = tostring(b.target or ""):lower()
+                        if an ~= bn then return an < bn end
+                        return tostring(a.id) < tostring(b.id)
+                    end)
+
+                    local groupSize = 20
+                    local groups = {}
+                    for i = 1, #interactionList, groupSize do
+                        local group = {}
+                        for j = 0, groupSize - 1 do
+                            if interactionList[i + j] then
+                                table.insert(group, interactionList[i + j])
+                            end
+                        end
+                        if #group > 0 then
+                            table.insert(groups, group)
+                        end
+                    end
+
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select Group"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    for groupIdx, group in ipairs(groups) do
+                        local firstInt = group[1]
+                        local lastInt = group[#group]
+                        local firstName = (tostring(firstInt.target or "")):sub(1, 1):upper()
+                        local lastName = (tostring(lastInt.target or "")):sub(1, 2):upper()
+                        local rangeLabel = firstName .. "-" .. lastName
+
+                        local btn = UIDropDownMenu_CreateInfo()
+                        btn.notCheckable = true
+                        btn.text = rangeLabel
+                        btn.value = sourceDatasetName .. "|" .. groupIdx
+                        btn.menuList = "COPY_FROM_INTERACTION_GROUP"
+                        btn.hasArrow = true
+                        UIDropDownMenu_AddButton(btn, level)
+                    end
+                elseif level == 4 and menuList == "COPY_FROM_INTERACTION_GROUP" then
+                    local encodedValue = UIDROPDOWNMENU_MENU_VALUE
+                    local sourceDatasetName, groupIdxStr = encodedValue:match("^(.+)|(.+)$")
+                    local groupIdx = tonumber(groupIdxStr)
+
+                    if not (sourceDatasetName and groupIdx) then return end
+
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if not DB then return end
+
+                    local sourceDataset
+                    for _, fn in ipairs({ "GetByName", "GetByKey", "Get" }) do
+                        local func = DB[fn]
+                        if type(func) == "function" then
+                            local ok, ds = pcall(func, DB, sourceDatasetName)
+                            if ok and ds then sourceDataset = ds; break end
+                            local ok2, ds2 = pcall(func, sourceDatasetName)
+                            if ok2 and ds2 then sourceDataset = ds2; break end
+                        end
+                    end
+
+                    if not (sourceDataset and sourceDataset.extra and sourceDataset.extra.interactions) then return end
+
+                    local interactionList = {}
+                    for interactionId, interactionDef in pairs(sourceDataset.extra.interactions) do
+                        table.insert(interactionList, {
+                            id = interactionId,
+                            target = interactionDef.target or interactionId,
+                        })
+                    end
+
+                    table.sort(interactionList, function(a, b)
+                        local an = tostring(a.target or ""):lower()
+                        local bn = tostring(b.target or ""):lower()
+                        if an ~= bn then return an < bn end
+                        return tostring(a.id) < tostring(b.id)
+                    end)
+
+                    local groupSize = 20
+                    local groups = {}
+                    for i = 1, #interactionList, groupSize do
+                        local group = {}
+                        for j = 0, groupSize - 1 do
+                            if interactionList[i + j] then
+                                table.insert(group, interactionList[i + j])
+                            end
+                        end
+                        if #group > 0 then
+                            table.insert(groups, group)
+                        end
+                    end
+
+                    local selectedGroup = groups[groupIdx]
+                    if not selectedGroup then return end
+
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select Interaction"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    for _, intRef in ipairs(selectedGroup) do
+                        local btn = UIDropDownMenu_CreateInfo()
+                        btn.notCheckable = true
+                        btn.text = intRef.target
+                        btn.func = function()
+                            local targetDs = self:GetEditingDataset()
+                            if not (targetDs and sourceDataset and sourceDataset.extra and sourceDataset.extra.interactions and sourceDataset.extra.interactions[intRef.id]) then
+                                return
+                            end
+
+                            local sourceInteractionDef = sourceDataset.extra.interactions[intRef.id]
+
+                            -- Replace the current interaction entry's data
+                            targetDs.extra = targetDs.extra or {}
+                            targetDs.extra.interactions = targetDs.extra.interactions or {}
+                            targetDs.extra.interactions[e.id] = {}
+                            for k, v in pairs(sourceInteractionDef) do
+                                if type(v) == "table" then
+                                    targetDs.extra.interactions[e.id][k] = {}
+                                    for k2, v2 in pairs(v) do
+                                        targetDs.extra.interactions[e.id][k][k2] = v2
+                                    end
+                                else
+                                    targetDs.extra.interactions[e.id][k] = v
+                                end
+                            end
+                            targetDs.extra.interactions[e.id].id = e.id
+
+                            local DB2 = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                            if DB2 and DB2.Save then pcall(DB2.Save, targetDs) end
+
+                            self:Refresh()
+
+                            if RPE and RPE.Debug and RPE.Debug.Internal then
+                                RPE.Debug:Internal("Interaction replaced: " .. intRef.target .. " -> " .. e.id)
+                            end
+                        end
+                        UIDropDownMenu_AddButton(btn, level)
+                    end
                 end
             end)
         end,

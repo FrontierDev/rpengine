@@ -97,6 +97,16 @@ function Table:Refresh()
             if self.rowOnClick then self.rowOnClick(rowFrame, rowData, btn) end
         end)
 
+        -- Get row color if specified
+        local rowColor = rowData.rowColor
+        local colorR, colorG, colorB, colorA = 1, 1, 1, 1
+        if rowColor then
+            local C = RPE_UI and RPE_UI.Colors
+            if C then
+                colorR, colorG, colorB, colorA = C.Get(rowColor)
+            end
+        end
+
         local x2 = 0
         for _, col in ipairs(self.columns) do
             local cell = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -104,6 +114,10 @@ function Table:Refresh()
             cell:SetWidth(col.width or 80)
             cell:SetJustifyH("LEFT")
             cell:SetText(rowData[col.key] or "")
+            -- Apply row color if specified
+            if rowColor then
+                cell:SetTextColor(colorR, colorG, colorB, colorA)
+            end
             x2 = x2 + (col.width or 80) + self.headerSpacingX
         end
 

@@ -497,16 +497,36 @@ local function _ensureDefaultDatasets()
                 if sourceData.spells then existing.spells = sourceData.spells end
                 if sourceData.auras then existing.auras = sourceData.auras end
                 if sourceData.npcs then existing.npcs = sourceData.npcs end
+                if sourceData.recipes then existing.recipes = sourceData.recipes end
                 if sourceData.extra then existing.extra = sourceData.extra end
                 existing.version = sourceData.version or existing.version
                 existing.notes = sourceData.notes or existing.notes
                 existing.author = sourceData.author or existing.author
+                existing.description = sourceData.description or existing.description
+                existing.securityLevel = sourceData.securityLevel or existing.securityLevel
                 existing.guid = sourceData.guid or existing.guid
                 existing.createdAt = sourceData.createdAt or existing.createdAt
                 existing.updatedAt = sourceData.updatedAt or existing.updatedAt
+                
+                -- Merge generated recipes into extra.recipes so they're a single source of truth
+                if sourceData.recipes and type(sourceData.recipes) == "table" then
+                    existing.extra = existing.extra or {}
+                    existing.extra.recipes = existing.extra.recipes or {}
+                    for id, recipe in pairs(sourceData.recipes) do
+                        existing.extra.recipes[id] = recipe
+                    end
+                end
             else
                 -- First time: create from source
                 db.datasets[defaultName] = sourceData
+                -- Also merge recipes into extra.recipes for new datasets
+                if sourceData.recipes and type(sourceData.recipes) == "table" then
+                    sourceData.extra = sourceData.extra or {}
+                    sourceData.extra.recipes = sourceData.extra.recipes or {}
+                    for id, recipe in pairs(sourceData.recipes) do
+                        sourceData.extra.recipes[id] = recipe
+                    end
+                end
             end
         else
             -- Fallback: create empty default if file not loaded

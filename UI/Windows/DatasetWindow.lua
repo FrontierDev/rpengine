@@ -280,12 +280,47 @@ local function _deleteDataset(name)
 end
 -- ---------- end helpers -----------------------------------------------------
 
+-- Get the natural/intrinsic size of a sheet by measuring its content
+function DatasetWindow:_getSheetSize(pageSheet)
+    if not pageSheet or not pageSheet.frame then return nil, nil end
+    
+    -- Force a layout pass
+    if pageSheet.Relayout then
+        pcall(function() pageSheet:Relayout() end)
+    end
+    
+    -- Try to measure the frame
+    local frame = pageSheet.frame
+    local w = frame:GetWidth()
+    local h = frame:GetHeight()
+    
+    -- If we got 0 or nil, try to calculate from children
+    if not w or w == 0 or not h or h == 0 then
+        local minW, minH = 0, 0
+        for i = 1, frame:GetNumChildren() do
+            local child = select(i, frame:GetChildren())
+            if child and child:IsShown() then
+                local cw = child:GetWidth() or 0
+                local ch = child:GetHeight() or 0
+                minW = math.max(minW, cw)
+                minH = minH + ch
+            end
+        end
+        w = (minW > 0 and minW) or w or 480
+        h = (minH > 0 and minH) or h or 400
+    end
+    
+    return w or 480, h or 400
+end
+
 -- Ensure sizing happens after layout settles
 function DatasetWindow:_resizeSoon(targetSheet)
     if C_Timer and C_Timer.After then
-        C_Timer.After(0, function()
-            if targetSheet and targetSheet.Relayout then pcall(function() targetSheet:Relayout() end) end
-            self:_recalcSizeForContent(targetSheet or self:GetActiveSheet())
+        -- Defer sizing to allow multiple layout passes
+        C_Timer.After(0.01, function()
+            if self.root and self.root.frame and self.root.frame:IsVisible() then
+                self:_recalcSizeForContent(targetSheet or self:GetActiveSheet())
+            end
         end)
     end
 end
@@ -293,11 +328,13 @@ end
 -- When a specific sheet is visible, compute window size to match it.
 function DatasetWindow:_recalcSizeForContent(pageSheet)
     if not (self.content and self.content.SetSize and pageSheet and pageSheet.frame) then return end
-    if pageSheet.Relayout then pcall(function() pageSheet:Relayout() end) end
-
-    local w = pageSheet.frame:GetWidth() + 12
-    local h = pageSheet.frame:GetHeight() + 12
+    
+    local w, h = self:_getSheetSize(pageSheet)
     if not (w and h) then return end
+    
+    -- Add padding
+    w = w + 12
+    h = h + 12
 
     local padX = self.content.autoSizePadX or 0
     local padY = self.content.autoSizePadY or 0
@@ -530,6 +567,24 @@ function DatasetWindow:BuildUI()
             if not name or name == "" then _dprint("No editing dataset selected."); return end
             local ds = DB.GetByName and DB.GetByName(name)
             if not ds then _dprint("Dataset not found: " .. tostring(name)); return end
+            
+            -- Check if non-author is trying to save a restricted dataset
+            local playerName = UnitName("player")
+            local isAuthor = (ds.author == playerName)
+            if not isAuthor and (ds.securityLevel == "Viewable" or ds.securityLevel == "Locked") then
+                _dprint("Cannot save: non-author trying to save restricted dataset")
+                return
+            end
+            
+            -- Sync metadata from the editor sheet before saving
+            local metaSheet = self.pages and self.pages["metadata"]
+            if metaSheet and metaSheet.inputs and metaSheet.inputs.description then
+                local descInput = metaSheet.inputs.description
+                if descInput.GetText then
+                    ds.description = descInput:GetText() or ""
+                end
+            end
+            
             DB.Save(ds)
             _dprint("Saved dataset:", ds.name)
         end,
@@ -604,6 +659,16 @@ function DatasetWindow:BuildUI()
                                 self:HideWizard()
                             end
                             self:ShowTab("items")
+                            
+                            -- Resize window for new dataset content
+                            local itemsPage = self.pages and self.pages["items"]
+                            if itemsPage then
+                                local itemsSheet = itemsPage.sheet or itemsPage.root
+                                if itemsSheet then
+                                    self:_recalcSizeForContent(itemsSheet)
+                                    self:_resizeSoon(itemsSheet)
+                                end
+                            end
                         end
                         nfo.checked = (name == current)
                         UIDropDownMenu_AddButton(nfo, level)
@@ -618,7 +683,7 @@ function DatasetWindow:BuildUI()
                 -- Add custom datasets
                 for _, name in ipairs(customDatasets) do
                     local nfo = UIDropDownMenu_CreateInfo()
-                    local activeMarker = activeSet[name] and " ✓" or ""
+                    local activeMarker = activeSet[name] and RPE.Common.InlineIcons["Check"] or ""
                     nfo.text = name .. activeMarker
                     nfo.func = function()
                         -- Switch which dataset we're editing (does NOT change active list)
@@ -635,6 +700,16 @@ function DatasetWindow:BuildUI()
                             self:HideWizard()
                         end
                         self:ShowTab("items")
+                        
+                        -- Resize window for new dataset content
+                        local itemsPage = self.pages and self.pages["items"]
+                        if itemsPage then
+                            local itemsSheet = itemsPage.sheet or itemsPage.root
+                            if itemsSheet then
+                                self:_recalcSizeForContent(itemsSheet)
+                                self:_resizeSoon(itemsSheet)
+                            end
+                        end
                     end
                     nfo.checked = (name == current)
                     UIDropDownMenu_AddButton(nfo, level)
@@ -749,6 +824,16 @@ function DatasetWindow:BuildUI()
         onClick = function()
             if self.pages and self.pages["metadata"] then
                 self:ShowTab("metadata")
+                
+                -- Resize window for metadata content
+                local metaPage = self.pages["metadata"]
+                if metaPage then
+                    local metaSheet = metaPage.sheet or metaPage.root
+                    if metaSheet then
+                        self:_recalcSizeForContent(metaSheet)
+                        self:_resizeSoon(metaSheet)
+                    end
+                end
             end
         end,
     })
@@ -762,7 +847,30 @@ function DatasetWindow:BuildUI()
         text = "Setup Wizard",
         noBorder = true,
         onClick = function()
+            local DB = _DB()
+            if not DB then _dprint("DatasetDB missing."); return end
+            local ds = DB.GetByName(self.editingName)
+            if not ds then _dprint("Dataset not found."); return end
+            
+            -- Check if non-author is trying to access setup wizard on a Locked dataset
+            local playerName = UnitName("player")
+            local isAuthor = (ds.author == playerName)
+            if not isAuthor and ds.securityLevel == "Locked" then
+                _dprint("Cannot access setup wizard: non-author trying to modify locked dataset")
+                return
+            end
+            
             self:ShowTab("setupWizard")
+            
+            -- Resize window for setup wizard content
+            local setupPage = self.pages and self.pages["setupWizard"]
+            if setupPage then
+                local setupSheet = setupPage.sheet or setupPage.root
+                if setupSheet then
+                    self:_recalcSizeForContent(setupSheet)
+                    self:_resizeSoon(setupSheet)
+                end
+            end
         end,
     })
     self.btnSetupWizard.frame:ClearAllPoints()
@@ -879,6 +987,19 @@ function DatasetWindow:BuildUI()
         _dprint("InteractionEditorSheet not found.")
     end
 
+    local MetadataEditorSheet = _G.RPE_UI.Windows.MetadataEditorSheet
+    if MetadataEditorSheet then
+        local page = MetadataEditorSheet.New({ parent = self.content, editingName = self.editingName })
+        -- ensure dataset binding if ctor doesn't handle it
+        if page and page.SetEditingDataset and self.editingName then
+            pcall(function() page:SetEditingDataset(self.editingName) end)
+        end
+        self.pages["metadata"] = page
+        if page.sheet and page.sheet.Hide then page.sheet:Hide() end
+    else
+        _dprint("MetadataEditorSheet not found.")
+    end
+
     local SetupWizardEditorSheet = _G.RPE_UI.Windows.SetupWizardEditorSheet
     if SetupWizardEditorSheet then
         local page = SetupWizardEditorSheet.New({ parent = self.content, editingName = self.editingName })
@@ -916,6 +1037,7 @@ function DatasetWindow:UpdateHeader()
     end
     self:UpdateActiveButtonText()
     self:UpdateDeleteButtonState()
+    self:_updateTabLockState()
 end
 
 function DatasetWindow:UpdateActiveButtonText()
@@ -962,6 +1084,39 @@ function DatasetWindow:ShowTab(key)
 
     self:_recalcSizeForContent(w)
     self:_resizeSoon(w)
+end
+
+function DatasetWindow:_updateTabLockState()
+    local DB = _DB()
+    if not DB then return end
+    local ds = DB.GetByName(self.editingName)
+    if not ds then return end
+    
+    local playerName = UnitName("player")
+    local isAuthor = (ds.author == playerName)
+    local isLocked = (ds.securityLevel == "Locked")
+    
+    -- If locked and not author, disable all tabs except metadata
+    if isLocked and not isAuthor then
+        for key, btn in pairs(self.tabs or {}) do
+            if btn and btn.SetEnabled then
+                if key == "metadata" then
+                    btn:SetEnabled(true)
+                else
+                    btn:SetEnabled(false)
+                end
+            end
+        end
+        -- Force show metadata tab
+        self:ShowTab("metadata")
+    else
+        -- Re-enable all tabs if not locked or if author (Viewable datasets show all tabs)
+        for _, btn in pairs(self.tabs or {}) do
+            if btn and btn.SetEnabled then
+                btn:SetEnabled(true)
+            end
+        end
+    end
 end
 
 --- Add a tab button into a footer column

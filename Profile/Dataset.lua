@@ -8,15 +8,18 @@ RPE.Profile = RPE.Profile or {}
 ---@class Dataset
 ---@field name string
 ---@field version number
----@field author string|nil
----@field notes string|nil
+---@field author string
+---@field notes string
+---@field description string
 ---@field guid string
 ---@field createdAt number
 ---@field updatedAt number
+---@field securityLevel string
 ---@field items table<string, any>
 ---@field spells table<string, any>
 ---@field auras table<string, any>
 ---@field npcs table<string, any>
+---@field recipes table<string, any>
 ---@field extra table<string, table<string, any>>
 ---@field setupWizard table|nil
 local Dataset = {}
@@ -125,16 +128,19 @@ function Dataset:New(name, opts)
     local o = setmetatable({
         name      = name,
         version   = tonumber(opts.version) or 1,
-        author    = opts.author,
-        notes     = opts.notes,
+        author    = opts.author or "",
+        notes     = opts.notes or "",
+        description = opts.description or "",
         guid      = opts.guid or _mkGuid(name),
         createdAt = tonumber(opts.createdAt) or now,
         updatedAt = tonumber(opts.updatedAt) or now,
+        securityLevel = opts.securityLevel or "Open",
 
         items  = type(opts.items)  == "table" and opts.items  or {},
         spells = type(opts.spells) == "table" and opts.spells or {},
         auras  = type(opts.auras)  == "table" and opts.auras  or {},
         npcs   = type(opts.npcs)   == "table" and opts.npcs   or {},
+        recipes = type(opts.recipes) == "table" and opts.recipes or {},
         extra  = type(opts.extra)  == "table" and opts.extra  or {},
         setupWizard = type(opts.setupWizard) == "table" and opts.setupWizard or nil,
     }, self)
@@ -219,13 +225,16 @@ function Dataset:ToTable()
         version   = self.version,
         author    = self.author,
         notes     = self.notes,
+        description = self.description,
         guid      = self.guid,
         createdAt = self.createdAt,
         updatedAt = self.updatedAt,
+        securityLevel = self.securityLevel,
         items     = self.items,
         spells    = self.spells,
         auras     = self.auras,
         npcs      = self.npcs,
+        recipes   = self.recipes,
         extra     = self.extra,
         setupWizard = self.setupWizard,
     }

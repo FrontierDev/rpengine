@@ -106,7 +106,7 @@ end
 
 function Debug:Skill(message)
     if not message or not debug then return end
-    message = tostring("|cFF5555FF" .. message .. "|r")
+    message = tostring("|cFF5555FF" .. RPE.Common.InlineIcons.RPE .. " " .. message .. "|r")
     
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage(message)

@@ -62,9 +62,16 @@ end
 -- == PRICE MULTIPLIER CALCULATION ==
 --------------------------------------------------------------------------------
 function ShopWindow:GetPriceMultiplier()
-    local daily  = self.fluctuation or 0
-    local loc    = self.locationMod or 0
-    local rep    = self.reputation or 0
+    local ActiveRules = RPE.ActiveRules
+    
+    -- Check if each modifier is enabled via ActiveRules:Get() with default 1
+    local useDaily = ActiveRules and ActiveRules:Get("shop_daily", 1) or 1
+    local useLocation = ActiveRules and ActiveRules:Get("shop_location", 1) or 1
+    local useReputation = ActiveRules and ActiveRules:Get("shop_reputation", 1) or 1
+    
+    local daily  = (useDaily == 1) and (self.fluctuation or 0) or 0
+    local loc    = (useLocation == 1) and (self.locationMod or 0) or 0
+    local rep    = (useReputation == 1) and (self.reputation or 0) or 0
 
     local dailyMult = 1 + (daily / 100)
     local locMult   = 1 + (loc / 100)
@@ -142,6 +149,8 @@ end
 -- == INDICATOR UPDATE ==
 --------------------------------------------------------------------------------
 function ShopWindow:UpdateIndicators()
+    local ActiveRules = RPE.ActiveRules
+    
     local function bind(icon, text, val, colorFn, tooltipSpec)
         local r, g, b = colorFn(val)
         text:SetText(tooltipSpec.textFunc(val))
@@ -166,41 +175,59 @@ function ShopWindow:UpdateIndicators()
         end
     end
 
-    bind(self.fluctIcon, self.fluctText, self.fluctuation, colorFluctuation, {
-        title = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\chart.png:16:16|t Daily Market Fluctuation",
-        textFunc = function(v) return string.format("%+d%%", v) end,
-        linesFunc = function(v)
-            local sign = v > 0 and "increased" or (v < 0 and "decreased" or "remained stable")
-            return {
-                { left = string.format("Shop prices have %s by %d%% today.", sign, math.abs(v)) },
-                { left = "Resets daily.", r = 0.7, g = 0.7, b = 0.7 },
-            }
-        end,
-    })
+    -- Only show daily fluctuation if enabled
+    local useDaily = ActiveRules and ActiveRules:Get("shop_daily", 1) or 1
+    if useDaily ~= 0 then
+        bind(self.fluctIcon, self.fluctText, self.fluctuation, colorFluctuation, {
+            title = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\chart.png:16:16|t Daily Market Fluctuation",
+            textFunc = function(v) return string.format("%+d%%", v) end,
+            linesFunc = function(v)
+                local sign = v > 0 and "increased" or (v < 0 and "decreased" or "remained stable")
+                return {
+                    { left = string.format("Shop prices have %s by %d%% today.", sign, math.abs(v)) },
+                    { left = "Resets daily.", r = 0.7, g = 0.7, b = 0.7 },
+                }
+            end,
+        })
+    else
+        self.fluctGroup.frame:Hide()
+    end
 
-    bind(self.locIcon, self.locText, self.locationMod, colorLocation, {
-        title = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\world.png:16:16|t Location Modifier",
-        textFunc = function(v) return string.format("%+d%%", v) end,
-        linesFunc = function(v)
-            local sign = v > 0 and "higher" or (v < 0 and "lower" or "average")
-            return {
-                { left = string.format("Local prices are %s than normal by %d%%.", sign, math.abs(v)) },
-                { left = "Based on distance to trading center.", r = 0.7, g = 0.7, b = 0.7 },
-            }
-        end,
-    })
+    -- Only show location modifier if enabled
+    local useLocation = ActiveRules and ActiveRules:Get("shop_location", 1) or 1
+    if useLocation ~= 0 then
+        bind(self.locIcon, self.locText, self.locationMod, colorLocation, {
+            title = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\world.png:16:16|t Location Modifier",
+            textFunc = function(v) return string.format("%+d%%", v) end,
+            linesFunc = function(v)
+                local sign = v > 0 and "higher" or (v < 0 and "lower" or "average")
+                return {
+                    { left = string.format("Local prices are %s than normal by %d%%.", sign, math.abs(v)) },
+                    { left = "Based on distance to trading center.", r = 0.7, g = 0.7, b = 0.7 },
+                }
+            end,
+        })
+    else
+        self.locGroup.frame:Hide()
+    end
 
-    bind(self.repIcon, self.repText, self.reputation, colorReputation, {
-        title = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\reputation.png:16:16|t Reputation",
-        textFunc = function(v) return string.format("%+d", v) end,
-        linesFunc = function(v)
-            local standing = v >= 20 and "Friendly" or v <= -20 and "Hostile" or "Neutral"
-            return {
-                { left = string.format("Standing: %s", standing) },
-                { left = string.format("Reputation: %+d", v), r = 0.9, g = 0.9, b = 0.9 },
-            }
-        end,
-    })
+    -- Only show reputation if enabled
+    local useReputation = ActiveRules and ActiveRules:Get("shop_reputation", 1) or 1
+    if useReputation ~= 0 then
+        bind(self.repIcon, self.repText, self.reputation, colorReputation, {
+            title = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\reputation.png:16:16|t Reputation",
+            textFunc = function(v) return string.format("%+d", v) end,
+            linesFunc = function(v)
+                local standing = v >= 20 and "Friendly" or v <= -20 and "Hostile" or "Neutral"
+                return {
+                    { left = string.format("Standing: %s", standing) },
+                    { left = string.format("Reputation: %+d", v), r = 0.9, g = 0.9, b = 0.9 },
+                }
+            end,
+        })
+    else
+        self.repGroup.frame:Hide()
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -268,6 +295,8 @@ function ShopWindow:BuildUI()
         autoSize = true,
     })
 
+    
+
     -- Footer
     self.footer = Panel:New("RPE_Shop_Footer", { parent = self.root })
     self.footer.frame:SetHeight(30)
@@ -306,9 +335,17 @@ function ShopWindow:BuildUI()
     })
     navGroup:Add(self.nextBtn)
 
+    self.buySellBtn = TextBtn:New("RPE_Shop_BuySellBtn", {
+        parent = navGroup, width = 80, height = 22,
+        text = "Buy/Sell", onClick = function() self:ToggleMode() end,
+    })
+    navGroup:Add(self.buySellBtn)
+
     -- State
     self.items = {}
     self.page = 1
+    self.mode = "buy"  -- "buy" or "sell"
+    self.npcTags = {}  -- NPC's acceptable tags for selling
 
     if RPE_UI.Common and RPE_UI.Common.RegisterWindow then
         RPE_UI.Common:RegisterWindow(self)
@@ -324,18 +361,49 @@ function ShopWindow:_updatePageText()
     self.pageText:SetText(("Page %d / %d"):format(self.page, totalPages))
 end
 
+function ShopWindow:ToggleMode()
+    self.mode = (self.mode == "buy") and "sell" or "buy"
+    self.page = 1
+    self:Refresh()
+end
+
 function ShopWindow:Refresh()
     for _, child in ipairs(self.itemGroup.children or {}) do
         if child.Destroy then child:Destroy() end
     end
     self.itemGroup.children = {}
 
+    local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+    local playerCopper = profile and profile:GetCurrency("copper") or 0
+
+    -- Determine items to display based on mode
+    local displayItems = self.items
+    if self.mode == "sell" then
+        -- In sell mode, show player's inventory filtered by NPC tags
+        displayItems = self:_getPlayerSellItems(profile)
+    end
+
+    -- If no items, show a message
+    if #displayItems == 0 then
+        local message = (self.mode == "buy") and "No items available for purchase." or "No items to sell to this merchant."
+        local emptyText = Text:New("RPE_Shop_EmptyMessage", {
+            parent = self.itemGroup,
+            text = message,
+            fontTemplate = "GameFontNormalSmall",
+            justifyH = "CENTER",
+        })
+        RPE_UI.Colors.ApplyText(emptyText.fs, "textMuted")
+        self.itemGroup:Add(emptyText)
+        self:_updatePageText()
+        return
+    end
+
     local finalMult = self:GetPriceMultiplier()
     local startIdx = (self.page - 1) * ITEMS_PER_PAGE + 1
-    local endIdx = math.min(#self.items, startIdx + ITEMS_PER_PAGE - 1)
+    local endIdx = math.min(#displayItems, startIdx + ITEMS_PER_PAGE - 1)
     local slice = {}
 
-    for i = startIdx, endIdx do table.insert(slice, self.items[i]) end
+    for i = startIdx, endIdx do table.insert(slice, displayItems[i]) end
 
     for row = 1, math.ceil(#slice / COLUMNS) do
         local rowGroup = HGroup:New("RPE_Shop_Row_" .. row, {
@@ -347,18 +415,89 @@ function ShopWindow:Refresh()
             local idx = (row - 1) * COLUMNS + c
             local itemData = slice[idx]
             if itemData then
-                local adjusted = math.floor((itemData.price or 0) * finalMult)
+                -- Only apply price multiplier in buy mode
+                local price = itemData.price
+                if self.mode == "buy" then
+                    price = math.floor((itemData.price or 0) * finalMult)
+                end
+                
+                -- Color cost red if player cannot afford it (buy mode), white otherwise
+                local costStr = Common:FormatCopper(price)
+                local color
+                if self.mode == "buy" then
+                    color = (price > playerCopper) and "|cffff4040" or "|cffffffff"
+                else
+                    -- Sell mode: show price in green (we're selling)
+                    color = "|cff55ff55"
+                end
+                local coloredCost = (color .. costStr .. "|r")
+                
                 local entry = ShopItem:New("RPE_ShopItem_" .. idx, {
                     parent = rowGroup,
                     itemId = itemData.id,
-                    cost = Common:FormatCopper(adjusted),
+                    cost = coloredCost,
                     stack = itemData.stack or 1,
+                    price = price,
+                    maxStock = itemData.stack or 1,
+                    mode = self.mode,
                 })
                 rowGroup:Add(entry)
             end
         end
     end
     self:_updatePageText()
+end
+
+function ShopWindow:_getPlayerSellItems(profile)
+    if not profile then return {} end
+    
+    local ItemReg = RPE.Core and RPE.Core.ItemRegistry
+    if not ItemReg then return {} end
+    
+    local sellItems = {}
+    local seen = {}
+    
+    -- Iterate through player's inventory
+    profile:ForEachItem(function(itemId, qty)
+        if seen[itemId] then return end
+        
+        local item = ItemReg:Get(itemId)
+        if item then
+            -- Check if item matches NPC's tags
+            local itemTags = item.tags or {}
+            local matches = false
+            
+            if #self.npcTags == 0 then
+                -- No tag filter, accept all items
+                matches = true
+            else
+                -- Check if any item tag matches any NPC tag
+                for _, itemTag in ipairs(itemTags) do
+                    for _, npcTag in ipairs(self.npcTags) do
+                        if string.lower(itemTag) == string.lower(npcTag) then
+                            matches = true
+                            break
+                        end
+                    end
+                    if matches then break end
+                end
+            end
+            
+            if matches then
+                -- Player always sells for the item's market price
+                local sellPrice = (item.GetPrice and item:GetPrice()) or math.random(100, 10000)
+                
+                table.insert(sellItems, {
+                    id = itemId,
+                    price = sellPrice,
+                    stack = qty,
+                })
+                seen[itemId] = true
+            end
+        end
+    end)
+    
+    return sellItems
 end
 
 --------------------------------------------------------------------------------
@@ -379,6 +518,9 @@ function ShopWindow:AddItems(opts)
     elseif type(tags) ~= "table" then
         tags = {}
     end
+
+    -- Store NPC tags for sell mode filtering
+    self.npcTags = tags
 
     local maxRarity = opts.maxRarity
     local maxStock = opts.maxStock

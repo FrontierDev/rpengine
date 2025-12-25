@@ -69,6 +69,7 @@ end
 
 function Cooldowns:Start(caster, def, turn)
     if not def or not def.cooldown then return end
+    
     turn = tonumber(turn) or getTurn(self)
     local cd = def.cooldown
     local e  = ensureEntry(self, caster, def)
@@ -95,12 +96,14 @@ function Cooldowns:GetRemaining(caster, def, turn)
     if not def or not def.cooldown then return 0 end
     turn = tonumber(turn) or getTurn(self)
     local e = ensureEntry(self, caster, def)
+    
     if (e.maxCharges or 0) > 0 then
         local avail, nextReady = pruneAndCountCharges(e, turn)
         if avail >= 1 then return 0 end
         return math.max(0, (nextReady or turn) - turn)
     else
-        return math.max(0, (e.readyTurn or 0) - turn)
+        local remain = math.max(0, (e.readyTurn or 0) - turn)
+        return remain
     end
 end
 

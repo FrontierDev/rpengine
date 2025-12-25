@@ -18,7 +18,7 @@ end
 function Targeters:Select(key, ctx, cast, args)
     local fn = self._tgts[key]
     if not fn then
-        if RPE.Debug and RPE.Debug.Warn then RPE.Debug:Warn("Unknown targeter: "..tostring(key)) end
+        if RPE.Debug and RPE.Debug.Warn then RPE.Debug:Warning("Unknown targeter: "..tostring(key)) end
         return { name = key, targets = {} }
     end
     local ok, sel = pcall(fn, ctx or {}, cast, args or {})
@@ -48,6 +48,17 @@ Targeters:Register("PRECAST", function(ctx, cast, args)
     local out = {}
     for i, t in ipairs(cast.targetSets and cast.targetSets.precast or {}) do out[i] = t end
     return { name = "precast", targets = out }
+end)
+
+-- The target(s) of the aura itself (for aura tick actions)
+Targeters:Register("TARGET", function(ctx, cast, args)
+    local targets = {}
+    if cast.targets and #cast.targets > 0 then
+        for _, t in ipairs(cast.targets) do
+            table.insert(targets, t)
+        end
+    end
+    return { name = "target", targets = targets }
 end)
 
 -- All allies (including self)

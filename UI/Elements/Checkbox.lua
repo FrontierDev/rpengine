@@ -33,8 +33,11 @@ function Checkbox:New(name, opts)
     o.check = cb
     o.onChanged = opts.onChanged
 
-    cb:SetScript("OnClick", function()
-        if o.onChanged then o.onChanged(o, cb:GetChecked() and true or false) end
+    cb:SetScript("OnClick", function(self)
+        -- Defer callback to next frame so checked state is updated
+        C_Timer.After(0, function()
+            if o.onChanged then o.onChanged(o, self:GetChecked() and true or false) end
+        end)
     end)
 
     function o:SetChecked(b) self.check:SetChecked(not not b); if self.onChanged then self.onChanged(self, self:IsChecked()) end end

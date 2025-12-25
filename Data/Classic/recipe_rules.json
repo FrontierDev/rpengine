@@ -1,0 +1,398 @@
+{
+  "Cloth": {
+    "category": "Cloth",
+    "appliesTo": { "armorMaterial": "Cloth" },
+    "profession": "Tailoring",
+    "namePrefix": "Pattern: ",
+    "tags": ["crafting", "cloth"],
+    "reagents": [
+      { "id": "item-r2589", "qty": "{maxArmor}" },
+      { "id": "item-r2320", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "Leather": {
+    "category": "Leather",
+    "appliesTo": { "armorMaterial": "Leather" },
+    "profession": "Leatherworking",
+    "namePrefix": "Pattern: ",
+    "tags": ["crafting", "leather"],
+    "reagents": [
+      { "id": "item-r2318", "qty": "{maxArmor}" },
+      { "id": "item-r2320", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "Mail": {
+    "category": "Mail",
+    "appliesTo": { "armorMaterial": "Mail" },
+    "profession": "Blacksmithing",
+    "namePrefix": "Plans: ",
+    "tags": ["blacksmithing", "mail"],
+    "reagents": [
+      { "id": "item-r2840", "qty": "{maxArmor}" },
+      { "id": "item-r2318", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 6 }
+    ]
+  },
+  "Plate": {
+    "category": "Plate",
+    "appliesTo": { "armorMaterial": "Plate" },
+    "profession": "Blacksmithing",
+    "namePrefix": "Plans: ",
+    "tags": ["blacksmithing", "plate"],
+    "reagents": [
+      { "id": "item-r2840", "qty": "{maxArmor}" },
+      { "id": "item-r783", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 6 }
+    ]
+  },
+  "Sword": {
+    "category": "Sword",
+    "appliesTo": { "weaponType": "Sword", "tags": ["tier_0"] },
+    "profession": "Blacksmithing",
+    "namePrefix": "Plans: ",
+    "tags": ["blacksmithing", "weapon", "sword"],
+    "reagents": [
+      { "id": "item-r2840", "qty": 6 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "Mace": {
+    "category": "Mace",
+    "appliesTo": { "weaponType": "Mace", "tags": ["tier_0"] },
+    "profession": "Blacksmithing",
+    "namePrefix": "Plans: ",
+    "tags": ["blacksmithing", "weapon", "mace"],
+    "reagents": [
+      { "id": "item-r2840", "qty": 6 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "Axe": {
+    "category": "Axe",
+    "appliesTo": { "weaponType": "Axe", "tags": ["tier_0"] },
+    "profession": "Blacksmithing",
+    "namePrefix": "Plans: ",
+    "tags": ["blacksmithing", "weapon", "axe"],
+    "reagents": [
+      { "id": "item-r2840", "qty": 6 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "Dagger": {
+    "category": "Dagger",
+    "appliesTo": { "weaponType": "Dagger", "tags": ["tier_0"] },
+    "profession": "Blacksmithing",
+    "namePrefix": "Plans: ",
+    "tags": ["blacksmithing", "weapon", "dagger"],
+    "reagents": [
+      { "id": "item-r2840", "qty": 4 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "Polearm": {
+    "category": "Polearm",
+    "appliesTo": { "weaponType": "Polearm", "tags": ["tier_0"] },
+    "profession": "Blacksmithing",
+    "namePrefix": "Plans: ",
+    "tags": ["blacksmithing", "weapon", "polearm"],
+    "reagents": [
+      { "id": "item-r2840", "qty": 10 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 2 }
+    ]
+  },
+  "Staff": {
+    "category": "Staff",
+    "appliesTo": { "weaponType": "Staff", "tags": ["tier_0"] },
+    "profession": "Inscription",
+    "namePrefix": "Plans: ",
+    "tags": ["inscription", "weapon", "staff"],
+    "reagents": [
+      { "id": "item-r2840", "qty": 10 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 2 }
+    ]
+  },
+  "Warglaive": {
+    "category": "Warglaive",
+    "appliesTo": { "weaponType": "Warglaive", "tags": ["tier_0"] },
+    "profession": "Blacksmithing",
+    "namePrefix": "Plans: ",
+    "tags": ["blacksmithing", "weapon", "warglaive"],
+    "reagents": [
+      { "id": "item-r2840", "qty": 6 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "Shield": {
+    "category": "Shield",
+    "appliesTo": { "weaponType": "Shield", "tags": ["tier_0"] },
+    "profession": "Blacksmithing",
+    "namePrefix": "Plans: ",
+    "tags": ["blacksmithing", "shield"],
+    "reagents": [
+      { "id": "item-r2840", "qty": 6 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 2 }
+    ]
+  },
+  "Bow": {
+    "category": "Bow",
+    "appliesTo": { "weaponType": "Bow", "tags": ["tier_0"] },
+    "profession": "Engineering",
+    "namePrefix": "Schematic: ",
+    "tags": ["engineering", "weapon", "bow"],
+    "reagents": [
+      { "id": "item-r11291", "qty": 1 },
+      { "id": "item-r2318", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "Crossbow": {
+    "category": "Crossbow",
+    "appliesTo": { "weaponType": "Crossbow", "tags": ["tier_0"] },
+    "profession": "Engineering",
+    "namePrefix": "Schematic: ",
+    "tags": ["engineering", "weapon", "crossbow"],
+    "reagents": [
+      { "id": "item-r11291", "qty": 1 },
+      { "id": "item-r2840", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "Gun": {
+    "category": "Gun",
+    "appliesTo": { "weaponType": "Gun", "tags": ["tier_0"] },
+    "profession": "Engineering",
+    "namePrefix": "Schematic: ",
+    "tags": ["engineering", "weapon", "gun"],
+    "reagents": [
+      { "id": "item-r2840", "qty": 2 },
+      { "id": "item-r4399", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 2 }
+    ]
+  },
+  "Thrown": {
+    "category": "Thrown",
+    "appliesTo": { "weaponType": "Thrown", "tags": ["tier_0"] },
+    "profession": "Blacksmithing",
+    "namePrefix": "Plans: ",
+    "tags": ["blacksmithing", "weapon", "thrown"],
+    "reagents": [
+      { "id": "item-r2840", "qty": 6 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "MinorPotion": {
+    "category": "Potion",
+    "appliesTo": { "tags": ["potion", "tier_0"] },
+    "profession": "Alchemy",
+    "namePrefix": "Recipe: ",
+    "tags": ["alchemy", "potion"],
+    "reagents": [
+      { "id": "item-r765", "qty": 1 },
+      { "id": "item-r785", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "LesserPotion": {
+    "category": "Potion",
+    "appliesTo": { "tags": ["potion", "tier_1"] },
+    "profession": "Alchemy",
+    "namePrefix": "Recipe: ",
+    "tags": ["alchemy", "potion"],
+    "reagents": [
+      { "id": "item-r3818", "qty": 1 },
+      { "id": "item-r3820", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 2 }
+    ]
+  },
+  "StandardPotion": {
+    "category": "Potion",
+    "appliesTo": { "tags": ["potion", "tier_2"] },
+    "profession": "Alchemy",
+    "namePrefix": "Recipe: ",
+    "tags": ["alchemy", "potion"],
+    "reagents": [
+      { "id": "item-r3821", "qty": 1 },
+      { "id": "item-r8839", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 3 }
+    ]
+  },
+  "MajorPotion": {
+    "category": "Potion",
+    "appliesTo": { "tags": ["potion", "tier_3"] },
+    "profession": "Alchemy",
+    "namePrefix": "Recipe: ",
+    "tags": ["alchemy", "potion"],
+    "reagents": [
+      { "id": "item-r13463", "qty": 1 },
+      { "id": "item-r8836", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 4 }
+    ]
+  },
+  "SuperiorPotion": {
+    "category": "Potion",
+    "appliesTo": { "tags": ["potion", "tier_4"] },
+    "profession": "Alchemy",
+    "namePrefix": "Recipe: ",
+    "tags": ["alchemy", "potion"],
+    "reagents": [
+      { "id": "item-r13468", "qty": 1 },
+      { "id": "item-r22788", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 5 }
+    ]
+  },
+  "GreaterPotion": {
+    "category": "Potion",
+    "appliesTo": { "tags": ["potion", "tier_5"] },
+    "profession": "Alchemy",
+    "namePrefix": "Recipe: ",
+    "tags": ["alchemy", "potion"],
+    "reagents": [
+      { "id": "item-r13467", "qty": 1 },
+      { "id": "item-r22790", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 6 }
+    ]
+  },
+  "MinorElixir": {
+    "category": "Elixir",
+    "appliesTo": { "tags": ["elixir", "tier_0"] },
+    "profession": "Alchemy",
+    "namePrefix": "Recipe: ",
+    "tags": ["alchemy", "elixir"],
+    "reagents": [
+      { "id": "item-r765", "qty": 2 },
+      { "id": "item-r2452", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "StandardElixir": {
+    "category": "Elixir",
+    "appliesTo": { "tags": ["elixir", "tier_1"] },
+    "profession": "Alchemy",
+    "namePrefix": "Recipe: ",
+    "tags": ["alchemy", "elixir"],
+    "reagents": [
+      { "id": "item-r3821", "qty": 2 },
+      { "id": "item-r3820", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 2 }
+    ]
+  },
+  "GreaterElixir": {
+    "category": "Elixir",
+    "appliesTo": { "tags": ["elixir", "tier_2"] },
+    "profession": "Alchemy",
+    "namePrefix": "Recipe: ",
+    "tags": ["alchemy", "elixir"],
+    "reagents": [
+      { "id": "item-r8836", "qty": 2 },
+      { "id": "item-r13463", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 3 }
+    ]
+  },
+  "ScrollI": {
+    "category": "Scroll",
+    "appliesTo": { "tags": ["scroll", "tier_0"] },
+    "profession": "Inscription",
+    "namePrefix": "Pattern: ",
+    "tags": ["inscription", "scroll"],
+    "reagents": [
+      { "id": "item-r2823", "qty": 1 },
+      { "id": "item-r39624", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  },
+  "ScrollII": {
+    "category": "Scroll",
+    "appliesTo": { "tags": ["scroll", "tier_1"] },
+    "profession": "Inscription",
+    "namePrefix": "Pattern: ",
+    "tags": ["inscription", "scroll"],
+    "reagents": [
+      { "id": "item-r2823", "qty": 2 },
+      { "id": "item-r39624", "qty": 1 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 2 }
+    ]
+  },
+  "ScrollIII": {
+    "category": "Scroll",
+    "appliesTo": { "tags": ["scroll", "tier_2"] },
+    "profession": "Inscription",
+    "namePrefix": "Pattern: ",
+    "tags": ["inscription", "scroll"],
+    "reagents": [
+      { "id": "item-r2823", "qty": 2 },
+      { "id": "item-r39624", "qty": 2 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 3 }
+    ]
+  },
+  "Ink": {
+    "category": "Ink",
+    "appliesTo": { "tags": ["ink"] },
+    "profession": "Herbalism",
+    "namePrefix": "Mill: ",
+    "tags": ["crafting", "ink"],
+    "reagents": [
+      { "id": "herbFromSameTier", "qty": 10 }
+    ],
+    "costs": [
+      { "id": "copper", "qty": 1 }
+    ]
+  }
+}

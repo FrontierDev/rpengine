@@ -90,7 +90,7 @@ end
 -- Action bar helpers (match InventorySlot/SpellbookSlot style) ---------------
 local function _getNumActionBarSlots()
     local slots = _G.RPE and _G.RPE.ActiveRules and _G.RPE.ActiveRules.Get
-        and _G.RPE.ActiveRules:Get("action_bar_slots") or 12
+        and _G.RPE.ActiveRules:Get("action_bar_slots") or 5
     return tonumber(slots) or 12
 end
 
@@ -556,6 +556,18 @@ function SpellEditorSheet:BuildUI(opts)
                                 info.text = entry and (tostring(entry.name or entry.id)) or "Empty Slot"
                                 UIDropDownMenu_AddButton(info, level)
 
+                                -- Copy from... (empty slot only)
+                                local copyFrom = UIDropDownMenu_CreateInfo()
+                                copyFrom.notCheckable = true
+                                copyFrom.text = "Copy from..."
+                                if entry then
+                                    copyFrom.disabled = true
+                                else
+                                    copyFrom.hasArrow = true
+                                    copyFrom.menuList = "COPY_FROM_DATASET"
+                                end
+                                UIDropDownMenu_AddButton(copyFrom, level)
+
                                 -- Bind to...
                                 UIDropDownMenu_AddButton({
                                     text = "Bind to...",
@@ -647,6 +659,212 @@ function SpellEditorSheet:BuildUI(opts)
                                     end
                                 end
                                 UIDropDownMenu_AddButton(exportSpell, level)
+
+                            elseif level == 2 and menuList == "COPY_FROM_DATASET" then
+                                -- Submenu: "Copy from..." dataset selection
+                                local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                                if not DatasetDB then return end
+                                
+                                -- List all available datasets
+                                local allNames = DatasetDB.ListNames and DatasetDB.ListNames()
+                                if not allNames or #allNames == 0 then
+                                    local info = UIDropDownMenu_CreateInfo()
+                                    info.isTitle = true
+                                    info.notCheckable = true
+                                    info.text = "No datasets available"
+                                    UIDropDownMenu_AddButton(info, level)
+                                    return
+                                end
+                                
+                                table.sort(allNames)
+                                for _, dsName in ipairs(allNames) do
+                                    local info = UIDropDownMenu_CreateInfo()
+                                    info.notCheckable = true
+                                    info.text = dsName
+                                    info.hasArrow = true
+                                    info.value = dsName
+                                    info.menuList = "COPY_FROM_SPELLS"
+                                    UIDropDownMenu_AddButton(info, level)
+                                end
+                                return
+
+                            elseif level == 3 and menuList == "COPY_FROM_SPELLS" then
+                                -- Submenu level 3: select spell from chosen dataset (grouped alphabetically)
+                                local datasetName = UIDROPDOWNMENU_MENU_VALUE
+                                if not datasetName then return end
+                                
+                                local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                                if not DatasetDB then return end
+                                
+                                local sourceDs = DatasetDB.GetByName and DatasetDB.GetByName(datasetName)
+                                if not sourceDs or not sourceDs.spells then
+                                    local info = UIDropDownMenu_CreateInfo()
+                                    info.isTitle = true
+                                    info.notCheckable = true
+                                    info.text = "No spells in dataset"
+                                    UIDropDownMenu_AddButton(info, level)
+                                    return
+                                end
+                                
+                                -- Collect and sort spells from source dataset
+                                local spells = {}
+                                for spellId, spellDef in pairs(sourceDs.spells) do
+                                    table.insert(spells, { id = spellId, def = spellDef })
+                                end
+                                table.sort(spells, function(a, b)
+                                    local anName = (a.def and a.def.name) or a.id
+                                    local bnName = (b.def and b.def.name) or b.id
+                                    return tostring(anName):lower() < tostring(bnName):lower()
+                                end)
+                                
+                                -- Group spells into chunks of 20 for submenu display
+                                local spellsPerGroup = 20
+                                local groups = {}
+                                for i = 1, #spells, spellsPerGroup do
+                                    local groupSpells = {}
+                                    for j = i, math.min(i + spellsPerGroup - 1, #spells) do
+                                        table.insert(groupSpells, spells[j])
+                                    end
+                                    table.insert(groups, groupSpells)
+                                end
+                                
+                                -- Create submenu buttons for each group with letter ranges
+                                for groupIdx, groupSpells in ipairs(groups) do
+                                    if #groupSpells > 0 then
+                                        -- Get first and last spell names for the range label
+                                        local firstName = (groupSpells[1].def and groupSpells[1].def.name) or groupSpells[1].id
+                                        local lastName = (groupSpells[#groupSpells].def and groupSpells[#groupSpells].def.name) or groupSpells[#groupSpells].id
+                                        firstName = tostring(firstName):sub(1, 1):upper()
+                                        lastName = tostring(lastName):sub(1, 2):upper()
+                                        local rangeLabel = (firstName == lastName) and firstName or (firstName .. "-" .. lastName)
+                                        
+                                        local info = UIDropDownMenu_CreateInfo()
+                                        info.notCheckable = true
+                                        info.text = rangeLabel
+                                        info.hasArrow = true
+                                        -- Encode dataset name and group index in the value
+                                        info.value = datasetName .. "|" .. tostring(groupIdx)
+                                        info.menuList = "COPY_FROM_SPELL_GROUP"
+                                        UIDropDownMenu_AddButton(info, level)
+                                    end
+                                end
+                                return
+
+                            elseif level == 4 and menuList == "COPY_FROM_SPELL_GROUP" then
+                                -- Submenu level 4: show spells in selected group
+                                local encodedValue = UIDROPDOWNMENU_MENU_VALUE
+                                if not encodedValue then return end
+                                
+                                -- Decode: "datasetName|groupIdx"
+                                local pipeIdx = encodedValue:find("|", 1, true)
+                                if not pipeIdx then return end
+                                local datasetName = encodedValue:sub(1, pipeIdx - 1)
+                                local groupIdx = tonumber(encodedValue:sub(pipeIdx + 1))
+                                
+                                if not datasetName or not groupIdx then return end
+                                
+                                local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                                if not DatasetDB then return end
+                                
+                                local sourceDs = DatasetDB.GetByName and DatasetDB.GetByName(datasetName)
+                                if not sourceDs or not sourceDs.spells then
+                                    return
+                                end
+                                
+                                -- Collect and sort spells from source dataset (same as level 3)
+                                local spells = {}
+                                for spellId, spellDef in pairs(sourceDs.spells) do
+                                    table.insert(spells, { id = spellId, def = spellDef })
+                                end
+                                table.sort(spells, function(a, b)
+                                    local anName = (a.def and a.def.name) or a.id
+                                    local bnName = (b.def and b.def.name) or b.id
+                                    return tostring(anName):lower() < tostring(bnName):lower()
+                                end)
+                                
+                                -- Reconstruct the groups to find the selected one
+                                local spellsPerGroup = 20
+                                local selectedGroupSpells = {}
+                                local currentGroupIdx = 0
+                                for i = 1, #spells, spellsPerGroup do
+                                    currentGroupIdx = currentGroupIdx + 1
+                                    if currentGroupIdx == groupIdx then
+                                        for j = i, math.min(i + spellsPerGroup - 1, #spells) do
+                                            table.insert(selectedGroupSpells, spells[j])
+                                        end
+                                        break
+                                    end
+                                end
+                                
+                                if #selectedGroupSpells == 0 then
+                                    return
+                                end
+                                
+                                for _, spell in ipairs(selectedGroupSpells) do
+                                    local info = UIDropDownMenu_CreateInfo()
+                                    info.notCheckable = true
+                                    info.text = (spell.def and spell.def.name) or spell.id
+                                    info.func = function()
+                                        -- Copy the spell
+                                        local targetDs = self:GetEditingDataset()
+                                        if not targetDs then return end
+                                        
+                                        targetDs.spells = targetDs.spells or {}
+                                        
+                                        -- Generate new ID for the copy
+                                        local newId = _newSpellId()
+                                        while targetDs.spells[newId] do
+                                            newId = _newSpellId()
+                                        end
+                                        
+                                        -- Deep copy the spell definition
+                                        local spellCopy = {}
+                                        if type(spell.def) == "table" then
+                                            for k, v in pairs(spell.def) do
+                                                if type(v) == "table" then
+                                                    -- Shallow copy for nested tables
+                                                    local tblCopy = {}
+                                                    for tk, tv in pairs(v) do
+                                                        tblCopy[tk] = tv
+                                                    end
+                                                    spellCopy[k] = tblCopy
+                                                else
+                                                    spellCopy[k] = v
+                                                end
+                                            end
+                                        end
+                                        spellCopy.id = newId
+                                        
+                                        targetDs.spells[newId] = spellCopy
+                                        
+                                        -- Persist the dataset
+                                        local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                                        if DB and DB.Save then pcall(DB.Save, targetDs) end
+                                        
+                                        -- Rebuild runtime registry
+                                        local reg = _G.RPE and _G.RPE.Core and _G.RPE.Core.SpellRegistry
+                                        if reg and reg.RefreshFromActiveDatasets then
+                                            reg:RefreshFromActiveDatasets()
+                                        elseif reg and reg.Init then
+                                            reg:Init()
+                                        end
+                                        
+                                        -- Refresh grid + resize
+                                        self:Refresh()
+                                        local DW = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.DatasetWindow
+                                        if DW and DW._recalcSizeForContent then
+                                            DW:_recalcSizeForContent(self.sheet)
+                                            if DW._resizeSoon then DW:_resizeSoon(self.sheet) end
+                                        end
+                                        
+                                        if RPE and RPE.Debug and RPE.Debug.Internal then
+                                            RPE.Debug:Internal(string.format("Copied spell '%s' from dataset '%s' (new ID: %s)", 
+                                                (spell.def and spell.def.name) or spell.id, datasetName, newId))
+                                        end
+                                    end
+                                    UIDropDownMenu_AddButton(info, level)
+                                end
+                                return
 
                             elseif level == 2 and menuList == "BIND_SLOT_LIST" then
                                 -- existing bind logic...

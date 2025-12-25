@@ -137,6 +137,7 @@ function EquipmentSlot:New(name, opts)
 
     -- Item state
     o.itemId   = opts.itemId
+    o.instanceGuid = opts.instanceGuid  -- Instance GUID for this equipped item (for modifications)
     o.quality  = opts.quality
     o.quantity = opts.quantity or 1
 
@@ -165,8 +166,10 @@ function EquipmentSlot:New(name, opts)
         local reg  = RPE.Core and RPE.Core.ItemRegistry
         local item = reg and reg.Get and reg:Get(o.itemId) or nil
 
+
         if item and item.ShowTooltip and RPE and RPE.Common and RPE.Common.ShowTooltip then
-            RPE.Common:ShowTooltip(self, item:ShowTooltip())
+            -- Live registry item → render full tooltip with instance GUID if available
+            RPE.Common:ShowTooltip(self, item:ShowTooltip(o.instanceGuid))
         else
             -- Fallback minimal tooltip
             local display = nil
@@ -186,16 +189,13 @@ function EquipmentSlot:New(name, opts)
         end
     end)
 
-    -- Right-click to unequip (if item specifies a slot)
+    -- Right-click to open context menu
     f:HookScript("OnMouseDown", function(self, button)
         if button == "RightButton" and o.itemId then
             local reg  = RPE.Core and RPE.Core.ItemRegistry
             local item = reg and reg.Get and reg:Get(o.itemId) or nil
-            if item and item.data and item.data.slot then
-                local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
-                if profile and profile.Unequip then
-                    profile:Unequip(item.data.slot)
-                end
+            if item then
+                EquipmentSlot:ShowItemContextMenu(o, item)
             end
         end
     end)
@@ -245,6 +245,8 @@ end
 
 function EquipmentSlot:SetItemId(id) self.itemId = id end
 function EquipmentSlot:GetItemId()   return self.itemId end
+function EquipmentSlot:SetInstanceGuid(guid) self.instanceGuid = guid end
+function EquipmentSlot:GetInstanceGuid() return self.instanceGuid end
 
 ---Convenience: set the slot's item.
 ---Accepts either:
@@ -368,6 +370,125 @@ function EquipmentSlot:SetQualityBorderColor(r, g, b, a)
     qb.bottom:SetColorTexture(r, g, b, a or 1)
     qb.left:SetColorTexture(r, g, b, a or 1)
     qb.right:SetColorTexture(r, g, b, a or 1)
+end
+
+function EquipmentSlot:ShowItemContextMenu(slot, item)
+    -- Safety: only build a menu if the item still exists in the registry
+    local reg = RPE.Core and RPE.Core.ItemRegistry
+    local live = reg and reg.Get and reg:Get(item and item.id) or nil
+    if not live then
+        if RPE and RPE.Debug and RPE.Debug.Warning then
+            RPE.Debug:Warning("Item not available in active datasets; no actions available.")
+        end
+        return
+    end
+
+    RPE_UI.Common:ContextMenu(slot.frame, function(level)
+        if level ~= 1 then return end
+
+        -- Title
+        local info = UIDropDownMenu_CreateInfo()
+        info.isTitle = true; info.notCheckable = true
+        info.text = item.name or item.id
+        UIDropDownMenu_AddButton(info, level)
+
+        -- Unequip option
+        UIDropDownMenu_AddButton({
+            text = "Unequip",
+            func = function()
+                local check = reg and reg:Get(item.id)
+                if not check then
+                    if RPE and RPE.Debug and RPE.Debug.Warning then
+                        RPE.Debug:Warning("Item not available in active datasets; cannot unequip.")
+                    end
+                    return
+                end
+                if check.data and check.data.slot then
+                    local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
+                    if profile and profile.Unequip then
+                        profile:Unequip(check.data.slot)
+                    end
+                end
+            end,
+            notCheckable = true
+        }, level)
+
+        -- Use option (for items with spells, regardless of category)
+        if item.spellId then
+            UIDropDownMenu_AddButton({
+                text = "Use",
+                func = function()
+                    local check = reg and reg:Get(item.id)
+                    if not check then
+                        if RPE and RPE.Debug and RPE.Debug.Warning then
+                            RPE.Debug:Warning("Item not available in active datasets; cannot use.")
+                        end
+                        return
+                    end
+                    
+                    -- Use: cast spell using the full SpellCast system
+                    local SR = RPE.Core and RPE.Core.SpellRegistry
+                    local SC = RPE.Core and RPE.Core.SpellCast
+                    if not (SR and SC) then return end
+                    
+                    local spell = SR:Get(check.spellId)
+                    if not spell then 
+                        if RPE and RPE.Debug then
+                            RPE.Debug:Warning("Spell not found in registry: "..tostring(check.spellId))
+                        end
+                        return 
+                    end
+                    
+                    local event = RPE.Core.ActiveEvent
+                    if not event then return end
+                    
+                    -- Get player's numeric ID from event
+                    local casterId = event.localPlayerKey
+                    
+                    -- Create cast object
+                    local cast = SC.New(check.spellId, casterId, check.spellRank or 1)
+                    
+                    -- Build context
+                    local ctx = {
+                        event = event,
+                        resources = RPE.Core.Resources,
+                        cooldowns = RPE.Core.Cooldowns,
+                    }
+                    
+                    -- Validate and execute
+                    local ok, reason = cast:Validate(ctx)
+                    if not ok then
+                        if RPE and RPE.Debug and RPE.Debug.Warning then
+                            RPE.Debug:Warning("Cannot cast: " .. (reason or ""))
+                        end
+                        return
+                    end
+                    
+                    -- Handle targeting
+                    local defaultTargeter = spell.targeter and spell.targeter.default
+                    if defaultTargeter == "CASTER" or defaultTargeter == "SELF" or defaultTargeter == "ALL_ALLIES" or defaultTargeter == "ALL_ENEMIES" or defaultTargeter == "ALL_UNITS" then
+                        -- Self-targeting spell, execute immediately
+                        cast.targetSets = cast.targetSets or {}
+                        local tgtKey = (defaultTargeter == "SELF") and "CASTER" or defaultTargeter
+                        local sel = RPE.Core.Targeters and RPE.Core.Targeters:Select(tgtKey, ctx, cast, {})
+                        
+                        if sel and sel.targets and #sel.targets > 0 then
+                            cast.targetSets.precast = sel.targets
+                        else
+                            cast.targetSets.precast = { casterId }
+                        end
+                        
+                        cast:FinishTargeting(ctx)
+                    else
+                        -- Requires targeting
+                        cast:InitTargeting()
+                        cast:RequestNextTargetSet(ctx)
+                    end
+                end,
+                notCheckable = true
+            }, level)
+        end
+    end)
 end
 
 return EquipmentSlot

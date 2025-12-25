@@ -385,6 +385,26 @@ function Spell:_resolveActionProperty(entry, propPath, vars)
 
     if propPath == "amount" or propPath:match("^amount%.") then
         local parsed = _parseAmountWithRank(self, act, vars and vars.profile)
+        
+        -- If this is an APPLY_AURA action, also apply the aura's perRank scaling
+        if act.key == "APPLY_AURA" and args.auraId then
+            local AuraRegistry = RPE and RPE.Core and RPE.Core.AuraRegistry
+            local aura = AuraRegistry and AuraRegistry:Get(args.auraId)
+            if aura and aura.modifiers then
+                for _, mod in ipairs(aura.modifiers) do
+                    if mod.value == "$amount$" and mod.perRank then
+                        local perRank = tonumber(mod.perRank) or 0
+                        local rank = tonumber(self.rankOverride or self.rank or 1) or 1
+                        
+                        if parsed.min then parsed.min = parsed.min + (perRank * (rank - 1)) end
+                        if parsed.max then parsed.max = parsed.max + (perRank * (rank - 1)) end
+                        if parsed.value then parsed.value = parsed.value + (perRank * (rank - 1)) end
+                        break
+                    end
+                end
+            end
+        end
+        
         if     propPath == "amount.min" then return _formatAmount(parsed, "min")
         elseif propPath == "amount.max" then return _formatAmount(parsed, "max")
         elseif propPath == "amount.avg" then return _formatAmount(parsed, "avg")
@@ -478,7 +498,8 @@ function Spell:RenderDescription(vars, tmpl)
     vars = vars or {}
     if vars.profile == nil then vars.profile = _activeProfile() end
 
-    return template:gsub("%$%[(%d+)%]%.([%w_%.]+)%$", repl)
+    local result = template:gsub("%$%[(%d+)%]%.([%w_%.]+)%$", repl)
+    return result
 end
 
 function Spell:RefreshDescription(vars)

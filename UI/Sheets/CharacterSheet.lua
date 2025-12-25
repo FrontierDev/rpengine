@@ -349,6 +349,74 @@ function CharacterSheet:DrawLanguages(langBlock)
     end
 end
 
+function CharacterSheet:DrawCurrencies(currencyRow)
+    if not self.profile then return end
+    
+    -- Clear old children
+    for _, child in ipairs(currencyRow.children or {}) do child:Destroy() end
+    currencyRow.children = {}
+    
+    -- Initialize currencies table if needed
+    if not self.profile.currencies then
+        self.profile.currencies = {}
+    end
+    local currencies = self.profile.currencies
+    
+    -- Initialize missing currencies to 0
+    if currencies.honor == nil then currencies.honor = 0 end
+    if currencies.conquest == nil then currencies.conquest = 0 end
+    if currencies.justice == nil then currencies.justice = 0 end
+    if currencies.valor == nil then currencies.valor = 0 end
+    if currencies.copper == nil then currencies.copper = 0 end
+    
+    -- Define currency types with their icon IDs
+    local currencyTypes = {
+        { key = "copper",   name = "Copper",   icon = nil },       -- uses FormatCopper
+        { key = "honor",    name = "Honor",    icon = 1455894 },
+        { key = "conquest", name = "Conquest", icon = 1523630 },
+        { key = "justice",  name = "Justice",  icon = 463446 },
+        { key = "valor",    name = "Valor",    icon = 463447 },
+    }
+    
+    -- Collect currencies - always show all defined currencies
+    local activeCurrencies = {}
+    for _, currencyDef in ipairs(currencyTypes) do
+        table.insert(activeCurrencies, currencyDef)
+    end
+    
+    if #activeCurrencies == 0 then return end
+    
+    -- Create a single row with all currencies displayed side-by-side
+    for _, currencyDef in ipairs(activeCurrencies) do
+        local amount = currencies[currencyDef.key] or 0
+        local formatted = (currencyDef.key == "copper") 
+            and Common:FormatCopper(amount) 
+            or Common:FormatCurrency(amount, currencyDef.icon)
+        
+        local entry = HGroup:New("RPE_CS_Currency_" .. currencyDef.key, {
+            parent = currencyRow,
+            spacingX = 2,
+            alignV = "CENTER",
+            alignH = "CENTER",
+            autoSize = true,
+        })
+        currencyRow:Add(entry)
+        
+        local amountText = Text:New("RPE_CS_CurrencyValue_" .. currencyDef.key, {
+            parent = entry,
+            text = formatted,
+            width = 120,
+            height = 18,
+            fontTemplate = "GameFontNormalSmall",
+            justifyH = "CENTER",
+        })
+        amountText.fs:ClearAllPoints()
+        amountText.fs:SetPoint("CENTER", amountText.frame, "CENTER", 0, 0)
+        entry:Add(amountText)
+    end
+end
+
+
 function CharacterSheet:ShowLanguageDialog()
     local Language = RPE.Core and RPE.Core.Language
     local LanguageTable = RPE.Core and RPE.Core.LanguageTable
@@ -1172,6 +1240,30 @@ function CharacterSheet:Refresh()
         })
         traitColContainer:Add(traitRow)
         self:DrawTraits(traitRow)
+    end
+
+    -- Add Currencies section
+    do
+        local currencyTitle = Text:New("RPE_CS_Title_Currencies", {
+            parent = self.bodyGroup,
+            text   = "Currencies",
+            fontTemplate = "GameFontNormalSmall",
+            justifyH = "CENTER",
+            textPoint = "TOP", textRelativePoint = "TOP",
+            width  = 1, height = 12, y = -12,
+        })
+        RPE_UI.Colors.ApplyText(currencyTitle.fs, "textMuted")
+        self.bodyGroup:Add(currencyTitle)
+
+        local currencyRow = HGroup:New("RPE_CS_Row_Currencies", {
+            parent  = self.bodyGroup,
+            spacingX = 24,
+            alignV   = "TOP",
+            alignH   = "CENTER",
+            autoSize = true,
+        })
+        self.bodyGroup:Add(currencyRow)
+        self:DrawCurrencies(currencyRow)
     end
 end
 

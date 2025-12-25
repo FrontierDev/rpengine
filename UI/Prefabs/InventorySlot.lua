@@ -147,10 +147,57 @@ function InventorySlot:New(name, opts)
     o.qty:SetAllPoints(o.frame)
     o.qty:Hide()
 
+    -- Turn-based cooldown overlay (sits over icon, shrinks from bottom)
+    local cdOverlay = f:CreateTexture(nil, "OVERLAY")
+    cdOverlay:SetDrawLayer("OVERLAY", 6)
+    cdOverlay:SetColorTexture(0, 0, 0, 0.45)  -- dark translucent
+    cdOverlay:SetPoint("BOTTOMLEFT", o.icon, "BOTTOMLEFT", 0, 0)
+    cdOverlay:SetPoint("BOTTOMRIGHT", o.icon, "BOTTOMRIGHT", 0, 0)
+    cdOverlay:SetHeight(0)
+    cdOverlay:Hide()
+
+    -- Cooldown text (centered)
+    local cdText = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    cdText:SetDrawLayer("OVERLAY", 8)
+    cdText:SetPoint("CENTER", f, "CENTER", 0, 0)
+    cdText:SetJustifyH("CENTER"); cdText:SetJustifyV("MIDDLE")
+    cdText:SetTextColor(1, 0.85, 0.2, 1)
+    cdText:Hide()
+
     -- Item state
     o.itemId  = opts.itemId
+    o.instanceGuid = opts.instanceGuid  -- Instance GUID for this item (for modifications)
     o.quality = opts.quality
     o.quantity= opts.quantity or 1
+    o.cdOverlay = cdOverlay
+    o.cdText = cdText
+    o._cdTotal = nil
+    o._cdRemain = 0
+    o._cdAnimStart = nil
+    o._cdAnimFrom = nil
+    o._cdAnimTo = nil
+    o._cdAnimDur = 0.18
+
+    -- Animation driver (OnUpdate hook like ActionBarSlot)
+    local function OnUpdateAnim(_, elapsed)
+        if o._cdAnimStart then
+            local t0 = o._cdAnimStart
+            local dur = o._cdAnimDur or 0.18
+            local prog = math.min(1, math.max(0, (GetTime() - t0) / dur))
+            local from = o._cdAnimFrom or 0
+            local to = o._cdAnimTo or 0
+            local h = from + (to - from) * prog
+
+            if o.cdOverlay and o.cdOverlay:IsShown() then
+                o.cdOverlay:SetHeight(h)
+            end
+
+            if prog >= 1 then
+                o._cdAnimStart = nil
+            end
+        end
+    end
+    f:SetScript("OnUpdate", OnUpdateAnim)
 
     -- Ensure icon starts nil unless explicitly provided
     if not opts.icon then o.icon:SetTexture(nil) end
@@ -184,8 +231,8 @@ function InventorySlot:New(name, opts)
         local item = reg and reg.Get and reg:Get(o.itemId) or nil
 
         if item and item.ShowTooltip and RPE and RPE.Common and RPE.Common.ShowTooltip then
-            -- Live registry item → render full tooltip
-            RPE.Common:ShowTooltip(self, item:ShowTooltip())
+            -- Live registry item → render full tooltip with instance GUID if available
+            RPE.Common:ShowTooltip(self, item:ShowTooltip(o.instanceGuid))
         else
             -- Not in registry → show minimal tooltip:
             -- grey name (try registry name if available, else datasets, else id) + red warning
@@ -248,6 +295,7 @@ function InventorySlot:New(name, opts)
             local reg = RPE.Core and RPE.Core.ItemRegistry
             local item = reg and reg.Get and reg:Get(o.itemId) or nil
             if item then
+                -- Always show context menu (right-click doesn't consume)
                 InventorySlot:ShowItemContextMenu(o, item)
             else
                 if RPE and RPE.Debug and RPE.Debug.Warning then
@@ -302,18 +350,22 @@ end
 
 function InventorySlot:SetItemId(id) self.itemId = id end
 function InventorySlot:GetItemId()   return self.itemId end
+function InventorySlot:SetInstanceGuid(guid) self.instanceGuid = guid end
+function InventorySlot:GetInstanceGuid() return self.instanceGuid end
 
 --- Set the slot's item.
 --- Accepts either:
 ---   1) string/number id  -> looks up in ItemRegistry (player inventory use)
----   2) table { id, icon, name?, rarity? } -> direct preview (editor; no registry)
+---   2) table { id, icon, name?, rarity?, instanceGuid? } -> direct preview (editor; no registry)
 ---@param id any|string|number|table
 ---@param quantity integer|nil
-function InventorySlot:SetItem(id, quantity)
+---@param instanceGuid string|nil -- instance GUID for this item (used for modifications)
+function InventorySlot:SetItem(id, quantity, instanceGuid)
     -- Editor/direct-preview path: table payload (no registry access)
     if type(id) == "table" then
         local data = id
         self.itemId = data.id
+        self.instanceGuid = data.instanceGuid  -- preserve instanceGuid if in data
         self:SetItemIcon(data.icon or nil)
         self:SetQuality(data.rarity or nil)
         self:SetQuantity(quantity or 0)
@@ -327,6 +379,7 @@ function InventorySlot:SetItem(id, quantity)
     local item = reg and reg.Get and reg:Get(id) or nil
 
     self.itemId = id
+    self.instanceGuid = instanceGuid  -- store the provided instance GUID
     if item then
         self:SetItemIcon(item.icon)
         self:SetQuality(item.rarity)
@@ -407,9 +460,62 @@ function InventorySlot:SetSubtitle(text)
     end
 end
 
--- =========================
--- Internal helpers
--- =========================
+--- Set turn-based cooldown with animated overlay
+function InventorySlot:SetTurnCooldown(turns)
+    turns = tonumber(turns) or 0
+    
+    if turns <= 0 then
+        -- Cooldown finished
+        self._cdRemain = 0
+        self._cdTotal = nil
+        if self.cdText then self.cdText:Hide() end
+        if self.cdOverlay then self.cdOverlay:Hide(); self.cdOverlay:SetHeight(0) end
+        return
+    end
+    
+    -- starting or ticking: update totals
+    if not self._cdTotal or turns > (self._cdRemain or 0) then
+        self._cdTotal = turns
+    end
+    self._cdRemain = turns
+    
+    -- Get icon dimensions (matches ActionBarSlot approach)
+    local iconTop = self.icon:GetTop() or 0
+    local iconBottom = self.icon:GetBottom() or 0
+    local fullH = math.max(0, iconTop - iconBottom)
+    
+    -- If icon hasn't been laid out yet, use frame size as fallback
+    if fullH == 0 then
+        fullH = self.frame:GetHeight() or 48
+    end
+    
+    -- calculate target overlay height (bottom anchored, shrinks as turns drop)
+    local frac = (self._cdTotal and self._cdTotal > 0) and (turns / self._cdTotal) or 1
+    frac = math.min(1, math.max(0, frac))
+    local targetH = math.floor(fullH * frac + 0.5)
+    
+    -- Queue animation (will be driven by OnUpdate)
+    if self.cdOverlay then
+        self.cdOverlay:Show()
+        local currentH = self.cdOverlay:GetHeight() or 0
+        self._cdAnimFrom = currentH
+        self._cdAnimTo = targetH
+        self._cdAnimStart = GetTime()
+    end
+    
+    if self.cdText then
+        self.cdText:SetText(tostring(turns))
+        self.cdText:Show()
+    end
+end
+
+--- Clear cooldown display
+function InventorySlot:ClearCooldown()
+    self._cdRemain = 0
+    self._cdTotal = nil
+    if self.cdText then self.cdText:Hide() end
+    if self.cdOverlay then self.cdOverlay:Hide(); self.cdOverlay:SetHeight(0) end
+end
 function InventorySlot:ShowQualityBorder(show)
     local qb = self.qBorder
     if not qb then return end
@@ -442,23 +548,117 @@ function InventorySlot:ShowItemContextMenu(slot, item)
 
     RPE_UI.Common:ContextMenu(slot.frame, function(level, menuList)
         if level == 1 then
+            -- For consumables with spells, show "Use"; for others, show "Equip"
+            local isConsumableWithSpell = item.category == "CONSUMABLE" and item.spellId
+            local actionText = isConsumableWithSpell and "Use" or "Equip"
+            
             UIDropDownMenu_AddButton({
-                text = "Equip",
+                text = actionText,
                 func = function()
                     local check = reg and reg:Get(item.id)
                     if not check then
                         if RPE and RPE.Debug and RPE.Debug.Warning then
-                            RPE.Debug:Warning("Item not available in active datasets; cannot equip.")
+                            RPE.Debug:Warning("Item not available in active datasets; cannot " .. (isConsumableWithSpell and "use" or "equip") .. ".")
                         end
                         return
                     end
-                    if check.data and check.data.slot then
-                        local profile = RPE.Profile.DB.GetOrCreateActive()
-                        profile:Equip(check.data.slot, check.id, false)
+                    
+                    if isConsumableWithSpell then
+                        -- Consume: cast spell using the full SpellCast system
+                        local SR = RPE.Core and RPE.Core.SpellRegistry
+                        local SC = RPE.Core and RPE.Core.SpellCast
+                        if not (SR and SC) then return end
+                        
+                        local spell = SR:Get(check.spellId)
+                        if not spell then 
+                            if RPE and RPE.Debug then
+                                RPE.Debug:Warning("Spell not found in registry: "..tostring(check.spellId))
+                            end
+                            return 
+                        end
+                        
+                        local event = RPE.Core.ActiveEvent
+                        if not event then return end
+                        
+                        -- Get player's numeric ID from event
+                        local casterId = event.localPlayerKey
+                        
+                        -- Create cast object
+                        local cast = SC.New(check.spellId, casterId, check.spellRank or 1)
+                        
+                        -- Build context
+                        local ctx = {
+                            event = event,
+                            resources = RPE.Core.Resources,
+                            cooldowns = RPE.Core.Cooldowns,
+                        }
+                        
+                        -- Validate and execute
+                        local ok, reason = cast:Validate(ctx)
+                        if not ok then
+                            if RPE and RPE.Debug and RPE.Debug.Warning then
+                                RPE.Debug:Warning("Cannot cast: " .. (reason or ""))
+                            end
+                            return
+                        end
+                        
+                        -- Handle targeting
+                        local defaultTargeter = spell.targeter and spell.targeter.default
+                        if defaultTargeter == "CASTER" or defaultTargeter == "SELF" or defaultTargeter == "ALL_ALLIES" or defaultTargeter == "ALL_ENEMIES" or defaultTargeter == "ALL_UNITS" then
+                            -- Self-targeting spell, execute immediately
+                            cast.targetSets = cast.targetSets or {}
+                            local tgtKey = (defaultTargeter == "SELF") and "CASTER" or defaultTargeter
+                            local sel = RPE.Core.Targeters and RPE.Core.Targeters:Select(tgtKey, ctx, cast, {})
+                            
+                            if sel and sel.targets and #sel.targets > 0 then
+                                cast.targetSets.precast = sel.targets
+                            else
+                                cast.targetSets.precast = { casterId }
+                            end
+                            
+                            cast:FinishTargeting(ctx)
+                        else
+                            -- Requires targeting
+                            cast:InitTargeting()
+                            cast:RequestNextTargetSet(ctx)
+                        end
+                        
+                        -- Remove one from inventory after casting (only if CONSUMABLE)
+                        if check.category == "CONSUMABLE" then
+                            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+                            if profile then
+                                profile:RemoveItem(check.id, 1)
+                                if profile.Inventory and profile.Inventory.Refresh then
+                                    profile.Inventory:Refresh()
+                                end
+                                -- Delay InventorySheet refresh until after spell finishes resolving (cooldown will be set during onResolve)
+                                C_Timer.After(0, function()
+                                    if RPE.Core and RPE.Core.Windows and RPE.Core.Windows.InventorySheet then
+                                        RPE.Core.Windows.InventorySheet:Refresh()
+                                    end
+                                end)
+                            end
+                        end
+                    else
+                        -- Equip
+                        if check.data and check.data.slot then
+                            local profile = RPE.Profile.DB.GetOrCreateActive()
+                            profile:Equip(check.data.slot, check.id, false)
+                        end
                     end
                 end,
                 notCheckable = true
             }, level)
+
+            -- Add "Modify..." option for EQUIPMENT items
+            if item.category == "EQUIPMENT" then
+                UIDropDownMenu_AddButton({
+                    text = "Modify...",
+                    hasArrow = true,
+                    notCheckable = true,
+                    menuList = "MODIFY_LIST"
+                }, level)
+            end
 
             UIDropDownMenu_AddButton({
                 text = "Give to...",
@@ -483,6 +683,149 @@ function InventorySlot:ShowItemContextMenu(slot, item)
                 end,
                 notCheckable = true
             }, level)
+
+        elseif level == 2 and menuList == "MODIFY_LIST" then
+            -- Get player's profile and ItemModification API
+            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+            local ItemMod = RPE.Core and RPE.Core.ItemModification
+            if not profile or not profile.items or not ItemMod then
+                UIDropDownMenu_AddButton({
+                    text = "No modifications available",
+                    isTitle = true,
+                    notCheckable = true
+                }, level)
+                return
+            end
+            
+            local slotInstanceGuid = slot.instanceGuid
+            
+            -- Part 1: Show currently applied modifications (checked, click to remove)
+            local appliedMods = ItemMod:GetAppliedModifications(profile, slotInstanceGuid)
+            if #appliedMods > 0 then
+                UIDropDownMenu_AddButton({
+                    text = "Applied Modifications",
+                    isTitle = true,
+                    notCheckable = true
+                }, level)
+                
+                for _, appliedMod in ipairs(appliedMods) do
+                    UIDropDownMenu_AddButton({
+                        text = appliedMod.name or appliedMod.itemId,
+                        checked = true,
+                        func = function()
+                            -- Remove this specific modification (don't return to inventory)
+                            ItemMod:RemoveModificationByKey(profile, slotInstanceGuid, appliedMod.modKey, false)
+                            
+                            -- Refresh UI
+                            if RPE.Core.Windows and RPE.Core.Windows.InventorySheet then
+                                RPE.Core.Windows.InventorySheet:Refresh()
+                            end
+                            if RPE.Core.Windows and RPE.Core.Windows.EquipmentSheet then
+                                RPE.Core.Windows.EquipmentSheet:Refresh()
+                            end
+                            if RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget then
+                                RPE.Core.Windows.PlayerUnitWidget:Refresh()
+                            end
+                        end,
+                    }, level)
+                end
+                
+                -- Add a separator
+                UIDropDownMenu_AddButton({
+                    text = "",
+                    isTitle = true,
+                    notCheckable = true
+                }, level)
+            end
+            
+            -- Part 2: Show available modifications from inventory (only compatible ones)
+            local modItems = {}
+            local seenModIds = {}
+            for _, invSlot in ipairs(profile.items or {}) do
+                local modItem = reg and reg:Get(invSlot.id)
+                if modItem and modItem.category == "MODIFICATION" and not seenModIds[invSlot.id] then
+                    -- Check if this modification is compatible with the item
+                    local isCompatible, reason = ItemMod:IsModificationCompatible(profile, slotInstanceGuid, invSlot.id)
+                    -- Check if player can actually apply it (has it in inventory + socket/limit not full)
+                    local canApply, applyReason = ItemMod:CanApplyModification(profile, slotInstanceGuid, invSlot.id)
+                    
+                    if isCompatible then
+                        table.insert(modItems, {
+                            id = invSlot.id,
+                            name = modItem.name or invSlot.id,
+                            qty = invSlot.qty or 1,
+                            canApply = canApply,
+                            reason = applyReason or reason
+                        })
+                        seenModIds[invSlot.id] = true
+                    end
+                end
+            end
+
+            if #modItems == 0 and #appliedMods == 0 then
+                UIDropDownMenu_AddButton({
+                    text = "No modifications available",
+                    isTitle = true,
+                    notCheckable = true
+                }, level)
+                return
+            end
+            
+            if #modItems > 0 then
+                UIDropDownMenu_AddButton({
+                    text = "Add Modification",
+                    isTitle = true,
+                    notCheckable = true
+                }, level)
+            end
+
+            for _, modItem in ipairs(modItems) do
+                local displayText = modItem.name
+                if modItem.qty > 1 then
+                    displayText = displayText .. " (" .. modItem.qty .. ")"
+                end
+
+                UIDropDownMenu_AddButton({
+                    text = displayText,
+                    disabled = not modItem.canApply,
+                    tooltipTitle = modItem.canApply and nil or "Cannot Apply",
+                    tooltipText = modItem.canApply and nil or modItem.reason,
+                    func = function()
+                        -- Apply modification to the item in inventory
+                        local currentProfile = RPE.Profile.DB.GetOrCreateActive()
+                        if not currentProfile then return end
+                        
+                        -- The item must be in inventory (unequipped) to apply modifications
+                        local isEquipped = false
+                        for _, eqItemId in pairs(currentProfile.equipment or {}) do
+                            if eqItemId == item.id then
+                                isEquipped = true
+                                break
+                            end
+                        end
+                        
+                        if isEquipped then
+                            RPE.Debug:Error("Item must be unequipped to apply modifications")
+                            return
+                        end
+                        
+                        -- Apply the modification (using instance GUID for unique tracking)
+                        ItemMod:ApplyModification(currentProfile, slotInstanceGuid, modItem.id)
+                        
+                        -- Refresh UI to reflect changes
+                        if RPE.Core.Windows and RPE.Core.Windows.InventorySheet then
+                            RPE.Core.Windows.InventorySheet:Refresh()
+                        end
+                        if RPE.Core.Windows and RPE.Core.Windows.EquipmentSheet then
+                            RPE.Core.Windows.EquipmentSheet:Refresh()
+                        end
+                        if RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget then
+                            RPE.Core.Windows.PlayerUnitWidget:Refresh()
+                        end
+                    end,
+                    notCheckable = true
+                }, level)
+            end
 
         elseif level == 2 and menuList == "GIVE_TO_LIST" then
             -- Block trading if the item has fallen out of the registry

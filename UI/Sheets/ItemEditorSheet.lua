@@ -174,7 +174,7 @@ local function _iconIdFromAny(v)
 end
 
 local ITEM_CATEGORIES = {
-    "MISC","CONSUMABLE","QUEST","EQUIPMENT","MATERIAL","KEY","CURRENCY",
+    "MISC","CONSUMABLE","QUEST","EQUIPMENT","MATERIAL","KEY","CURRENCY","MODIFICATION",
 }
 local RARITY_CHOICES = { "common","uncommon","rare","epic","legendary" }
 
@@ -265,6 +265,27 @@ local function _buildItemSchema(entryId, itemData, isEdit)
                 elements = {
                     { id = "data", label = "Properties", type = "editor_table", default = itemData.data or {} },
                 }
+            },
+            {
+                title = "Consumable",
+                elements = {
+                    {
+                        id = "spellId",
+                        label = "Spell ID",
+                        type = "lookup",
+                        pattern = "^[0-9a-zA-Z-]+$",
+                        tooltip = "Spell ID or spell key (numeric or string)",
+                        default = itemData.spellId or "",
+                    },
+                    {
+                        id = "spellRank",
+                        label = "Spell Rank",
+                        type = "number",
+                        min = 0, step = 1,
+                        tooltip = "Rank of spell to cast (0 = max available)",
+                        default = tonumber(itemData.spellRank) or 0,
+                    },
+                }
             }
         },
         labelWidth    = 120,
@@ -332,6 +353,8 @@ local function _saveItemValues(ds, targetId, values, isEdit, oldId)
     it.vendorSellable  = values.vendorSellable and true or false
     it.priceOverrideC  = tonumber(values.priceOverrideC) or it.priceOverrideC or 0
     it.tags         = tagsList
+    it.spellId = (values.spellId and values.spellId ~= "") and values.spellId or nil
+    it.spellRank = tonumber(values.spellRank) or nil
 
     -- compute ilvl from the UPDATED table
     local ilvl = nil
@@ -470,6 +493,216 @@ function ItemEditorSheet:BuildUI(opts)
                         local Menu = RPE_UI and RPE_UI.Common and RPE_UI.Common.ContextMenu
                         if not Menu then return end
                         RPE_UI.Common:ContextMenu(slot.frame or UIParent, function(level)
+                            if level ~= 1 then
+                                -- Submenu: "Copy from..." dataset selection
+                                if level == 2 then
+                                    local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                                    if not DatasetDB then return end
+                                    
+                                    -- List all available datasets
+                                    local allNames = DatasetDB.ListNames and DatasetDB.ListNames()
+                                    if not allNames or #allNames == 0 then
+                                        local info = UIDropDownMenu_CreateInfo()
+                                        info.isTitle = true
+                                        info.notCheckable = true
+                                        info.text = "No datasets available"
+                                        UIDropDownMenu_AddButton(info, level)
+                                        return
+                                    end
+                                    
+                                    table.sort(allNames)
+                                    for _, dsName in ipairs(allNames) do
+                                        local info = UIDropDownMenu_CreateInfo()
+                                        info.notCheckable = true
+                                        info.text = dsName
+                                        info.hasArrow = true
+                                        info.value = dsName
+                                        UIDropDownMenu_AddButton(info, level)
+                                    end
+                                    return
+                                end
+                                
+                                -- Submenu level 3: select item from chosen dataset
+                                if level == 3 then
+                                    local datasetName = UIDROPDOWNMENU_MENU_VALUE
+                                    if not datasetName then return end
+                                    
+                                    local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                                    if not DatasetDB then return end
+                                    
+                                    local sourceDs = DatasetDB.GetByName and DatasetDB.GetByName(datasetName)
+                                    if not sourceDs or not sourceDs.items then
+                                        local info = UIDropDownMenu_CreateInfo()
+                                        info.isTitle = true
+                                        info.notCheckable = true
+                                        info.text = "No items in dataset"
+                                        UIDropDownMenu_AddButton(info, level)
+                                        return
+                                    end
+                                    
+                                    -- Collect and sort items from source dataset
+                                    local items = {}
+                                    for itemId, itemDef in pairs(sourceDs.items) do
+                                        table.insert(items, { id = itemId, def = itemDef })
+                                    end
+                                    table.sort(items, function(a, b)
+                                        local anName = (a.def and a.def.name) or a.id
+                                        local bnName = (b.def and b.def.name) or b.id
+                                        return tostring(anName):lower() < tostring(bnName):lower()
+                                    end)
+                                    
+                                    -- Group items into chunks of 20 for submenu display
+                                    local itemsPerGroup = 20
+                                    local groups = {}
+                                    for i = 1, #items, itemsPerGroup do
+                                        local groupItems = {}
+                                        for j = i, math.min(i + itemsPerGroup - 1, #items) do
+                                            table.insert(groupItems, items[j])
+                                        end
+                                        table.insert(groups, groupItems)
+                                    end
+                                    
+                                    -- Create submenu buttons for each group with letter ranges
+                                    for groupIdx, groupItems in ipairs(groups) do
+                                        if #groupItems > 0 then
+                                            -- Get first and last item names for the range label
+                                            local firstName = (groupItems[1].def and groupItems[1].def.name) or groupItems[1].id
+                                            local lastName = (groupItems[#groupItems].def and groupItems[#groupItems].def.name) or groupItems[#groupItems].id
+                                            firstName = tostring(firstName):sub(1, 1):upper()
+                                            lastName = tostring(lastName):sub(1, 2):upper()
+                                            local rangeLabel = (firstName == lastName) and firstName or (firstName .. "-" .. lastName)
+                                            
+                                            local info = UIDropDownMenu_CreateInfo()
+                                            info.notCheckable = true
+                                            info.text = rangeLabel
+                                            info.hasArrow = true
+                                            -- Encode dataset name and group index in the value
+                                            info.value = datasetName .. "|" .. tostring(groupIdx)
+                                            UIDropDownMenu_AddButton(info, level)
+                                        end
+                                    end
+                                    return
+                                end
+                                
+                                -- Submenu level 4: show items in selected group
+                                if level == 4 then
+                                    local encodedValue = UIDROPDOWNMENU_MENU_VALUE
+                                    if not encodedValue then return end
+                                    
+                                    -- Decode: "datasetName|groupIdx"
+                                    local pipeIdx = encodedValue:find("|", 1, true)
+                                    if not pipeIdx then return end
+                                    local datasetName = encodedValue:sub(1, pipeIdx - 1)
+                                    local groupIdx = tonumber(encodedValue:sub(pipeIdx + 1))
+                                    
+                                    if not datasetName or not groupIdx then return end
+                                    
+                                    local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                                    if not DatasetDB then return end
+                                    
+                                    local sourceDs = DatasetDB.GetByName and DatasetDB.GetByName(datasetName)
+                                    if not sourceDs or not sourceDs.items then
+                                        return
+                                    end
+                                    
+                                    -- Collect and sort items from source dataset (same as level 3)
+                                    local items = {}
+                                    for itemId, itemDef in pairs(sourceDs.items) do
+                                        table.insert(items, { id = itemId, def = itemDef })
+                                    end
+                                    table.sort(items, function(a, b)
+                                        local anName = (a.def and a.def.name) or a.id
+                                        local bnName = (b.def and b.def.name) or b.id
+                                        return tostring(anName):lower() < tostring(bnName):lower()
+                                    end)
+                                    
+                                    -- Reconstruct the groups to find the selected one
+                                    local itemsPerGroup = 20
+                                    local selectedGroupItems = {}
+                                    local currentGroupIdx = 0
+                                    for i = 1, #items, itemsPerGroup do
+                                        currentGroupIdx = currentGroupIdx + 1
+                                        if currentGroupIdx == groupIdx then
+                                            for j = i, math.min(i + itemsPerGroup - 1, #items) do
+                                                table.insert(selectedGroupItems, items[j])
+                                            end
+                                            break
+                                        end
+                                    end
+                                    
+                                    if #selectedGroupItems == 0 then
+                                        return
+                                    end
+                                    
+                                    for _, item in ipairs(selectedGroupItems) do
+                                        local info = UIDropDownMenu_CreateInfo()
+                                        info.notCheckable = true
+                                        info.text = (item.def and item.def.name) or item.id
+                                        info.func = function()
+                                            -- Copy the item
+                                            local targetDs = self:GetEditingDataset()
+                                            if not targetDs then return end
+                                            
+                                            targetDs.items = targetDs.items or {}
+                                            
+                                            -- Generate new ID for the copy
+                                            local newId = _newItemId()
+                                            while targetDs.items[newId] do
+                                                newId = _newItemId()
+                                            end
+                                            
+                                            -- Deep copy the item definition
+                                            local itemCopy = {}
+                                            if type(item.def) == "table" then
+                                                for k, v in pairs(item.def) do
+                                                    if type(v) == "table" then
+                                                        -- Shallow copy for nested tables
+                                                        local tblCopy = {}
+                                                        for tk, tv in pairs(v) do
+                                                            tblCopy[tk] = tv
+                                                        end
+                                                        itemCopy[k] = tblCopy
+                                                    else
+                                                        itemCopy[k] = v
+                                                    end
+                                                end
+                                            end
+                                            itemCopy.id = newId
+                                            
+                                            targetDs.items[newId] = itemCopy
+                                            
+                                            -- Persist the dataset
+                                            local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                                            if DB and DB.Save then pcall(DB.Save, targetDs) end
+                                            
+                                            -- Rebuild runtime registry
+                                            local reg = _G.RPE and _G.RPE.Core and _G.RPE.Core.ItemRegistry
+                                            if reg and reg.RefreshFromActiveDatasets then
+                                                reg:RefreshFromActiveDatasets()
+                                            elseif reg and reg.RefreshFromActiveDataset then
+                                                reg:RefreshFromActiveDataset()
+                                            end
+                                            
+                                            -- Refresh grid + resize
+                                            self:Refresh()
+                                            local DW = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.DatasetWindow
+                                            if DW and DW._recalcSizeForContent then
+                                                DW:_recalcSizeForContent(self.sheet)
+                                                if DW._resizeSoon then DW:_resizeSoon(self.sheet) end
+                                            end
+                                            
+                                            if RPE and RPE.Debug and RPE.Debug.Internal then
+                                                RPE.Debug:Internal(string.format("Copied item '%s' from dataset '%s' (new ID: %s)", 
+                                                    (item.def and item.def.name) or item.id, datasetName, newId))
+                                            end
+                                        end
+                                        UIDropDownMenu_AddButton(info, level)
+                                    end
+                                    return
+                                end
+                                return
+                            end
+
                             if level ~= 1 then return end
 
                             -- Title
@@ -478,6 +711,20 @@ function ItemEditorSheet:BuildUI(opts)
                             info.notCheckable = true
                             info.text = entry and (tostring(entry.name or entry.id)) or "Empty Slot"
                             UIDropDownMenu_AddButton(info, level)
+
+                            -- Copy from... (empty slot only)
+                            local copyFrom = UIDropDownMenu_CreateInfo()
+                            copyFrom.notCheckable = true
+                            copyFrom.text = "Copy from..."
+                            if entry then
+                                copyFrom.disabled = true
+                            else
+                                copyFrom.hasArrow = true
+                                copyFrom.func = function()
+                                    -- No-op; submenu will handle it
+                                end
+                            end
+                            UIDropDownMenu_AddButton(copyFrom, level)
 
                             -- Add to Inventory
                             local add = UIDropDownMenu_CreateInfo()

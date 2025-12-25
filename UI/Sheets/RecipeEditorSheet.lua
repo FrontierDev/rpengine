@@ -47,7 +47,22 @@ end
 local function _trim(s) return (tostring(s or ""):gsub("^%s+",""):gsub("%s+$","")) end
 local function _newGUID(prefix) return (Common and Common.GenerateGUID and Common:GenerateGUID(prefix or "REC")) or string.format("%s-%04x%04x", prefix or "REC", math.random(0,0xFFFF), math.random(0,0xFFFF)) end
 
-local function _recipesBucket(ds) return (ds and ds.extra and ds.extra.recipes) or {} end
+local function _recipesBucket(ds)
+    local combined = {}
+    -- Include generated/default recipes from ds.recipes
+    if ds and ds.recipes and type(ds.recipes) == "table" then
+        for id, recipe in pairs(ds.recipes) do
+            combined[id] = recipe
+        end
+    end
+    -- Include/override with custom edited recipes from ds.extra.recipes
+    if ds and ds.extra and ds.extra.recipes and type(ds.extra.recipes) == "table" then
+        for id, recipe in pairs(ds.extra.recipes) do
+            combined[id] = recipe
+        end
+    end
+    return combined
+end
 
 local function _collectRecipesSorted(ds)
     local list = {}
@@ -88,13 +103,13 @@ local function _saveRecipe(ds, recipeId, v)
         id           = recipeId,
         name         = _trim(v.name or recipeId),
         profession   = v.profession or "Blacksmithing",
-        category     = v.category or "Basics",
+        category     = v.category,
         skill        = tonumber(v.skill) or 1,
         quality      = v.quality or "uncommon",
         outputItemId = v.outputItemId or "item_placeholder",
         outputQty    = tonumber(v.outputQty) or 1,
-        tools        = v.tools or { "Hammer","Anvil" },
-        reagents     = v.reagents or { {id="copper_bar", qty=2}, {id="rough_stone", qty=1} },
+        tools        = v.tools,
+        reagents     = v.reagents or {},
         optional     = v.optional or {},
         cost         = (function()
             local costTbl = {}
@@ -113,6 +128,20 @@ local function _saveRecipe(ds, recipeId, v)
 end
 
 -- ==== Wizard schema =========================================================
+local function _tableToArray(tbl)
+    -- Convert indexed table {[1]={...}, [2]={...}} to sequential array
+    if not tbl or type(tbl) ~= "table" then return {} end
+    local arr = {}
+    local maxIdx = 0
+    for k, v in pairs(tbl) do
+        if type(k) == "number" and k > maxIdx then maxIdx = k end
+    end
+    for i = 1, maxIdx do
+        if tbl[i] then arr[i] = tbl[i] end
+    end
+    return arr
+end
+
 local function _buildEditSchema(recipeId, def)
     def = def or {}
     return {
@@ -135,12 +164,12 @@ local function _buildEditSchema(recipeId, def)
             { title="Reagents", elements={
                 { id="reagents", label="Reagents", type="editor_table",
                   columns={{id="id",header="Item Id",type="lookup",pattern="^item%-[a-fA-F0-9]+$",width=240},{id="qty",header="Qty",type="number",width=60}},
-                  default=def.reagents or {} },
+                  default=_tableToArray(def.reagents) or {} },
             }},
             { title="Optional Reagents", elements={
                 { id="optional", label="Optional", type="editor_table",
                   columns={{id="id",header="Item Id",type="lookup",pattern="^item%-[a-fA-F0-9]+$",width=240},{id="qty",header="Qty",type="number",width=60}},
-                  default=def.optional or {} },
+                  default=_tableToArray(def.optional) or {} },
             }},
             { title="Tools", elements={
                 { id="tools", label="Tools", type="list", default=def.tools or {"Hammer","Anvil"} },
@@ -153,9 +182,21 @@ local function _buildEditSchema(recipeId, def)
                   },
                   default = (function()
                       local t = {}
-                      if def.cost and type(def.cost) == "table" then
-                          for k, v in pairs(def.cost) do
-                              table.insert(t, { key=k, value=v })
+                      -- Handle both costs (array) and cost (dict) formats
+                      local costData = def.costs or def.cost or {}
+                      if type(costData) == "table" then
+                          -- Check if it's indexed array format: {[1]={id="...",qty=...}}
+                          if costData[1] then
+                              for _, entry in ipairs(_tableToArray(costData)) do
+                                  table.insert(t, { key=entry.id or entry.key, value=entry.qty or entry.value })
+                              end
+                          else
+                              -- Dict format: {key=value, key=value}
+                              for k, v in pairs(costData) do
+                                  if type(k) ~= "number" then  -- Skip numeric keys from indexed format
+                                      table.insert(t, { key=k, value=v })
+                                  end
+                              end
                           end
                       end
                       return t
@@ -201,80 +242,317 @@ local function _buildRow(self, idx)
             local entry = row._entry
             if not entry or not (Common and Common.ContextMenu) then return end
 
-            Common:ContextMenu(row.frame or UIParent, function(level)
-                if level ~= 1 then return end
+            Common:ContextMenu(row.frame or UIParent, function(level, menuList)
+                if level == 1 then
+                    -- Title
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = entry.name or entry.id
+                    UIDropDownMenu_AddButton(info, level)
 
-                -- Title
-                local info = UIDropDownMenu_CreateInfo()
-                info.isTitle = true; info.notCheckable = true
-                info.text = entry.name or entry.id
-                UIDropDownMenu_AddButton(info, level)
+                    -- Copy from other datasets
+                    local copyFrom = UIDropDownMenu_CreateInfo()
+                    copyFrom.notCheckable = true
+                    copyFrom.text = "Copy from..."
+                    copyFrom.hasArrow = true
+                    copyFrom.menuList = "COPY_FROM_DATASET"
+                    UIDropDownMenu_AddButton(copyFrom, level)
 
-                -- Edit
-                UIDropDownMenu_AddButton({
-                    text = "Edit",
-                    notCheckable = true,
-                    func = function()
-                        local DW = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.DatasetWindow
-                        if DW and DW.ShowWizard then
-                            local ds   = self:GetEditingDataset()
-                            local full = (ds and ds.extra and ds.extra.recipes and ds.extra.recipes[entry.id]) or entry
-                            DW:ShowWizard({
-                                schema = _buildEditSchema(entry.id, full),
-                                isEdit = true,
-                                onSave = function(values)
-                                    local ds2 = self:GetEditingDataset()
-                                    local okId = _saveRecipe(ds2, entry.id, values)
-                                    if okId and _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then
-                                        pcall(_G.RPE.Profile.DatasetDB.Save, ds2)
+                    -- Edit
+                    UIDropDownMenu_AddButton({
+                        text = "Edit",
+                        notCheckable = true,
+                        func = function()
+                            local DW = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.DatasetWindow
+                            if DW and DW.ShowWizard then
+                                local ds   = self:GetEditingDataset()
+                                -- Look for custom recipe first, then generated recipe, then fallback to summary
+                                local full = (ds and ds.extra and ds.extra.recipes and ds.extra.recipes[entry.id]) 
+                                          or (ds and ds.recipes and ds.recipes[entry.id])
+                                          or entry
+                                DW:ShowWizard({
+                                    schema = _buildEditSchema(entry.id, full),
+                                    isEdit = true,
+                                    onSave = function(values)
+                                        local ds2 = self:GetEditingDataset()
+                                        local okId = _saveRecipe(ds2, entry.id, values)
+                                        if okId and _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then
+                                            pcall(_G.RPE.Profile.DatasetDB.Save, ds2)
+                                        end
+                                        self:Refresh()
+                                    end,
+                                })
+                            end
+                        end,
+                    }, level)
+
+                    -- Clone
+                    UIDropDownMenu_AddButton({
+                        text = "Clone",
+                        notCheckable = true,
+                        func = function()
+                            local newId = _newGUID("REC")
+                            local DW = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.DatasetWindow
+                            if DW and DW.ShowWizard then
+                                local ds   = self:GetEditingDataset()
+                                -- Look for custom recipe first, then generated recipe, then fallback to summary
+                                local full = (ds and ds.extra and ds.extra.recipes and ds.extra.recipes[entry.id]) 
+                                          or (ds and ds.recipes and ds.recipes[entry.id])
+                                          or entry
+                                DW:ShowWizard({
+                                    schema = _buildEditSchema(newId, full),
+                                    isEdit = false,
+                                    onSave = function(values)
+                                        local ds2 = self:GetEditingDataset()
+                                        local okId = _saveRecipe(ds2, newId, values)
+                                        if okId and _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then
+                                            pcall(_G.RPE.Profile.DatasetDB.Save, ds2)
+                                        end
+                                        self:Refresh()
+                                    end,
+                                })
+                            end
+                        end,
+                    }, level)
+
+                    -- Export
+                    UIDropDownMenu_AddButton({
+                        text = "Export",
+                        notCheckable = true,
+                        func = function()
+                            local ds = self:GetEditingDataset()
+                            -- Look for custom recipe first, then generated recipe, then fallback to summary
+                            local full = (ds and ds.extra and ds.extra.recipes and ds.extra.recipes[entry.id]) 
+                                      or (ds and ds.recipes and ds.recipes[entry.id])
+                                      or entry
+                            if not full then return end
+                            
+                            -- Use the Export utility if available
+                            local Export = _G.RPE and _G.RPE.Data and _G.RPE.Data.Export
+                            if Export and Export.ToClipboard then
+                                Export.ToClipboard(full, { format = "compact", key = entry.id })
+                                if _G.RPE and _G.RPE.Debug and _G.RPE.Debug.Internal then
+                                    _G.RPE.Debug:Internal("Recipe exported to clipboard (compact, wrapped): " .. entry.id)
+                                end
+                            else
+                                print("Export utility not available.")
+                            end
+                        end,
+                    }, level)
+
+                    -- Delete
+                    UIDropDownMenu_AddButton({
+                        text = "|cffff4040Delete Entry|r",
+                        notCheckable = true,
+                        func = function()
+                            local ds = self:GetEditingDataset()
+                            if not (ds and ds.extra and ds.extra.recipes and ds.extra.recipes[entry.id]) then return end
+                            ds.extra.recipes[entry.id] = nil
+                            if _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then
+                                pcall(_G.RPE.Profile.DatasetDB.Save, ds)
+                            end
+                            self:Refresh()
+                        end,
+                    }, level)
+                elseif level == 2 and menuList == "COPY_FROM_DATASET" then
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select Dataset"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if DB and DB.ListNames then
+                        local names = DB:ListNames()
+                        table.sort(names)
+                        for _, dsName in ipairs(names) do
+                            local btn = UIDropDownMenu_CreateInfo()
+                            btn.notCheckable = true
+                            btn.text = dsName
+                            btn.value = dsName
+                            btn.menuList = "COPY_FROM_RECIPES"
+                            btn.hasArrow = true
+                            UIDropDownMenu_AddButton(btn, level)
+                        end
+                    end
+                elseif level == 3 and menuList == "COPY_FROM_RECIPES" then
+                    local sourceDatasetName = UIDROPDOWNMENU_MENU_VALUE
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if not (DB and sourceDatasetName) then return end
+
+                    local sourceDataset
+                    for _, fn in ipairs({ "GetByName", "GetByKey", "Get" }) do
+                        local func = DB[fn]
+                        if type(func) == "function" then
+                            local ok, ds = pcall(func, DB, sourceDatasetName)
+                            if ok and ds then sourceDataset = ds; break end
+                            local ok2, ds2 = pcall(func, sourceDatasetName)
+                            if ok2 and ds2 then sourceDataset = ds2; break end
+                        end
+                    end
+
+                    if not sourceDataset then return end
+
+                    local recipeList = {}
+                    -- Collect from both custom and generated recipes
+                    local combined = _recipesBucket(sourceDataset)
+                    for recipeId, recipeDef in pairs(combined) do
+                        table.insert(recipeList, {
+                            id = recipeId,
+                            name = recipeDef.name or recipeId,
+                        })
+                    end
+
+                    table.sort(recipeList, function(a, b)
+                        local an = tostring(a.name or ""):lower()
+                        local bn = tostring(b.name or ""):lower()
+                        if an ~= bn then return an < bn end
+                        return tostring(a.id) < tostring(b.id)
+                    end)
+
+                    local groupSize = 20
+                    local groups = {}
+                    for i = 1, #recipeList, groupSize do
+                        local group = {}
+                        for j = 0, groupSize - 1 do
+                            if recipeList[i + j] then
+                                table.insert(group, recipeList[i + j])
+                            end
+                        end
+                        if #group > 0 then
+                            table.insert(groups, group)
+                        end
+                    end
+
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select Group"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    for groupIdx, group in ipairs(groups) do
+                        local firstRecipe = group[1]
+                        local lastRecipe = group[#group]
+                        local firstName = (tostring(firstRecipe.name or "")):sub(1, 1):upper()
+                        local lastName = (tostring(lastRecipe.name or "")):sub(1, 2):upper()
+                        local rangeLabel = firstName .. "-" .. lastName
+
+                        local btn = UIDropDownMenu_CreateInfo()
+                        btn.notCheckable = true
+                        btn.text = rangeLabel
+                        btn.value = sourceDatasetName .. "|" .. groupIdx
+                        btn.menuList = "COPY_FROM_RECIPE_GROUP"
+                        btn.hasArrow = true
+                        UIDropDownMenu_AddButton(btn, level)
+                    end
+                elseif level == 4 and menuList == "COPY_FROM_RECIPE_GROUP" then
+                    local encodedValue = UIDROPDOWNMENU_MENU_VALUE
+                    local sourceDatasetName, groupIdxStr = encodedValue:match("^(.+)|(.+)$")
+                    local groupIdx = tonumber(groupIdxStr)
+
+                    if not (sourceDatasetName and groupIdx) then return end
+
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if not DB then return end
+
+                    local sourceDataset
+                    for _, fn in ipairs({ "GetByName", "GetByKey", "Get" }) do
+                        local func = DB[fn]
+                        if type(func) == "function" then
+                            local ok, ds = pcall(func, DB, sourceDatasetName)
+                            if ok and ds then sourceDataset = ds; break end
+                            local ok2, ds2 = pcall(func, sourceDatasetName)
+                            if ok2 and ds2 then sourceDataset = ds2; break end
+                        end
+                    end
+
+                    if not sourceDataset then return end
+
+                    local recipeList = {}
+                    -- Collect from both custom and generated recipes
+                    local combined = _recipesBucket(sourceDataset)
+                    for recipeId, recipeDef in pairs(combined) do
+                        table.insert(recipeList, {
+                            id = recipeId,
+                            name = recipeDef.name or recipeId,
+                        })
+                    end
+
+                    table.sort(recipeList, function(a, b)
+                        local an = tostring(a.name or ""):lower()
+                        local bn = tostring(b.name or ""):lower()
+                        if an ~= bn then return an < bn end
+                        return tostring(a.id) < tostring(b.id)
+                    end)
+
+                    local groupSize = 20
+                    local groups = {}
+                    for i = 1, #recipeList, groupSize do
+                        local group = {}
+                        for j = 0, groupSize - 1 do
+                            if recipeList[i + j] then
+                                table.insert(group, recipeList[i + j])
+                            end
+                        end
+                        if #group > 0 then
+                            table.insert(groups, group)
+                        end
+                    end
+
+                    local selectedGroup = groups[groupIdx]
+                    if not selectedGroup then return end
+
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select Recipe"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    for _, recipeRef in ipairs(selectedGroup) do
+                        local btn = UIDropDownMenu_CreateInfo()
+                        btn.notCheckable = true
+                        btn.text = recipeRef.name
+                        btn.func = function()
+                            local targetDs = self:GetEditingDataset()
+                            if not (targetDs and sourceDataset) then
+                                return
+                            end
+
+                            -- Get source recipe (check both custom and generated)
+                            local sourceRecipeDef = nil
+                            if sourceDataset.extra and sourceDataset.extra.recipes then
+                                sourceRecipeDef = sourceDataset.extra.recipes[recipeRef.id]
+                            end
+                            if not sourceRecipeDef and sourceDataset.recipes then
+                                sourceRecipeDef = sourceDataset.recipes[recipeRef.id]
+                            end
+                            if not sourceRecipeDef then return end
+
+                            -- Replace the current recipe entry's data
+                            targetDs.extra = targetDs.extra or {}
+                            targetDs.extra.recipes = targetDs.extra.recipes or {}
+                            targetDs.extra.recipes[entry.id] = {}
+                            for k, v in pairs(sourceRecipeDef) do
+                                if type(v) == "table" then
+                                    targetDs.extra.recipes[entry.id][k] = {}
+                                    for k2, v2 in pairs(v) do
+                                        targetDs.extra.recipes[entry.id][k][k2] = v2
                                     end
-                                    self:Refresh()
-                                end,
-                            })
-                        end
-                    end,
-                }, level)
+                                else
+                                    targetDs.extra.recipes[entry.id][k] = v
+                                end
+                            end
+                            targetDs.extra.recipes[entry.id].id = entry.id
 
-                -- Clone
-                UIDropDownMenu_AddButton({
-                    text = "Clone",
-                    notCheckable = true,
-                    func = function()
-                        local newId = _newGUID("REC")
-                        local DW = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.DatasetWindow
-                        if DW and DW.ShowWizard then
-                            local ds   = self:GetEditingDataset()
-                            local full = (ds and ds.extra and ds.extra.recipes and ds.extra.recipes[entry.id]) or entry
-                            DW:ShowWizard({
-                                schema = _buildEditSchema(newId, full),
-                                isEdit = false,
-                                onSave = function(values)
-                                    local ds2 = self:GetEditingDataset()
-                                    local okId = _saveRecipe(ds2, newId, values)
-                                    if okId and _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then
-                                        pcall(_G.RPE.Profile.DatasetDB.Save, ds2)
-                                    end
-                                    self:Refresh()
-                                end,
-                            })
-                        end
-                    end,
-                }, level)
+                            local DB2 = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                            if DB2 and DB2.Save then pcall(DB2.Save, targetDs) end
 
-                -- Delete
-                UIDropDownMenu_AddButton({
-                    text = "|cffff4040Delete Entry|r",
-                    notCheckable = true,
-                    func = function()
-                        local ds = self:GetEditingDataset()
-                        if not (ds and ds.extra and ds.extra.recipes and ds.extra.recipes[entry.id]) then return end
-                        ds.extra.recipes[entry.id] = nil
-                        if _G.RPE.Profile and _G.RPE.Profile.DatasetDB.Save then
-                            pcall(_G.RPE.Profile.DatasetDB.Save, ds)
+                            self:Refresh()
+
+                            if RPE and RPE.Debug and RPE.Debug.Internal then
+                                RPE.Debug:Internal("Recipe replaced: " .. recipeRef.name .. " -> " .. entry.id)
+                            end
                         end
-                        self:Refresh()
-                    end,
-                }, level)
+                        UIDropDownMenu_AddButton(btn, level)
+                    end
+                end
             end)
         end,
     })

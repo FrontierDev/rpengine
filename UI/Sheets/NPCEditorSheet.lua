@@ -385,6 +385,14 @@ local function _buildRow(self, idx)
                     info.text = entry.name or entry.id
                     UIDropDownMenu_AddButton(info, level)
 
+                    -- Copy from other datasets
+                    local copyFrom = UIDropDownMenu_CreateInfo()
+                    copyFrom.notCheckable = true
+                    copyFrom.text = "Copy from..."
+                    copyFrom.hasArrow = true
+                    copyFrom.menuList = "COPY_FROM_DATASET"
+                    UIDropDownMenu_AddButton(copyFrom, level)
+
                     -- Copy NPC ID
                     local copyId = UIDropDownMenu_CreateInfo()
                     copyId.notCheckable = true
@@ -494,6 +502,197 @@ local function _buildRow(self, idx)
                             self:Refresh()
                         end,
                     }, level)
+                elseif level == 2 and menuList == "COPY_FROM_DATASET" then
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select Dataset"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if DB and DB.ListNames then
+                        local names = DB:ListNames()
+                        table.sort(names)
+                        for _, dsName in ipairs(names) do
+                            local btn = UIDropDownMenu_CreateInfo()
+                            btn.notCheckable = true
+                            btn.text = dsName
+                            btn.value = dsName
+                            btn.menuList = "COPY_FROM_NPCS"
+                            btn.hasArrow = true
+                            UIDropDownMenu_AddButton(btn, level)
+                        end
+                    end
+                elseif level == 3 and menuList == "COPY_FROM_NPCS" then
+                    local sourceDatasetName = UIDROPDOWNMENU_MENU_VALUE
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if not (DB and sourceDatasetName) then return end
+
+                    local sourceDataset
+                    for _, fn in ipairs({ "GetByName", "GetByKey", "Get" }) do
+                        local func = DB[fn]
+                        if type(func) == "function" then
+                            local ok, ds = pcall(func, DB, sourceDatasetName)
+                            if ok and ds then sourceDataset = ds; break end
+                            local ok2, ds2 = pcall(func, sourceDatasetName)
+                            if ok2 and ds2 then sourceDataset = ds2; break end
+                        end
+                    end
+
+                    if not (sourceDataset and sourceDataset.npcs) then return end
+
+                    local npcList = {}
+                    for npcId, npcDef in pairs(sourceDataset.npcs) do
+                        table.insert(npcList, {
+                            id = npcId,
+                            name = npcDef.name or npcId,
+                        })
+                    end
+
+                    table.sort(npcList, function(a, b)
+                        local an = tostring(a.name or ""):lower()
+                        local bn = tostring(b.name or ""):lower()
+                        if an ~= bn then return an < bn end
+                        return tostring(a.id) < tostring(b.id)
+                    end)
+
+                    local groupSize = 20
+                    local groups = {}
+                    for i = 1, #npcList, groupSize do
+                        local group = {}
+                        for j = 0, groupSize - 1 do
+                            if npcList[i + j] then
+                                table.insert(group, npcList[i + j])
+                            end
+                        end
+                        if #group > 0 then
+                            table.insert(groups, group)
+                        end
+                    end
+
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select Group"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    for groupIdx, group in ipairs(groups) do
+                        local firstNPC = group[1]
+                        local lastNPC = group[#group]
+                        local firstName = (tostring(firstNPC.name or "")):sub(1, 1):upper()
+                        local lastName = (tostring(lastNPC.name or "")):sub(1, 2):upper()
+                        local rangeLabel = firstName .. "-" .. lastName
+
+                        local btn = UIDropDownMenu_CreateInfo()
+                        btn.notCheckable = true
+                        btn.text = rangeLabel
+                        btn.value = sourceDatasetName .. "|" .. groupIdx
+                        btn.menuList = "COPY_FROM_NPC_GROUP"
+                        btn.hasArrow = true
+                        UIDropDownMenu_AddButton(btn, level)
+                    end
+                elseif level == 4 and menuList == "COPY_FROM_NPC_GROUP" then
+                    local encodedValue = UIDROPDOWNMENU_MENU_VALUE
+                    local sourceDatasetName, groupIdxStr = encodedValue:match("^(.+)|(.+)$")
+                    local groupIdx = tonumber(groupIdxStr)
+
+                    if not (sourceDatasetName and groupIdx) then return end
+
+                    local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                    if not DB then return end
+
+                    local sourceDataset
+                    for _, fn in ipairs({ "GetByName", "GetByKey", "Get" }) do
+                        local func = DB[fn]
+                        if type(func) == "function" then
+                            local ok, ds = pcall(func, DB, sourceDatasetName)
+                            if ok and ds then sourceDataset = ds; break end
+                            local ok2, ds2 = pcall(func, sourceDatasetName)
+                            if ok2 and ds2 then sourceDataset = ds2; break end
+                        end
+                    end
+
+                    if not (sourceDataset and sourceDataset.npcs) then return end
+
+                    local npcList = {}
+                    for npcId, npcDef in pairs(sourceDataset.npcs) do
+                        table.insert(npcList, {
+                            id = npcId,
+                            name = npcDef.name or npcId,
+                        })
+                    end
+
+                    table.sort(npcList, function(a, b)
+                        local an = tostring(a.name or ""):lower()
+                        local bn = tostring(b.name or ""):lower()
+                        if an ~= bn then return an < bn end
+                        return tostring(a.id) < tostring(b.id)
+                    end)
+
+                    local groupSize = 20
+                    local groups = {}
+                    for i = 1, #npcList, groupSize do
+                        local group = {}
+                        for j = 0, groupSize - 1 do
+                            if npcList[i + j] then
+                                table.insert(group, npcList[i + j])
+                            end
+                        end
+                        if #group > 0 then
+                            table.insert(groups, group)
+                        end
+                    end
+
+                    local selectedGroup = groups[groupIdx]
+                    if not selectedGroup then return end
+
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.isTitle = true; info.notCheckable = true
+                    info.text = "Select NPC"
+                    UIDropDownMenu_AddButton(info, level)
+
+                    for _, npcRef in ipairs(selectedGroup) do
+                        local btn = UIDropDownMenu_CreateInfo()
+                        btn.notCheckable = true
+                        btn.text = npcRef.name
+                        btn.func = function()
+                            local targetDs = self:GetEditingDataset()
+                            if not (targetDs and sourceDataset and sourceDataset.npcs and sourceDataset.npcs[npcRef.id]) then
+                                return
+                            end
+
+                            local sourceNPCDef = sourceDataset.npcs[npcRef.id]
+
+                            -- Replace the current NPC entry's data
+                            targetDs.npcs[entry.id] = {}
+                            for k, v in pairs(sourceNPCDef) do
+                                if type(v) == "table" then
+                                    targetDs.npcs[entry.id][k] = {}
+                                    for k2, v2 in pairs(v) do
+                                        targetDs.npcs[entry.id][k][k2] = v2
+                                    end
+                                else
+                                    targetDs.npcs[entry.id][k] = v
+                                end
+                            end
+                            targetDs.npcs[entry.id].id = entry.id
+
+                            local DB2 = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                            if DB2 and DB2.Save then pcall(DB2.Save, targetDs) end
+
+                            local reg = _G.RPE and _G.RPE.Core and _G.RPE.Core.NPCRegistry
+                            if reg and reg.RefreshFromActiveDatasets then
+                                reg:RefreshFromActiveDatasets()
+                            elseif reg and reg.Init then
+                                reg:Init()
+                            end
+
+                            self:Refresh()
+
+                            if RPE and RPE.Debug and RPE.Debug.Internal then
+                                RPE.Debug:Internal("NPC replaced: " .. npcRef.name .. " -> " .. entry.id)
+                            end
+                        end
+                        UIDropDownMenu_AddButton(btn, level)
+                    end
                 end
             end)
         end,

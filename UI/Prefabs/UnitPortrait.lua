@@ -34,6 +34,7 @@ local Colors       = RPE_UI.Colors
 ---@field disengagedIcon Button
 ---@field activeBuffsIcon Button
 ---@field activeDebuffsIcon Button
+---@field turnIndicatorIcon Button
 ---@field _hpCur number
 ---@field _hpMax number
 ---@field _castTimeRemaining number
@@ -136,7 +137,13 @@ function UnitPortrait:New(name, opts)
     local parentFrame = (opts.parent and opts.parent.frame) or UIParent
     local size    = opts.size or 48
     local hpH     = math.max(2, math.floor((opts.healthBarHeight or 6)))
-    local spacing = 4
+    
+    -- Calculate spacing proportionally based on custom portrait size
+    -- Default: size=48, spacing=4, so ratio is 4/48 ≈ 0.083
+    local DEFAULT_SIZE = 48
+    local DEFAULT_SPACING = 4
+    local spacingRatio = DEFAULT_SPACING / DEFAULT_SIZE
+    local spacing = math.max(2, math.floor(size * spacingRatio))
 
     -- Precompute icon sizes
     local iconSize = math.max(12, math.floor(size * 0.35))
@@ -285,8 +292,8 @@ function UnitPortrait:New(name, opts)
 
     -- === Status icons row (under the cast bar) ===
     local statusRow = CreateFrame("Frame", nil, f)
-    statusRow:SetPoint("TOPLEFT",  castBar.frame, "BOTTOMLEFT", 0, -spacing)
-    statusRow:SetPoint("TOPRIGHT", castBar.frame, "BOTTOMRIGHT", 0, -spacing)
+    statusRow:SetPoint("TOPLEFT",  castBar, "BOTTOMLEFT", 0, -spacing)
+    statusRow:SetPoint("TOPRIGHT", castBar, "BOTTOMRIGHT", 0, -spacing)
     statusRow:SetHeight(iconSize)
 
     -- === Aura icons row (below status row) ===
@@ -295,11 +302,13 @@ function UnitPortrait:New(name, opts)
     auraRow:SetPoint("TOPRIGHT", statusRow, "BOTTOMRIGHT", 0, -spacing)
     auraRow:SetHeight(iconSize)
 
-    local function makeStatusIcon(parent, texturePath, tooltipText)
+    local function makeStatusIcon(parent, texturePath, tooltipText, iconType)
         local btn = CreateFrame("Button", nil, parent)
         btn:SetSize(iconSize, iconSize)
         btn:SetPoint("CENTER", parent, "CENTER", 0, 0) -- temp; real position set by LayoutStatusIcons
         btn:EnableMouse(true)
+        btn._tooltipText = tooltipText
+        btn._iconType = iconType
 
         local tex = btn:CreateTexture(nil, "ARTWORK")
         tex:SetAllPoints()
@@ -307,11 +316,27 @@ function UnitPortrait:New(name, opts)
         tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 
         btn:SetScript("OnEnter", function()
-            GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
-            GameTooltip:SetText(tooltipText, 1, 1, 1)
-            GameTooltip:Show()
+            local tooltipSpec = { title = tooltipText, lines = {} }
+            
+            -- For threat icon, add dynamic threat value
+            if iconType == "threat" and btn._threatAmount then
+                tooltipSpec.lines[1] = {
+                    left = "Threat:",
+                    right = tostring(btn._threatAmount),
+                    r = 1, g = 1, b = 1,
+                    r2 = 1, g2 = 0.84, b2 = 0
+                }
+            end
+            
+            if Common and Common.ShowTooltip then
+                Common:ShowTooltip(btn, tooltipSpec)
+            end
         end)
-        btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        btn:SetScript("OnLeave", function()
+            if Common and Common.HideTooltip then
+                Common:HideTooltip()
+            end
+        end)
 
         btn:Hide()
         return btn
@@ -320,25 +345,29 @@ function UnitPortrait:New(name, opts)
     local healedIcon = makeStatusIcon(
         statusRow,
         "Interface\\AddOns\\RPEngine\\UI\\Textures\\healed_last.png",
-        "You healed or protected this unit last turn."
+        "You healed or protected this unit last turn.",
+        "healed"
     )
 
     local threatIcon = makeStatusIcon(
         statusRow,
         "Interface\\AddOns\\RPEngine\\UI\\Textures\\threat.png",
-        "You are at the top of this unit's threat table."
+        "You are at the top of this unit's threat table.",
+        "threat"
     )
 
     local attackedIcon = makeStatusIcon(
         statusRow,
         "Interface\\AddOns\\RPEngine\\UI\\Textures\\attacked_last.png",
-        "You attacked this unit last turn."
+        "You attacked this unit last turn.",
+        "attacked"
     )
 
     local disengagedIcon = makeStatusIcon(
         statusRow,
         "Interface\\AddOns\\RPEngine\\UI\\Textures\\disengaged.png",
-        "This unit is disengaged from combat."
+        "This unit is disengaged from combat.",
+        "disengaged"
     )
 
     -- Aura icons (vertical stack on left side)
@@ -377,6 +406,13 @@ function UnitPortrait:New(name, opts)
         "Interface\\AddOns\\RPEngine\\UI\\Textures\\active_debuffs.png",
         "Active Harmful Auras",
         "textMalus"
+    )
+
+    local turnIndicatorIcon = makeAuraIcon(
+        auraIconsFrame,
+        "Interface\\AddOns\\RPEngine\\UI\\Textures\\hourglass.png",
+        "Unit's Turn",
+        nil
     )
 
     -- Raid marker icon - initialize early (will be populated later)
@@ -419,6 +455,7 @@ function UnitPortrait:New(name, opts)
     o.disengagedIcon = disengagedIcon
     o.activeBuffsIcon = activeBuffsIcon
     o.activeDebuffsIcon = activeDebuffsIcon
+    o.turnIndicatorIcon = turnIndicatorIcon
     o._iconSize = iconSize
     o._auraIconSize = auraIconSize
     o._iconGap  = 4
@@ -777,6 +814,14 @@ function UnitPortrait:New(name, opts)
     
     o.flyingIcon = flyingIcon
     o.flyingIconFrame = flyingIconFrame
+
+    -- Turn indicator icon (positioned at bottom right, to the left of the raid marker)
+    -- Position it about one icon width to the left of the raid marker
+    o.turnIndicatorIcon:ClearAllPoints()
+    o.turnIndicatorIcon:SetParent(f)
+    o.turnIndicatorIcon:SetPoint("BOTTOMRIGHT", box, "BOTTOMLEFT", -4, 2)
+    o.turnIndicatorIcon:SetFrameLevel(20)
+
     -- Hidden by default until values are set
     o.hp:Hide()
     o.castBar:Hide()
@@ -787,6 +832,7 @@ function UnitPortrait:New(name, opts)
     o.disengagedIcon:Hide()
     o.activeBuffsIcon:Hide()
     o.activeDebuffsIcon:Hide()
+    o.turnIndicatorIcon:Hide()
 
     return o
 end
@@ -1187,6 +1233,7 @@ function UnitPortrait:UpdateStatusRowVisibility()
     if not self.auraIconsFrame then return end
     local anyAuraShown = (self.activeBuffsIcon and self.activeBuffsIcon:IsShown())
         or (self.activeDebuffsIcon and self.activeDebuffsIcon:IsShown())
+        or (self.turnIndicatorIcon and self.turnIndicatorIcon:IsShown())
     if anyAuraShown then
         self.auraIconsFrame:Show()
         self:LayoutAuraIcons()
@@ -1213,6 +1260,12 @@ function UnitPortrait:SetThreatTop(flag)
     self:UpdateStatusRowVisibility()
 end
 
+function UnitPortrait:SetThreatAmount(amount)
+    if self.threatIcon then
+        self.threatIcon._threatAmount = amount
+    end
+end
+
 function UnitPortrait:SetAttackedLast(flag)
     if self.attackedIcon then self.attackedIcon:SetShown(flag and true or false) end
     self:UpdateStatusRowVisibility()
@@ -1230,6 +1283,50 @@ end
 
 function UnitPortrait:SetActiveDebuffs(flag)
     if self.activeDebuffsIcon then self.activeDebuffsIcon:SetShown(flag and true or false) end
+    self:UpdateStatusRowVisibility()
+end
+
+--- Set turn indicator icon state
+---@param state string|nil -- "active" (hourglass), "ended" (check), nil (hidden)
+function UnitPortrait:SetTurnIndicator(state)
+    if not self.turnIndicatorIcon then return end
+
+    if not RPE.Core.IsLeader() then
+        -- Non-leaders do not see turn indicators
+        self.turnIndicatorIcon:Hide()
+        self:UpdateStatusRowVisibility()
+        return
+    end
+    
+    if state == "active" then
+        -- Find the texture that was created by makeAuraIcon
+        local regions = {self.turnIndicatorIcon:GetRegions()}
+        for _, region in ipairs(regions) do
+            if region:GetObjectType() == "Texture" then
+                region:SetTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+                region:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+                break
+            end
+        end
+        self.turnIndicatorIcon._tooltipText = "Unit's Turn"
+        self.turnIndicatorIcon:Show()
+    elseif state == "ended" then
+        -- Find the texture that was created by makeAuraIcon
+        local regions = {self.turnIndicatorIcon:GetRegions()}
+        for _, region in ipairs(regions) do
+            if region:GetObjectType() == "Texture" then
+                region:SetTexture("Interface\\AddOns\\RPEngine\\UI\\Textures\\check.png")
+                region:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+                break
+            end
+        end
+        self.turnIndicatorIcon._tooltipText = "Turn Ended"
+        self.turnIndicatorIcon:Show()
+    else
+        -- Hide icon
+        self.turnIndicatorIcon:Hide()
+    end
+    
     self:UpdateStatusRowVisibility()
 end
 
@@ -1329,6 +1426,7 @@ function UnitPortrait:LayoutAuraIcons()
     local icons = {}
     if self.activeBuffsIcon and self.activeBuffsIcon:IsShown() then table.insert(icons, self.activeBuffsIcon) end
     if self.activeDebuffsIcon and self.activeDebuffsIcon:IsShown() then table.insert(icons, self.activeDebuffsIcon) end
+    -- Note: turnIndicatorIcon is NOT included here; it's positioned separately at bottom right
 
     local n = #icons
     if n == 0 then
@@ -1554,6 +1652,21 @@ function UnitPortrait:Refresh()
     -- Update active buff/debuff icons
     self:SetActiveBuffs(self:HasActiveBuffs())
     self:SetActiveDebuffs(self:HasActiveDebuffs())
+    
+    -- Update turn indicator icon
+    local turnState = nil
+    local ev = RPE.Core and RPE.Core.ActiveEvent
+    if ev and ev:IsRunning() and ev.ticks and ev.tickIndex and ev.ticks[ev.tickIndex] then
+        -- Check if this unit is in the current tick
+        for _, tickUnit in ipairs(ev.ticks[ev.tickIndex]) do
+            if tickUnit.id == self.unit.id then
+                -- It's this unit's turn - show hourglass
+                turnState = "active"
+                break
+            end
+        end
+    end
+    self:SetTurnIndicator(turnState)
     
     -- Pulse icons if they were cast by the local player
     if self:HasLocalPlayerBuffs() and self.activeBuffsIcon and self.activeBuffsIcon:IsShown() then

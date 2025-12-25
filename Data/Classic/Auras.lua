@@ -1926,7 +1926,7 @@ RPE.Data.DefaultClassic.AURAS_RACIAL = {
     ["aura-oCARaDia1"] = {
         id = "aura-oCARaDia1",
         name = "Forged in Flames",
-        description = "Fire resistance increased by 2.",
+        description = "Armour increased by 10%. Fire resistance increased by 2.",
         icon = 1786407,
         isTrait = true,
         isHelpful = true,
@@ -1964,6 +1964,14 @@ RPE.Data.DefaultClassic.AURAS_RACIAL = {
                 mode = "ADD",
                 stat = "FIRE_RESIST",
                 value = "2"
+            },
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "PCT_ADD",
+                stat = "ARMOR",
+                value = "10"
             }
         }
     },
@@ -1972,10 +1980,14 @@ RPE.Data.DefaultClassic.AURAS_RACIAL = {
     ["aura-oCARaDia2"] = {
         id = "aura-oCARaDia2",
         name = "Fireblood",
-        description = "Removes all poison, disease, curse, and bleed effects. Increases your Fire Resistance by 2 for 2 turns.",
+        description = "Immune to all poison, disease, curse, and bleed effects. Melee and ranged attack power and spell power increased by 2 turns.",
         icon = 1786406,
         isTrait = false,
         isHelpful = true,
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 2
+        },
         hidden = false,
         unpurgable = false,
         stackingPolicy = "REFRESH_DURATION",
@@ -3191,6 +3203,574 @@ RPE.Data.DefaultClassic.AURAS_RACIAL = {
 
 }
 
+RPE.Data.DefaultClassic.AURAS_CONSUMABLE = {
+    -- Strength
+    ["aura-oCAScrStr"] = {
+        id = "aura-oCAScrStr",
+        name = "Strength",
+        description = "Increases your Strength by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 134938,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "STR",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    },
+
+    -- Agility
+    ["aura-oCAScrDex"] = {
+        id = "aura-oCAScrDex",
+        name = "Agility",
+        description = "Increases your Agility by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 134938,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "DEX",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    },
+
+    -- Stamina
+    ["aura-oCAScrSta"] = {
+        id = "aura-oCAScrSta",
+        name = "Stamina",
+        description = "Increases your Stamina by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 134943,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "CON",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    },
+
+    -- Intellect
+    ["aura-oCAScrInt"] = {
+        id = "aura-oCAScrInt",
+        name = "Intellect",
+        description = "Increases your Intellect by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 134937,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "INT",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    },
+
+    -- Spirit
+    ["aura-oCAScrSpi"] = {
+        id = "aura-oCAScrSpi",
+        name = "Spirit",
+        description = "Increases your Spirit by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 134937,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "WIS",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    },
+
+    ["aura-oCAScrArmor"] = {
+        id = "aura-oCAScrArmor",
+        name = "Armor",
+        description = "Increases your Armor by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 135975,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "ARMOR",
+                value = "$amount$",
+                perRank = "2"
+            }
+        }
+    },
+
+    ["aura-oCCElixirStr"] = {
+        id = "aura-oCCElixirStr",
+        name = "Elixir of Strength",
+        description = "Increases your Strength by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 134838,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "STR",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    },
+
+    ["aura-oCCElixirDex"] = {
+        id = "aura-oCCElixirDex",
+        name = "Elixir of Agility",
+        description = "Increases your Agility by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 134873,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "DEX",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    },
+
+    ["aura-oCCElixirCon"] = {
+        id = "aura-oCCElixirCon",
+        name = "Elixir of Fortitude",
+        description = "Increases your Fortitude by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 134824,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "CON",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    },
+
+    ["aura-oCCElixirInt"] = {
+        id = "aura-oCCElixirInt",
+        name = "Elixir of Intellect",
+        description = "Increases your Intellect by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 134866,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "INT",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    },
+
+    ["aura-oCCElixirWis"] = {
+        id = "aura-oCCElixirWis",
+        name = "Elixir of Spirit",
+        description = "Increases your Spirit by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 134859,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "WIS",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    }
+}
+
 RPE.Data.DefaultClassic.AURAS_PALADIN = {
     ------ Paladin Seals (Traits) ------
     -- Seal of Righteousness (damage on hit)
@@ -3309,7 +3889,7 @@ RPE.Data.DefaultClassic.AURAS_PALADIN = {
     -- Seal of Wisdom (mana on hit)
     ["aura-oCAPaSeal3"] = {
         id = "aura-oCAPaSeal3",
-        name = "Seal of Light",
+        name = "Seal of Wisdom",
         description = "Your successful restore $[1].amount$ mana.",
         icon = 135960,
         isTrait = true,
@@ -3330,7 +3910,7 @@ RPE.Data.DefaultClassic.AURAS_PALADIN = {
                 action = {
                     targets = { ref = "caster" },
                     key = "GAIN_RESOURCE",
-                    args = { auraId = "MANA", amount = "2d2" }
+                    args = { resourceId = "MANA", amount = "2d2" }
                 }
             }
         },
@@ -3608,7 +4188,7 @@ RPE.Data.DefaultClassic.AURAS_PALADIN = {
                         key = "HEAL",
                         args = {
                             amount = "5",
-                            targets = { targeter = "ALL_ALLIES", maxTargets = 5, flags = { "A" } },
+                            targets = { targeter = "ALL_ALLIES", maxTargets = 5, flags = "A" },
                             }
                         }
                     },
@@ -3812,15 +4392,15 @@ RPE.Data.DefaultClassic.AURAS_PALADIN = {
             period = 1,
             actions = {
                 [1] = {
-                    phase = "onResolve",
+                    phase = "onTick",
                     actions = {
                         [1] = {
-                        key = "GAIN_RESOURCE",
-                        args = {
-                            amount = "2",
-                            targets = { targeter = "TARGET", maxTargets = 1, flags = {} },
-                            auraId = "MANA"
-                        }
+                            key = "GAIN_RESOURCE",
+                            args = {
+                                amount = "2",
+                                targets = { targeter = "TARGET", maxTargets = 1, flags = "A" },
+                                resourceId = "MANA"
+                            }
                         }
                     },
                     logic = "ALL",
@@ -4126,7 +4706,7 @@ RPE.Data.DefaultClassic.AURAS_MAGE = {
     ["aura-oCSMaArm003"] = {
         id = "aura-oCSMaArm003",
         name = "Mage Armor",
-        description = "Restores 5 mana per turn.Arcane and Fel resistances increased by 2.",
+        description = "Restores 5 mana per turn. Arcane and Fel resistances increased by 2.",
         duration = {
             expires="ON_OWNER_TURN_END",
             turns=0
@@ -4155,8 +4735,8 @@ RPE.Data.DefaultClassic.AURAS_MAGE = {
                         key = "GAIN_RESOURCE",
                         args = {
                             amount = "5",
-                            targets = { targeter = "TARGET", maxTargets = 1, flags = {} },
-                            auraId = "MANA"
+                            targets = { targeter = "TARGET", maxTargets = 1, flags = "A" },
+                            resourceId = "MANA"
                         }
                         }
                     },
@@ -4237,7 +4817,7 @@ RPE.Data.DefaultClassic.AURAS_MAGE = {
                         args = {
                             amount = "10",
                             school = "Fire",
-                            targets = { targeter = "TARGET", maxTargets = 1, flags = {} }
+                            targets = { targeter = "TARGET", maxTargets = 1, flags = "A" }
                         }
                         }
                     },
@@ -5009,9 +5589,9 @@ RPE.Data.DefaultClassic.AURAS_WARRIOR = {
                         key = "GAIN_RESOURCE",
                         args = {
                             amount = "5",
-                            targets = { targeter = "TARGET", maxTargets = 1, flags = {} },
-                            auraId = "RAGE"
-                        }
+                            targets = { targeter = "TARGET", maxTargets = 1, flags = "A" },
+                            resourceId = "RAGE"
+                            }
                         }
                     },
                     logic = "ALL",
@@ -5709,8 +6289,8 @@ RPE.Data.DefaultClassic.AURAS_DEATH_KNIGHT = {
                         key = "GAIN_RESOURCE",
                         args = {
                             amount = "5",
-                            targets = { targeter = "TARGET", maxTargets = 1, flags = {} },
-                            auraId = "RUNIC_POWER"
+                            targets = { targeter = "TARGET", maxTargets = 1, flags = "A" },
+                            resourceId = "RUNIC_POWER"
                         }
                         }
                     },
@@ -5982,7 +6562,7 @@ RPE.Data.DefaultClassic.AURAS_DEATH_KNIGHT = {
                 action = {
                     targets = { ref = "source" },
                     key = "GAIN_RESOURCE",
-                    args = { amount = "2", auraId = "RUNIC_POWER" }
+                    args = { amount = "2", resourceId = "RUNIC_POWER" }
                 }
             }
         },
@@ -12721,7 +13301,8 @@ function RPE.Data.DefaultClassic.Auras()
         RPE.Data.DefaultClassic.AURAS_WARLOCK,
         RPE.Data.DefaultClassic.AURAS_PRIEST,
         RPE.Data.DefaultClassic.AURAS_DEMON_HUNTER,
-        RPE.Data.DefaultClassic.AURAS_RACIAL
+        RPE.Data.DefaultClassic.AURAS_RACIAL,
+        RPE.Data.DefaultClassic.AURAS_CONSUMABLE
     }
     
     for _, auraTable in ipairs(auraTables) do

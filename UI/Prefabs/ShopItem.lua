@@ -73,7 +73,121 @@ function ShopItem:New(name, opts)
                 return
             end
 
-            profile:AddItem(item.id, 1)
+            local price = tonumber(opts.price) or 0
+            local maxStock = tonumber(opts.maxStock) or 1
+            local stackable = item.stackable or false
+            local mode = opts.mode or "buy"
+
+            if mode == "buy" then
+                -- BUY MODE: player buys from NPC
+                if not stackable then
+                    -- Non-stackable: check if player can afford, then add and deduct cost
+                    local playerCopper = profile:GetCurrency("copper") or 0
+                    if playerCopper >= price then
+                        if profile:SpendCurrency("copper", price) then
+                            profile:AddItem(item.id, 1)
+                            PlaySound(120)
+                            -- Refresh shop window
+                            local shopWindow = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.ShopWindow
+                            if shopWindow and shopWindow.Refresh then
+                                shopWindow:Refresh()
+                            end
+                        end
+                    end
+                else
+                    -- Stackable: show popup to ask for quantity
+                    local Popup = RPE_UI.Prefabs.Popup
+                    if not Popup then return end
+
+                    local p = Popup.New({
+                        title = "Buy " .. (item.name or "Item"),
+                        text = "How many would you like to buy? (Max: " .. maxStock .. ")",
+                        showInput = true,
+                        defaultText = "1",
+                        placeholder = "1-" .. maxStock,
+                        primaryText = "Buy",
+                        secondaryText = "Cancel",
+                    })
+
+                    p:SetCallbacks(function(text)
+                        local qty = tonumber(text) or 1
+                        qty = math.max(1, math.min(qty, maxStock))
+
+                        local totalCost = price * qty
+                        local playerCopper = profile:GetCurrency("copper") or 0
+
+                        if playerCopper >= totalCost then
+                            if profile:SpendCurrency("copper", totalCost) then
+                                profile:AddItem(item.id, qty)
+                                PlaySound(567428)
+                                -- Refresh shop window
+                                local shopWindow = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.ShopWindow
+                                if shopWindow and shopWindow.Refresh then
+                                    shopWindow:Refresh()
+                                end
+                            end
+                        end
+                    end, function()
+                        -- Cancel: do nothing
+                    end)
+
+                    p:Show()
+                end
+            else
+                -- SELL MODE: player sells to NPC
+                if not stackable then
+                    -- Non-stackable: sell 1 item
+                    if profile:HasItem(item.id, 1) then
+                        profile:RemoveItem(item.id, 1)
+                        profile:AddCurrency("copper", price)
+                        PlaySound(120)
+                        -- Refresh shop window
+                        local shopWindow = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.ShopWindow
+                        if shopWindow and shopWindow.Refresh then
+                            shopWindow:Refresh()
+                        end
+                    end
+                else
+                    -- Stackable: show popup to ask for quantity
+                    local Popup = RPE_UI.Prefabs.Popup
+                    if not Popup then return end
+
+                    local playerQty = profile:GetItemQty(item.id) or 0
+                    local maxSell = math.min(playerQty, maxStock)
+
+                    local p = Popup.New({
+                        title = "Sell " .. (item.name or "Item"),
+                        text = "How many would you like to sell? (Max: " .. maxSell .. ")",
+                        showInput = true,
+                        defaultText = "1",
+                        placeholder = "1-" .. maxSell,
+                        primaryText = "Sell",
+                        secondaryText = "Cancel",
+                    })
+
+                    p:SetCallbacks(function(text)
+                        local qty = tonumber(text) or 1
+                        qty = math.max(1, math.min(qty, maxSell))
+
+                        local totalPrice = price * qty
+
+                        if profile:HasItem(item.id, qty) then
+                            profile:RemoveItem(item.id, qty)
+                            profile:AddCurrency("copper", totalPrice)
+                            PlaySound(567428)
+                            -- Refresh shop window
+                            local shopWindow = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.ShopWindow
+                            if shopWindow and shopWindow.Refresh then
+                                shopWindow:Refresh()
+                            end
+                        end
+                    end, function()
+                        -- Cancel: do nothing
+                    end)
+
+                    p:Show()
+                end
+            end
         end
     end)
 
@@ -101,9 +215,17 @@ function ShopItem:New(name, opts)
     })
     group:Add(textGroup)
 
+    -- In sell mode, use plain name; in buy mode use quality color
+    local nameText
+    if opts.mode == "sell" then
+        nameText = item.name or "(Item)"
+    else
+        nameText = Common:ColorByQuality(item.name or "(Item)", item.rarity or "common")
+    end
+
     o.name = Text:New(name .. "_Name", {
         parent = textGroup,
-        text = Common:ColorByQuality(item.name or "(Item)", item.rarity or "common"),
+        text = nameText,
         fontTemplate = "GameFontNormal",
         justifyH = "LEFT",
     })

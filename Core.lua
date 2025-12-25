@@ -27,6 +27,7 @@ end
 -- Announce local player's TRP3 display name when entering world or joining a group.
 do
     local lastAnnounce = 0
+    
     local function AnnounceIfAvailable()
         local now = time()
         if now - lastAnnounce < 5 then return end
@@ -45,10 +46,10 @@ do
             if ok and res and res ~= "" then trpName = res end
         end
 
-        if trpName and trpName ~= "" and RPE and RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast and RPE.Core.Comms.Broadcast.AnnounceTRPName then
-            RPE.Core.Comms.Broadcast:AnnounceTRPName(trpName)
+        if trpName and trpName ~= "" and RPE and RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast and RPE.Core.Comms.Broadcast.Hello then
+            RPE.Core.Comms.Broadcast:Hello(trpName)
             if RPE.Debug and RPE.Debug.Internal then
-                RPE.Debug:Internal(string.format("[Core] Announced TRP name: %s", trpName))
+                RPE.Debug:Internal(string.format("[Core] Sent HELLO with TRP name: %s", trpName))
             end
         end
     end
@@ -58,9 +59,16 @@ do
     f:RegisterEvent("GROUP_ROSTER_UPDATE")
     f:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_ENTERING_WORLD" then
-            AnnounceIfAvailable()
+            -- Don't announce here; wait for GROUP_ROSTER_UPDATE to ensure we're in the group
         elseif event == "GROUP_ROSTER_UPDATE" then
-            if IsInGroup() then AnnounceIfAvailable() end
+            -- On roster change, everyone announces and supergroup/event handle cleanup
+            if IsInGroup() then 
+                AnnounceIfAvailable()
+                -- Trigger supergroup rebuild (which syncs event)
+                if RPE and RPE.Core and RPE.Core.ActiveSupergroup and RPE.Core.ActiveSupergroup.CheckForOfflineMembers then
+                    RPE.Core.ActiveSupergroup:CheckForOfflineMembers()
+                end
+            end
         end
     end)
 end

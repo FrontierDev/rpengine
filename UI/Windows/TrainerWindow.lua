@@ -291,6 +291,18 @@ local function clearList(group)
     group.children = {}
 end
 
+-- Helper to update cost text with color based on affordability
+function TrainerWindow:_updateCostText(costAmount)
+    local profile = RPE.Profile.DB:GetOrCreateActive()
+    local playerCopper = profile:GetCurrency("copper") or 0
+    
+    local costStr = Common.FormatCopper and Common:FormatCopper(costAmount) or tostring(costAmount)
+    local color = (costAmount > playerCopper) and "|cffff4040" or "|cffffffff"  -- red if can't afford, white otherwise
+    
+    self.costText:SetText(("Cost: %s%s|r"):format(color, costStr))
+    return costAmount
+end
+
 -- Single entry creation ------------------------------------------------------
 function TrainerWindow:_addRecipeEntry(recipe, prof, profile)
     local playerSkill = tonumber((prof and prof.level) or 0)
@@ -320,7 +332,12 @@ function TrainerWindow:_addRecipeEntry(recipe, prof, profile)
             self:_updateSelectionHighlight()
             self:_updateLearnButton()
             self.selectedText:SetText(("Selected: %s (%s)"):format(recipe.name or recipe.id, recipe.skill))
-            self.costText:SetText(("Cost: %s"):format(recipe:GetFormattedCost()))
+            -- Extract copper cost from recipe.cost.copper (recipes stored as {copper=X})
+            local recipeCost = 0
+            if recipe.cost and recipe.cost.copper then
+                recipeCost = tonumber(recipe.cost.copper) or 0
+            end
+            self:_updateCostText(recipeCost)
         end,
     })
 
@@ -416,7 +433,9 @@ function TrainerWindow:_addSpellRankEntry(entry, profile)
                     entry.unlockLevel or 1
                 )
             )
-            self.costText:SetText(("Cost: %s"):format(spell:GetFormattedTrainingCost(entry.rank)))
+            local trainingCost = spell and type(spell.GetTrainingCost) == "function" 
+                and spell:GetTrainingCost(entry.rank) or 0
+            self:_updateCostText(trainingCost)
             self:_updateLearnButton()
         end,
     })
@@ -469,6 +488,7 @@ function TrainerWindow:_updateLearnButton()
     local recipe = self.selectedRecipe
     local prof   = self.profData
     local profile = RPE.Profile.DB:GetOrCreateActive()
+    local playerCopper = profile:GetCurrency("copper") or 0
 
     if self.mode == "SPELLS" then
         local spell = self.selectedSpell
@@ -490,6 +510,15 @@ function TrainerWindow:_updateLearnButton()
         or belowLevel
         or (rank > 1 and knownRank < (rank - 1)) then
             self.learnBtn:Lock()
+            return
+        end
+        
+        -- Check if player can afford training cost
+        local trainingCost = spell and type(spell.GetTrainingCost) == "function" 
+            and spell:GetTrainingCost(rank) or 0
+        
+        if trainingCost > playerCopper then
+            self.learnBtn:Lock()
         else
             self.learnBtn:Unlock()
         end
@@ -508,10 +537,21 @@ function TrainerWindow:_updateLearnButton()
     end
 
     local playerSkill = tonumber((prof and prof.level) or 0)
-    if playerSkill >= (recipe.skill or 0) then
-        self.learnBtn:Unlock()
-    else
+    if playerSkill < (recipe.skill or 0) then
         self.learnBtn:Lock()
+        return
+    end
+
+    -- Check if player can afford recipe cost
+    local recipeCost = 0
+    if recipe.cost and recipe.cost.copper then
+        recipeCost = tonumber(recipe.cost.copper) or 0
+    end
+    
+    if recipeCost > playerCopper then
+        self.learnBtn:Lock()
+    else
+        self.learnBtn:Unlock()
     end
 end
 

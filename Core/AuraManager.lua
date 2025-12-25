@@ -161,13 +161,29 @@ local function _computeInstanceMods(self, inst, targetProfile)
             local mode = string.upper(m.mode or "ADD")
             -- Skip ADVANTAGE modifiers - they're handled separately by the Advantage system
             if mode ~= "ADVANTAGE" then
-                -- amount (supports string formulas + $stat$)
+                -- amount (supports string formulas + $amount$ + $stat$)
                 local amt = m.value or m.amount or 0
-                if type(amt) == "string" and RPE.Core.Formula then
-                    local ctx = (m.source == "CASTER") and (casterProfile or targetProfile) or targetProfile
-                    amt = RPE.Core.Formula:Roll(amt, ctx)
+                if type(amt) == "string" then
+                    -- First, resolve snapshot variables like $amount$
+                    if inst.snapshot and inst.snapshot.amount ~= nil then
+                        amt = amt:gsub("%$amount%$", tostring(inst.snapshot.amount))
+                    end
+                    -- Then roll any remaining formulas ($stat$ references, dice rolls, etc.)
+                    if RPE.Core.Formula then
+                        local ctx = (m.source == "CASTER") and (casterProfile or targetProfile) or targetProfile
+                        amt = RPE.Core.Formula:Roll(amt, ctx)
+                    end
                 end
                 amt = tonumber(amt) or 0
+                
+                -- Apply per-rank scaling: amt + (perRank * (rank - 1))
+                -- Skip if the snapshot already included rank scaling
+                if m.perRank and tonumber(m.perRank) and tonumber(m.perRank) ~= 0 and not inst.snapshot._amountIncludesRank then
+                    local perRank = tonumber(m.perRank)
+                    local rank = inst.rank or 1
+                    amt = amt + (perRank * (rank - 1))
+                end
+                
                 if m.scaleWithStacks ~= false then
                     amt = amt * (inst.stacks or 1)
                 end
@@ -772,6 +788,8 @@ end
 ---@param auraId string
 ---@param opts table|nil  -- stacks, charges, snapshot, rngSeed, stackingPolicy override, uniqueByCaster override, extendTurns, refresh
 function AuraManager:Apply(source, target, auraId, opts)
+    -- opts can include: stacks, rank, duration, extendTurns, instanceId, snapshot, rngSeed, uniqueByCaster, stackingPolicy
+    -- rank defaults to 1 and is used to scale per-rank modifiers
     opts = opts or {}
     local sId = toUnitId(source) or source
     local tId = toUnitId(target)
@@ -1388,7 +1406,7 @@ function AuraManager:_onApplied(a)
             local tp = Common:ProfileForUnit(tu)
             desc = Common:ParseText(def.description or "", tp)
         end
-        Broadcast:AuraApply(a.sourceId, a.targetId, a.id, desc, { stacks = a.stacks })
+        Broadcast:AuraApply(a.sourceId, a.targetId, a.id, desc, { stacks = a.stacks, rank = a.rank })
     end
 
     -- per-instance add (apply to player profile OR directly to NPC unit)
@@ -1614,7 +1632,11 @@ function AuraManager:_onTick(a, turn)
 
     local casterUnit    = select(1, Common:FindUnitById(a.sourceId or a.source))
     local casterProfile = (casterUnit and Common:ProfileForUnit(casterUnit)) or (a.snapshot and a.snapshot.profile)
-    local cast = { caster = a.sourceId or a.source, profile = casterProfile }
+    local cast = { 
+        caster = a.sourceId or a.source, 
+        profile = casterProfile,
+        targets = { a.targetId or a.target }
+    }
     local targets = { a.targetId or a.target }
 
     -------------------------------------------------------------------------

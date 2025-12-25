@@ -29,6 +29,22 @@ local function EnsureDB()
     return db
 end
 
+local function GetDefaultRulesetRules()
+    return {
+        exp_per_level = "83+pow((5*$level$), 1.5)",
+        hit_system = "1d20",
+        equipment_slots = "left,right,bottom",
+        resource_types = "HEALTH,MANA,ACTION,BONUS_ACTION",
+        max_level = "20",
+        max_professions = "2",
+        max_generic_traits = "2",
+        max_racial_traits = "3",
+        max_class_traits = "1",
+        health_regen = "0.2*$stat.WIS_MOD$",
+        mana_regen = "0.2*$stat.WIS_MOD$",
+    }
+end
+
 -- === Public API ===
 --- Load the active ruleset for the current character (or nil).
 ---@return RulesetProfile|nil
@@ -98,7 +114,13 @@ function RulesetDB.CreateNew(name, opts)
     local db = EnsureDB()
     assert(db.rulesets[name] == nil, "CreateNew: ruleset with this name already exists")
 
-    local rs = RulesetProfile:New(name, opts)
+    -- For "DefaultRuleset", populate with default rules
+    local rules = opts and opts.rules or {}
+    if name == "DefaultRuleset" and (not opts or not opts.rules or next(opts.rules) == nil) then
+        rules = GetDefaultRulesetRules()
+    end
+    
+    local rs = RulesetProfile:New(name, { rules = rules })
     db.rulesets[name] = rs:ToTable()
     return rs
 end
@@ -163,6 +185,15 @@ f:SetScript("OnEvent", function(_, event)
     local db = EnsureDB()
 
     if event == "PLAYER_LOGIN" then
+        -- Ensure DefaultRuleset exists from Data/Classic/DefaultRuleset.lua
+        if not db.rulesets["DefaultClassic"] then
+            local defaultData = RPE.Data.Classic and RPE.Data.Classic.DefaultRuleset
+            if defaultData then
+                db.rulesets["DefaultClassic"] = defaultData
+                RPE.Debug:Print("Loaded DefaultRuleset from data")
+            end
+        end
+        
         local rs = RulesetDB.LoadActiveForCurrentCharacter()
         if rs then
             -- set as active rules for this character

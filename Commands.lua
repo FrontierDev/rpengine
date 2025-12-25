@@ -62,17 +62,22 @@ SlashCmdList["RPE"] = function(msg)
         RPE_UI.Common:Toggle(Ruleset)
     elseif arg == "setup" then
         local Setup = RPE_UI.Common:GetWindow("SetupWindow")
+        local isNewWindow = false
         if not Setup then
             -- Create it if it doesn't exist yet
             if RPE_UI.Windows and RPE_UI.Windows.SetupWindow then
                 Setup = RPE_UI.Windows.SetupWindow.New()
                 RPE_UI.Common:Show(Setup)
+                isNewWindow = true
             else
                 RPE.Debug:Error("Setup window class not found.")
                 return
             end
         end
-        RPE_UI.Common:Toggle(Setup)
+        -- Only toggle if it wasn't just created
+        if not isNewWindow then
+            RPE_UI.Common:Toggle(Setup)
+        end
     elseif arg == "stat" then
         
     elseif arg == "trpname" then
@@ -115,19 +120,32 @@ SlashCmdList["RPE"] = function(msg)
     elseif arg == "chant" then
         -- Show/toggle the Chanter sender window
         local win = RPE_UI.Common:GetWindow("ChanterSenderWindow")
+        local isNewWindow = false
         if not win then
             -- If the class is loaded but not instantiated/registered yet, create it.
             local C = _G.RPE_UI and _G.RPE_UI.Windows and _G.RPE_UI.Windows.ChanterSenderWindow
             if C and C.New then
                 win = C.New({})
                 win:Show()
+                isNewWindow = true
             end
         end
         if not win then
             RPE.Debug:Error("Chanter window not found.")
             return
         end
-        RPE_UI.Common:Toggle(win)
+        -- Only toggle if it wasn't just created
+        if not isNewWindow then
+            RPE_UI.Common:Toggle(win)
+        end
+    elseif arg == "chat" then
+        -- Show the ChatBoxWidget
+        local ChatBox = RPE and RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
+        if not ChatBox then
+            RPE.Debug:Error("ChatBox widget not found.")
+            return
+        end
+        ChatBox:Show()
     elseif arg == "leader" then
         -- Print the result of RPE.Core.IsLeader()
         local fn = RPE and RPE.Core and RPE.Core.IsLeader
@@ -144,7 +162,37 @@ SlashCmdList["RPE"] = function(msg)
                 Clipboard:Show()
             else
         end
-        elseif arg == "npcinfo" then
+    elseif arg == "location" then
+        local Location = RPE and RPE.Core and RPE.Core.Location
+        if not Location then
+            RPE.Debug:Error("Location module not found.")
+            return
+        end
+        local loc = Location:GetPlayerLocation()
+        if loc then
+            RPE.Debug:Print(string.format("Your Location: %s, %.3f, %.3f (MapID: %d)", loc.zone, loc.x, loc.y, loc.mapID))
+        else
+            RPE.Debug:Error("Could not retrieve location.")
+        end
+    elseif arg == "lfrp" then
+        local LFRPWindow = RPE_UI.Common:GetWindow("LFRPWindow")
+        local isNewWindow = false
+        if not LFRPWindow then
+            -- Create it if it doesn't exist yet
+            if RPE_UI.Windows and RPE_UI.Windows.LFRPWindow then
+                LFRPWindow = RPE_UI.Windows.LFRPWindow.New()
+                RPE_UI.Common:Show(LFRPWindow)
+                isNewWindow = true
+            else
+                RPE.Debug:Error("LFRP window class not found.")
+                return
+            end
+        end
+        -- Only toggle if it wasn't just created
+        if not isNewWindow then
+            RPE_UI.Common:Toggle(LFRPWindow)
+        end
+    elseif arg == "npcinfo" then
             -- Print information about the current target (safe calls)
             local exists = false
             pcall(function() exists = UnitExists("target") end)

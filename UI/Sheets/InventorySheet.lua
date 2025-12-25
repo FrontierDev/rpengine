@@ -91,10 +91,14 @@ end
 
 function InventorySheet:Refresh()
     local inventory = Common:GetInventory() or {}
+    local event = RPE.Core and RPE.Core.ActiveEvent
+    local cooldowns = RPE.Core and RPE.Core.Cooldowns
+    local spellReg = RPE.Core and RPE.Core.SpellRegistry
 
     -- Clear all slots first
     for i, slot in ipairs(self.slots) do
         slot:SetItem(nil)
+        slot:ClearCooldown()
     end
 
     -- Fill with current inventory (slot array)
@@ -102,7 +106,34 @@ function InventorySheet:Refresh()
     for _, entry in ipairs(inventory) do
         if entry.id and entry.qty and entry.qty > 0 then
             if self.slots[count] then
-                self.slots[count]:SetItem(entry.id, entry.qty)
+                -- Pass the instanceGuid as the third parameter for modification tracking
+                self.slots[count]:SetItem(entry.id, entry.qty, entry.instanceGuid)
+                
+                -- Check if this item has a spell with a cooldown
+                if spellReg and cooldowns and event then
+                    local item = RPE.Core.ItemRegistry and RPE.Core.ItemRegistry:Get(entry.id)
+                    if item and item.spellId then
+                        local spell = spellReg:Get(item.spellId)
+                        if spell and spell.cooldown then
+                            -- Get the caster's numeric ID from the event (must match what Start() used)
+                            local casterId = event.localPlayerKey
+                            if event and event.units then
+                                for key, unit in pairs(event.units) do
+                                    if key == event.localPlayerKey then
+                                        casterId = unit.id
+                                        break
+                                    end
+                                end
+                            end
+                            
+                            -- Get remaining cooldown for this spell (pass spell def, not cdKey string)
+                            local remaining = cooldowns:GetRemaining(casterId, spell, event.turn or 0)
+                            if remaining and remaining > 0 then
+                                self.slots[count]:SetTurnCooldown(remaining)
+                            end
+                        end
+                    end
+                end
             end
             count = count + 1
         end

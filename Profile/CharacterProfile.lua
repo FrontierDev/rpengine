@@ -68,10 +68,15 @@ local function normalizeProfessions(profIn)
     return out
 end
 
--- Accepts:
---  • nil
---  • map<string, number>  -> { ["potion"]=3, ["ore"]=12 }
---  • array of { id=string, qty=number }    -> { {id="potion", qty=3}, ... }
+local function _generateInstanceGUID(itemId)
+    -- Generate a unique instance GUID: "item-12345-abc123"
+    local randomPart = ""
+    for i = 1, 6 do
+        randomPart = randomPart .. string.format("%x", math.random(0, 15))
+    end
+    return tostring(itemId) .. "-" .. randomPart
+end
+
 local function normalizeItems(itemsIn)
     local out = {}
     if type(itemsIn) ~= "table" then return out end
@@ -83,9 +88,10 @@ local function normalizeItems(itemsIn)
                 local qty = math.max(0, math.floor(slot.qty))
                 if qty > 0 then
                     table.insert(out, {
-                        id   = slot.id,
-                        qty  = qty,
-                        mods = type(slot.mods)=="table" and slot.mods or {}
+                        id          = slot.id,
+                        qty         = qty,
+                        mods        = type(slot.mods)=="table" and slot.mods or {},
+                        instanceGuid = slot.instanceGuid or _generateInstanceGUID(slot.id)
                     })
                 end
             end
@@ -95,13 +101,17 @@ local function normalizeItems(itemsIn)
         for id, qty in pairs(itemsIn) do
             local n = math.max(0, math.floor(tonumber(qty) or 0))
             if n > 0 then
-                table.insert(out, { id = tostring(id), qty = n, mods = {} })
+                table.insert(out, { 
+                    id          = tostring(id), 
+                    qty         = n, 
+                    mods        = {}, 
+                    instanceGuid = _generateInstanceGUID(tostring(id)) 
+                })
             end
         end
     end
     return out
 end
-
 
 local function touch(self)
     self.updatedAt = time() or self.updatedAt
@@ -121,8 +131,11 @@ function CharacterProfile:New(name, opts)
         stats       = normalizeStats(opts.stats),
         items       = normalizeItems(opts.items),
         equipment   = opts.equipment or {},  -- slot → itemId
+        equippedInstanceGuids = opts.equippedInstanceGuids or {},  -- slot → instanceGuid
+        _equippedMods = opts.equippedMods or {},  -- instanceGuid → mods
         traits      = opts.traits or {},     -- list of trait aura IDs
         languages   = opts.languages or {},  -- language name → skill level (1-300)
+        currencies  = opts.currencies or {},  -- currency amounts { copper=X, honor=Y, ... }
         race        = opts.race or nil,      -- selected race id
         class       = opts.class or nil,     -- selected class id
         notes       = opts.notes or nil,
@@ -133,6 +146,7 @@ function CharacterProfile:New(name, opts)
         spells      = opts.spells or {}, 
         actionBar   = opts.actionBar or {},
         resourceDisplaySettings = opts.resourceDisplaySettings or {},
+        windowPositions = opts.windowPositions or {},  -- window name -> {point, relativePoint, x, y}
         _initializing = true,  -- Flag to suppress UI callbacks during initialization
     }, self)
     
@@ -274,9 +288,37 @@ function CharacterProfile:_InitializeLanguages()
     end
 end
 
-function CharacterProfile:RecalculateEquipmentStats()
-    RPE.Debug:Internal(string.format("Recalculating equipment stats for profile: %s", self.name or "?"))
+--- Helper: Build stat data from modifications
+--- Mods structure: { mod_<id> = { itemId, appliedAt } }
+--- Returns: { MAX_FAVOUR = 5, MANA = 10, ... } (stat IDs without "stat_" prefix)
+local function buildModStatData(profile, mods)
+    if not mods or not profile then return nil end
+    
+    local statData = {}
+    local ItemReg = RPE.Core and RPE.Core.ItemRegistry
+    
+    for modKey, modData in pairs(mods) do
+        if type(modKey) == "string" and modKey:match("^mod_") and type(modData) == "table" then
+            local modItemId = modData.itemId
+            if modItemId then
+                local modItem = ItemReg and ItemReg:Get(modItemId)
+                if modItem and modItem.data then
+                    -- Extract stat data from the modification item
+                    for k, v in pairs(modItem.data) do
+                        if type(k) == "string" and k:match("^stat_") then
+                            local statId = k:sub(6) -- strip "stat_" prefix
+                            statData[statId] = (statData[statId] or 0) + (tonumber(v) or 0)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return (next(statData) ~= nil) and statData or nil
+end
 
+function CharacterProfile:RecalculateEquipmentStats()
     -- Ensure the global structure exists
     RPE.Core.StatModifiers.equip = RPE.Core.StatModifiers.equip or {}
 
@@ -292,6 +334,33 @@ function CharacterProfile:RecalculateEquipmentStats()
                 if type(k) == "string" and k:match("^stat%_") then
                     local statId = k:sub(6) -- strip "stat_"
                     local delta  = tonumber(v) or 0
+                    if delta ~= 0 and RPE.Stats and RPE.Stats.Get then
+                        local stat = RPE.Stats:Get(statId)
+                        if stat then
+                            -- Check ruleset
+                            if RPE.ActiveRules and RPE.ActiveRules:IsStatEnabled(statId, stat.category) then
+                                local mods = RPE.Core.StatModifiers.equip[pid]
+                                mods[statId] = (mods[statId] or 0) + delta
+                                -- Only trigger UI updates if we're not initializing
+                                if not self._initializing and _G.RPE.Core.Windows.StatisticSheet then
+                                    _G.RPE.Core.Windows.StatisticSheet.OnStatChanged(statId)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            -- Apply modifications (gems, enchants) that are on this equipped item
+            local normSlot = slot:lower():gsub("%s+", ""):gsub("_",""):gsub("-","")
+            local equippedInstanceGuid = self.equippedInstanceGuids and self.equippedInstanceGuids[normSlot]
+            RPE.Debug:Internal(string.format("  [RecalcEquipStats] slot=%s, normSlot=%s, instanceGuid=%s", slot, normSlot, tostring(equippedInstanceGuid)))
+            
+            if equippedInstanceGuid and self._equippedMods and self._equippedMods[equippedInstanceGuid] then
+                RPE.Debug:Internal(string.format("    Found mods for %s: %s", equippedInstanceGuid, tostring(self._equippedMods[equippedInstanceGuid])))
+                local modStatData = buildModStatData(self, self._equippedMods[equippedInstanceGuid])
+                -- Apply the mod stats to this profile's equipment mods
+                for statId, delta in pairs(modStatData or {}) do
                     if delta ~= 0 and RPE.Stats and RPE.Stats.Get then
                         local stat = RPE.Stats:Get(statId)
                         if stat then
@@ -495,7 +564,12 @@ function CharacterProfile:AddItem(itemId, delta, maxStackOverride)
         -- Any remainder → new stacks
         while d > 0 do
             local add = math.min(d, maxStack)
-            table.insert(self.items, { id = itemId, qty = add })
+            table.insert(self.items, { 
+                id          = itemId, 
+                qty         = add, 
+                mods        = {}, 
+                instanceGuid = _generateInstanceGUID(itemId) 
+            })
             d = d - add
         end
 
@@ -597,6 +671,100 @@ function CharacterProfile:ClearItems()
     end
 end
 
+--- Add currency to the profile and print a message.
+---@param currencyId string  -- e.g. "copper", "honor", "conquest"
+---@param amount number
+function CharacterProfile:AddCurrency(currencyId, amount)
+    if type(currencyId) ~= "string" or currencyId == "" then return end
+    local amt = math.max(0, math.floor(tonumber(amount) or 0))
+    if amt <= 0 then return end
+
+    -- Initialize currencies table if needed
+    self.currencies = self.currencies or {}
+
+    -- Add the currency
+    self.currencies[currencyId] = (self.currencies[currencyId] or 0) + amt
+
+    -- Print the message
+    RPE.Debug:Print(("You receive %d %s"):format(amt, currencyId))
+
+    touch(self)
+    RPE.Profile.DB.SaveProfile(self)
+
+    -- Refresh currency display in CharacterSheet
+    local characterSheet = _G.RPE_UI and _G.RPE_UI.Windows and _G.RPE_UI.Windows.CharacterSheetInstance
+    if not characterSheet then
+        characterSheet = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.CharacterSheet
+    end
+    if characterSheet and characterSheet.Refresh then
+        characterSheet:Refresh()
+    end
+end
+
+--- Set a currency to an absolute value (replaces existing amount).
+---@param currencyId string  -- e.g. "copper", "honor", "conquest"
+---@param amount number
+function CharacterProfile:SetCurrency(currencyId, amount)
+    if type(currencyId) ~= "string" or currencyId == "" then return end
+    local amt = math.max(0, math.floor(tonumber(amount) or 0))
+
+    -- Initialize currencies table if needed
+    self.currencies = self.currencies or {}
+
+    -- Set the currency to the specified amount
+    self.currencies[currencyId] = amt
+
+    touch(self)
+    RPE.Profile.DB.SaveProfile(self)
+end
+
+--- Get the current amount of a currency.
+---@param currencyId string  -- e.g. "copper", "honor", "conquest"
+---@return number
+function CharacterProfile:GetCurrency(currencyId)
+    if type(currencyId) ~= "string" or currencyId == "" then return 0 end
+    
+    -- Initialize currencies table if needed
+    self.currencies = self.currencies or {}
+    
+    return self.currencies[currencyId] or 0
+end
+
+--- Spend (subtract) a currency. Returns true if successful, false if not enough.
+---@param currencyId string  -- e.g. "copper", "honor", "conquest"
+---@param amount number
+---@return boolean success
+function CharacterProfile:SpendCurrency(currencyId, amount)
+    if type(currencyId) ~= "string" or currencyId == "" then return false end
+    local amt = math.max(0, math.floor(tonumber(amount) or 0))
+    if amt <= 0 then return false end
+
+    -- Initialize currencies table if needed
+    self.currencies = self.currencies or {}
+
+    local current = self.currencies[currencyId] or 0
+    if current < amt then
+        return false  -- Not enough currency
+    end
+
+    -- Deduct the currency
+    self.currencies[currencyId] = current - amt
+
+    touch(self)
+    RPE.Profile.DB.SaveProfile(self)
+
+    -- Refresh currency display in CharacterSheet
+    local characterSheet = _G.RPE_UI and _G.RPE_UI.Windows and _G.RPE_UI.Windows.CharacterSheetInstance
+    if not characterSheet then
+        characterSheet = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.CharacterSheet
+    end
+    if characterSheet and characterSheet.Refresh then
+        characterSheet:Refresh()
+    end
+
+    return true
+end
+
 --- Get mods applied to an item slot.
 ---@param index number
 ---@return table
@@ -646,6 +814,7 @@ end
 function CharacterProfile:GetEquipped(slot)
     return self.equipment and self.equipment[slot] or nil
 end
+--- Internal: convert modification metadata into stat data for applyEquipMods.
 --- Internal: apply all stat equip mods from an item.
 local function applyEquipMods(item, sign, mods)
     -- base item stats
@@ -672,29 +841,22 @@ local function applyEquipMods(item, sign, mods)
         end
     end
 
-    -- attached mods (gems, enchants)
+    -- attached mods (gems, enchants) - keys are stat IDs without "stat_" prefix
     if mods then
-        for modKey, modData in pairs(mods) do
-            if type(modData) == "table" then
-                for k, v in pairs(modData) do
-                    if type(k) == "string" and k:match("^stat%_") then
-                        local statId = k:sub(6)
-                        local delta  = tonumber(v) or 0
-                        if delta ~= 0 and RPE.Stats and RPE.Stats.Get then
-                            local stat = RPE.Stats:Get(statId)
-                            if stat and (not RPE.ActiveRules or RPE.ActiveRules:IsStatEnabled(statId, stat.category)) then
-                                -- Read current equip mod from storage, not from stat object
-                                local profile = RPE.Profile.DB.GetOrCreateActive()
-                                local pid = profile and profile.name
-                                local currentMod = 0
-                                if pid then
-                                    RPE.Core.StatModifiers.equip[pid] = RPE.Core.StatModifiers.equip[pid] or {}
-                                    currentMod = RPE.Core.StatModifiers.equip[pid][statId] or 0
-                                end
-                                stat:SetEquipMod(currentMod + (delta * sign))
-                            end
-                        end
+        for statId, delta in pairs(mods) do
+            delta = tonumber(delta) or 0
+            if delta ~= 0 and RPE.Stats and RPE.Stats.Get then
+                local stat = RPE.Stats:Get(statId)
+                if stat and (not RPE.ActiveRules or RPE.ActiveRules:IsStatEnabled(statId, stat.category)) then
+                    -- Read current equip mod from storage, not from stat object
+                    local profile = RPE.Profile.DB.GetOrCreateActive()
+                    local pid = profile and profile.name
+                    local currentMod = 0
+                    if pid then
+                        RPE.Core.StatModifiers.equip[pid] = RPE.Core.StatModifiers.equip[pid] or {}
+                        currentMod = RPE.Core.StatModifiers.equip[pid][statId] or 0
                     end
+                    stat:SetEquipMod(currentMod + (delta * sign))
                 end
             end
         end
@@ -710,6 +872,9 @@ end
 function CharacterProfile:Equip(slot, itemId, onLoad)
     if not slot or slot == "" then return nil end
     if not self.equipment then self.equipment = {} end
+    
+    -- Normalize slot key to lowercase and remove spaces/dashes/underscores (matches EquipmentSheet normalization)
+    local normSlot = tostring(slot or ""):lower():gsub("%s+", ""):gsub("_",""):gsub("-","")
 
     local item = RPE.Core.ItemRegistry and RPE.Core.ItemRegistry:Get(itemId)
     if not item then
@@ -736,10 +901,12 @@ function CharacterProfile:Equip(slot, itemId, onLoad)
     -- IMPORTANT: Find exact inventory slot for the new item BEFORE modifying inventory
     local newItemSlotIndex = nil
     local newMods
+    local newInstanceGuid
     for idx, invSlot in ipairs(self.items) do
         if invSlot.id == itemId then
             newItemSlotIndex = idx
             newMods = invSlot.mods
+            newInstanceGuid = invSlot.instanceGuid
             break
         end
     end
@@ -768,13 +935,24 @@ function CharacterProfile:Equip(slot, itemId, onLoad)
     -- Unequip old: return it to inventory + remove its mods
     if prevItem then
         self:AddItem(prevId, 1)
-        applyEquipMods(prevItem, -1, oldMods)
+        local oldModStatData = buildModStatData(self, oldMods)
+        applyEquipMods(prevItem, -1, oldModStatData)
     end
 
     -- Equip the new item
     self.equipment[slot] = itemId
+    
+    -- Also track the specific instance GUID for this equipped item (use normalized slot key)
+    self.equippedInstanceGuids = self.equippedInstanceGuids or {}
+    self.equippedInstanceGuids[normSlot] = newInstanceGuid
 
-    applyEquipMods(item, 1, newMods)
+    local newModStatData = buildModStatData(self, newMods)
+    applyEquipMods(item, 1, newModStatData)
+    
+    -- Store mods on the equipped item so they persist while equipped, keyed by instance GUID
+    self._equippedMods = self._equippedMods or {}
+    self._equippedMods[newInstanceGuid] = newMods
+    
     touch(self)
     RPE.Profile.DB.SaveProfile(self)
     
@@ -803,31 +981,54 @@ end
 function CharacterProfile:Unequip(slot)
     if not slot or slot == "" then return nil end
     if not self.equipment then return nil end
+    
+    -- Normalize slot key to lowercase and remove spaces/dashes/underscores (matches EquipmentSheet normalization)
+    local normSlot = tostring(slot or ""):lower():gsub("%s+", ""):gsub("_",""):gsub("-","")
 
     local oldId = self.equipment[slot]
     if oldId then
         -- IMPORTANT: Get the item definition first
         local oldItem = RPE.Core.ItemRegistry and RPE.Core.ItemRegistry:Get(oldId)
         
-        -- Find exact inventory slot and mods BEFORE removing from equipment
-        local oldMods
+        -- Find the instance GUID of the equipped item using the equippedInstanceGuids table
+        local equippedInstanceGuid = self.equippedInstanceGuids and self.equippedInstanceGuids[normSlot]
+        local oldMods = equippedInstanceGuid and self._equippedMods and self._equippedMods[equippedInstanceGuid]
+        
+        -- Remove its equip mods FIRST (before adding back to inventory)
+        -- This includes both base item stats and attached mods (gems, enchants)
         if oldItem then
-            for _, invSlot in ipairs(self.items) do
-                if invSlot.id == oldId then
-                    oldMods = invSlot.mods
-                    break
-                end
+            local oldModStatData = buildModStatData(self, oldMods)
+            applyEquipMods(oldItem, -1, oldModStatData)
+        end
+        
+        -- Now remove from equipment and return to inventory with its mods
+        self.equipment[slot] = nil
+        
+        -- Reuse the same instance GUID so mods stay associated with this item instance
+        -- The equippedInstanceGuid was set when we equipped it, so use that
+        local returnedSlotInstanceGuid = equippedInstanceGuid
+        self:AddItem(oldId, 1)
+        
+        -- Restore mods to the newly returned inventory slot with the correct instance GUID
+        if oldMods then
+            -- Find the last added slot (the one we just added)
+            local lastSlot = self.items[#self.items]
+            if lastSlot and lastSlot.id == oldId then
+                -- Replace its instanceGuid with the original one so mods are found
+                lastSlot.instanceGuid = returnedSlotInstanceGuid
+                lastSlot.mods = oldMods
             end
         end
         
-        -- Remove its equip mods FIRST (before adding back to inventory)
-        if oldItem then
-            applyEquipMods(oldItem, -1, oldMods)
+        -- Clear mods from equipped storage
+        if equippedInstanceGuid and self._equippedMods then
+            self._equippedMods[equippedInstanceGuid] = nil
         end
         
-        -- Now remove from equipment and return to inventory
-        self.equipment[slot] = nil
-        self:AddItem(oldId, 1)
+        -- Clear instance GUID tracking (use normalized slot key)
+        if self.equippedInstanceGuids then
+            self.equippedInstanceGuids[normSlot] = nil
+        end
 
         touch(self)
     end
@@ -1152,6 +1353,50 @@ function CharacterProfile:ClearProfessions()
     self.professions = {}
 end
 
+--- Check if a profession is learned and has a non-zero level.
+---@param professionName string  -- e.g. "Herbalism" or "Mining"
+---@return boolean learned
+function CharacterProfile:HasProfession(professionName)
+    if type(professionName) ~= "string" or professionName == "" then return false end
+    
+    local profs = self.professions or {}
+    local profKey = professionName:lower()
+    local prof = profs[profKey] or profs.profession1 or profs.profession2
+    
+    if not prof then return false end
+    return (tonumber(prof.level) or 0) > 0
+end
+
+--- Attempt to level up a profession. Chance decreases linearly from 100% at level 0 to 5% at level 300.
+---@param professionName string  -- e.g. "Herbalism" or "Mining"
+function CharacterProfile:AttemptProfessionLevelUp(professionName)
+    if type(professionName) ~= "string" or professionName == "" then return end
+    
+    local profs = self.professions or {}
+    local profKey = professionName:lower()
+    local prof = profs[profKey] or profs.profession1 or profs.profession2
+    
+    if not prof then return end
+    
+    local currentLevel = tonumber(prof.level) or 0
+    if currentLevel >= 200 then return end  -- No skill-ups after level 200
+    
+    -- Linear chance: 100% at level 0, 0% at level 200
+    -- chance = 100 - (100 * level / 200)
+    local chancePct = math.max(0, 100 - (100 * currentLevel / 200))
+    local roll = math.random(0, 99)
+    
+    if roll < chancePct then
+        prof.level = currentLevel + 1
+        touch(self)
+        RPE.Profile.DB.SaveProfile(self)
+        if RPE.Debug then
+            local profTitle = professionName:sub(1, 1):upper() .. professionName:sub(2):lower()
+            RPE.Debug:Skill(string.format("Your skill in %s increased to %d.", profTitle, prof.level))
+        end
+    end
+end
+
 -- --- Action Bar Handling. ----------------------------------------------------------
 
 function CharacterProfile:SetActionBarSlot(index, spellId, rank)
@@ -1180,9 +1425,10 @@ function CharacterProfile:ToTable()
     for _, slot in ipairs(self.items or {}) do
         if slot.qty and slot.qty > 0 then
             table.insert(itemsOut, {
-                id   = slot.id,
-                qty  = slot.qty,
-                mods = (slot.mods and next(slot.mods)) and slot.mods or nil
+                id            = slot.id,
+                qty           = slot.qty,
+                mods          = (slot.mods and next(slot.mods)) and slot.mods or nil,
+                instanceGuid  = slot.instanceGuid
             })
         end
     end
@@ -1204,8 +1450,11 @@ function CharacterProfile:ToTable()
         stats     = statsOut,
         items     = itemsOut,
         equipment = equipOut,
+        equippedInstanceGuids = self.equippedInstanceGuids or {},
+        equippedMods = self._equippedMods or {},
         traits    = self.traits or {},
         languages = self.languages or {},
+        currencies = self.currencies or {},
         race      = self.race,
         class     = self.class,
         notes     = self.notes,
@@ -1216,6 +1465,7 @@ function CharacterProfile:ToTable()
         spells      = spellsOut,
         actionBar = self.actionBar or {},
         resourceDisplaySettings = self.resourceDisplaySettings or {},
+        windowPositions = self.windowPositions or {},
     }
 end
 
@@ -1225,8 +1475,11 @@ function CharacterProfile.FromTable(t)
         stats     = type(t.stats) == "table" and t.stats or {},
         items     = type(t.items) == "table" and t.items or {},
         equipment = type(t.equipment) == "table" and t.equipment or {},
+        equippedInstanceGuids = type(t.equippedInstanceGuids) == "table" and t.equippedInstanceGuids or {},
+        equippedMods = type(t.equippedMods) == "table" and t.equippedMods or {},
         traits    = type(t.traits) == "table" and t.traits or {},
         languages = type(t.languages) == "table" and t.languages or {},
+        currencies = type(t.currencies) == "table" and t.currencies or {},
         race      = t.race,
         class     = t.class,
         notes     = t.notes,
@@ -1237,6 +1490,7 @@ function CharacterProfile.FromTable(t)
         spells      = t.spells or {}, 
         actionBar = t.actionBar or {},
         resourceDisplaySettings = type(t.resourceDisplaySettings) == "table" and t.resourceDisplaySettings or {},
+        windowPositions = type(t.windowPositions) == "table" and t.windowPositions or {},
     })
 end
 

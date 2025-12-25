@@ -12,6 +12,112 @@ RPE_UI.Prefabs.MinimapButton = MinimapButton
 RPE_DB = RPE_DB or {}
 RPE_DB.minimap = RPE_DB.minimap or { angle = 45, hide = false }
 
+-- Create the dropdown menu frame once at module load
+local minimapMenuFrame = CreateFrame("Frame", "RPE_MinimapMenuDropdown", UIParent, "UIDropDownMenuTemplate")
+
+local function InitializeMinimapMenu(self, level)
+    if level == 1 then
+        local info = UIDropDownMenu_CreateInfo()
+        
+        -- Event
+        info.text = "Event"
+        info.func = function()
+            if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then
+                RPE.Debug:Print("Only the supergroup leader can open the Event window.")
+                return
+            end
+            local Event = RPE_UI.Common:GetWindow("EventWindow")
+            if not Event then
+                RPE.Debug:Error("Event window not found.")
+                return
+            end
+            RPE_UI.Common:Toggle(Event)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+        
+        -- Datasets
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Datasets"
+        info.func = function()
+            local Datasets = RPE_UI.Common:GetWindow("DatasetWindow")
+            if not Datasets then
+                RPE.Debug:Error("Dataset window not found.")
+                return
+            end
+            RPE_UI.Common:Toggle(Datasets)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+        
+        -- Rulesets
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Rulesets"
+        info.func = function()
+            if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then
+                RPE.Debug:Print("Only the supergroup leader can open the Ruleset window.")
+                return
+            end
+            local Ruleset = RPE_UI.Common:GetWindow("Ruleset")
+            if not Ruleset then
+                RPE.Debug:Error("Ruleset window not found.")
+                return
+            end
+            RPE_UI.Common:Toggle(Ruleset)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+        
+        -- LFRP
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "LFRP"
+        info.func = function()
+            local LFRPWindow = RPE_UI.Common:GetWindow("LFRPWindow")
+            local isNewWindow = false
+            if not LFRPWindow then
+                if RPE_UI.Windows and RPE_UI.Windows.LFRPWindow then
+                    LFRPWindow = RPE_UI.Windows.LFRPWindow.New()
+                    RPE_UI.Common:Show(LFRPWindow)
+                    isNewWindow = true
+                else
+                    RPE.Debug:Error("LFRP window class not found.")
+                    return
+                end
+            end
+            if not isNewWindow then
+                RPE_UI.Common:Toggle(LFRPWindow)
+            end
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+        
+        -- Chanter
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Chanter"
+        info.func = function()
+            local win = RPE_UI.Common:GetWindow("ChanterSenderWindow")
+            local isNewWindow = false
+            if not win then
+                local C = _G.RPE_UI and _G.RPE_UI.Windows and _G.RPE_UI.Windows.ChanterSenderWindow
+                if C and C.New then
+                    win = C.New({})
+                    win:Show()
+                    isNewWindow = true
+                end
+            end
+            if not win then
+                RPE.Debug:Error("Chanter window not found.")
+                return
+            end
+            if not isNewWindow then
+                RPE_UI.Common:Toggle(win)
+            end
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end
+end
+
 -- Internal helpers ------------------------------------------------------------
 local function updatePosition(self)
     local angle = RPE_DB.minimap.angle or 45
@@ -54,27 +160,42 @@ function MinimapButton:New(name, opts)
 
     -- Dragging
     f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(btn)
-        btn:SetScript("OnUpdate", function()
-            local mx, my = Minimap:GetCenter()
-            local px, py = GetCursorPosition()
-            local scale = UIParent:GetEffectiveScale()
-            local dx, dy = px / scale - mx, py / scale - my
-            local angle = math.deg(math.atan2(dy, dx))
-            RPE_DB.minimap.angle = angle
-            updatePosition(o)
-        end)
+    f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    
+    local isDragging = false
+    
+    f:SetScript("OnMouseDown", function(btn, button)
+        if button == "LeftButton" then
+            isDragging = true
+            btn:SetScript("OnUpdate", function()
+                local mx, my = Minimap:GetCenter()
+                local px, py = GetCursorPosition()
+                local scale = UIParent:GetEffectiveScale()
+                local dx, dy = px / scale - mx, py / scale - my
+                local angle = math.deg(math.atan2(dy, dx))
+                RPE_DB.minimap.angle = angle
+                updatePosition(o)
+            end)
+        end
     end)
-    f:SetScript("OnDragStop", function(btn)
-        btn:SetScript("OnUpdate", nil)
+    
+    f:SetScript("OnMouseUp", function(btn, button)
+        if button == "LeftButton" then
+            isDragging = false
+            btn:SetScript("OnUpdate", nil)
+        end
     end)
 
     -- Clicks
-    f:SetScript("OnClick", function(_, btn)
-        if btn == "LeftButton" then
-            RPE_UI.Common:Toggle(RPE.Core.Windows.MainWindow) -- example toggle
-        elseif btn == "RightButton" then
-            RPE.Debug:NYI("Minimap right-click functions.")
+    f:SetScript("OnClick", function(btn, clickedButton)
+        if isDragging then return end
+        
+        if clickedButton == "LeftButton" then
+            RPE_UI.Common:Toggle(RPE.Core.Windows.MainWindow)
+        elseif clickedButton == "RightButton" then
+            UIDropDownMenu_Initialize(minimapMenuFrame, InitializeMinimapMenu, "MENU")
+            UIDropDownMenu_SetAnchor(minimapMenuFrame, 0, 0, "TOPLEFT", btn, "BOTTOMLEFT")
+            ToggleDropDownMenu(1, nil, minimapMenuFrame)
         end
     end)
 

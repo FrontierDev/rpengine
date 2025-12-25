@@ -496,6 +496,755 @@ RPE.Data.DefaultClassic.SPELLS_COMMON = {
     },
 }
 
+RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
+    ["spell-oCCHealPot"] = {
+        id = "spell-oCCHealPot",
+        name = "Healing Potion",
+        description = "Instantly restores $[1].amount$ health.",
+        icon = 135907,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 2,
+        canCrit = true,
+        targeter = { default = "PRECAST" },
+        requirements = {
+        },
+        tags = {
+            [1] = "potion",
+            [2] = "consumable",
+            [3] = "heal"
+        },
+        costs = {
+            [1] = {
+                resource = "REACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 5,
+            starts = "onResolve",
+            sharedGroup = "potion"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "HEAL",
+                        args = {
+                            threat = "0.6",
+                            perRank = "20",
+                            amount = "(2d2 * 10)",
+                            targets = { targeter = "CASTER" },    
+                            requiresHit = false
+                        },
+                        critMult = "$stat.SPELL_CRIT_MULT$",
+                        critModifier = "$stat.SPELL_CRIT$",
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCManaPot"] = {
+        id = "spell-oCCManaPot",
+        name = "Mana Potion",
+        description = "Instantly restores $[1].amount$ mana.",
+        icon = 134852,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 2,
+        canCrit = true,
+        targeter = { default = "PRECAST" },
+        requirements = {
+        },
+        tags = {
+            [1] = "potion",
+            [2] = "consumable",
+        },
+        costs = {
+            [1] = {
+                resource = "REACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 5,
+            starts = "onResolve",
+            sharedGroup = "potion"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "GAIN_RESOURCE",
+                        args = {
+                            resourceId = "MANA",
+                            amount = "(6d2 * 10)",
+                            perRank = 10,
+                            targets = { targeter = "CASTER" }    
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCStrBuff"] = {
+        id = "spell-oCCStrBuff",
+        name = "Strength",
+        description = "Increases Strength by $[1].amount$.",
+        icon = 134938,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "scroll",
+            [2] = "consumable",
+            [3] = "buff"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 1,
+            starts = "onResolve",
+            sharedGroup = "scroll"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCAScrStr",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCDexBuff"] = {
+        id = "spell-oCCDexBuff",
+        name = "Agility",
+        description = "Increases Agility by $[1].amount$.",
+        icon = 134938,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "scroll",
+            [2] = "consumable",
+            [3] = "buff"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 1,
+            starts = "onResolve",
+            sharedGroup = "scroll"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCAScrDex",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCStaBuff"] = {
+        id = "spell-oCCStaBuff",
+        name = "Stamina",
+        description = "Increases Stamina by $[1].amount$.",
+        icon = 134943,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "scroll",
+            [2] = "consumable",
+            [3] = "buff"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 1,
+            starts = "onResolve",
+            sharedGroup = "scroll"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCAScrSta",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCIntBuff"] = {
+        id = "spell-oCCIntBuff",
+        name = "Intellect",
+        description = "Increases Intellect by $[1].amount$.",
+        icon = 134937,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "scroll",
+            [2] = "consumable",
+            [3] = "buff"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 1,
+            starts = "onResolve",
+            sharedGroup = "scroll"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCAScrInt",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCSpiBuff"] = {
+        id = "spell-oCCSpiBuff",
+        name = "Spirit",
+        description = "Increases Spirit by $[1].amount$.",
+        icon = 134937,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "scroll",
+            [2] = "consumable",
+            [3] = "buff"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 1,
+            starts = "onResolve",
+            sharedGroup = "scroll"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCAScrSpi",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCArmorBuff"] = {
+        id = "spell-oCCArmorBuff",
+        name = "Armor",
+        description = "Increases Armor by $[1].amount$.",
+        icon = 135975,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "scroll",
+            [2] = "consumable",
+            [3] = "buff"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 1,
+            starts = "onResolve",
+            sharedGroup = "scroll"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCAScrArmor",
+                            amount = 2,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCElixirStr"] = {
+        id = "spell-oCCElixirStr",
+        name = "Elixir of Strength",
+        description = "Increases Strength by $[1].amount$.",
+        icon = 134838,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "elixir",
+            [2] = "consumable",
+            [3] = "buff"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 1,
+            starts = "onResolve",
+            sharedGroup = "elixir"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCCElixirStr",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCElixirDex"] = {
+        id = "spell-oCCElixirDex",
+        name = "Elixir of Agility",
+        description = "Increases Agility by $[1].amount$.",
+        icon = 134873,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "elixir",
+            [2] = "consumable",
+            [3] = "buff"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 1,
+            starts = "onResolve",
+            sharedGroup = "elixir"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCCElixirDex",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCElixirCon"] = {
+        id = "spell-oCCElixirCon",
+        name = "Elixir of Fortitude",
+        description = "Increases Fortitude by $[1].amount$.",
+        icon = 134824,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "elixir",
+            [2] = "consumable",
+            [3] = "buff"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 1,
+            starts = "onResolve",
+            sharedGroup = "elixir"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCCElixirCon",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCElixirInt"] = {
+        id = "spell-oCCElixirInt",
+        name = "Elixir of Intellect",
+        description = "Increases Intellect by $[1].amount$.",
+        icon = 134866,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "elixir",
+            [2] = "consumable",
+            [3] = "buff"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 1,
+            starts = "onResolve",
+            sharedGroup = "elixir"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCCElixirInt",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    ["spell-oCCElixirWis"] = {
+        id = "spell-oCCElixirWis",
+        name = "Elixir of Spirit",
+        description = "Increases Spirit by $[1].amount$.",
+        icon = 134859,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "elixir",
+            [2] = "consumable",
+            [3] = "buff"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 1,
+            starts = "onResolve",
+            sharedGroup = "elixir"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCCElixirWis",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+}
+
 RPE.Data.DefaultClassic.SPELLS_RACIAL = {
     -- Dwarf: Stoneform (apply aura)
     ["spell-oCSRaDwf1"] = {
@@ -12623,6 +13372,7 @@ function RPE.Data.DefaultClassic.Spells()
     local items = {}
     local spellTables = {
         RPE.Data.DefaultClassic.SPELLS_COMMON,
+        RPE.Data.DefaultClassic.SPELLS_CONSUMABLE,
         RPE.Data.DefaultClassic.SPELLS_RACIAL,
         RPE.Data.DefaultClassic.SPELLS_PALADIN,
         RPE.Data.DefaultClassic.SPELLS_WARRIOR,
@@ -12637,6 +13387,7 @@ function RPE.Data.DefaultClassic.Spells()
         RPE.Data.DefaultClassic.SPELLS_PRIEST,
         RPE.Data.DefaultClassic.SPELLS_MONK,
         RPE.Data.DefaultClassic.SPELLS_EVOKER
+
     }
     
     for _, spellTable in ipairs(spellTables) do

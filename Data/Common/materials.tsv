@@ -1,0 +1,302 @@
+id	name	icon	description	tags	Quality	vendorSellable	data.tier
+item-r2841	Bronze Bar	133227		ingot	1	0	1
+item-r2840	Copper Bar	133216		ingot	1	0	0
+item-r2770	Copper Ore	134566		ore	1	1	0
+item-r12655	Enchanted Thorium Bar	133229		ingot	1	0	4
+item-r3577	Gold Bar	133217		ingot	2	0	2
+item-r2776	Gold Ore	134566		ore	2	1	2
+item-r3575	Iron Bar	133232		ingot	1	0	1
+item-r2772	Iron Ore	134572		ore	1	1	1
+item-r3860	Mithril Bar	133220		ingot	1	0	3
+item-r3858	Mithril Ore	134576		ore	1	1	3
+item-r2842	Silver Bar	133215		ingot	2	0	1
+item-r2775	Silver Ore	135242		ore	2	1	1
+item-r3859	Steel Bar	133234		ingot	1	0	2
+item-r12359	Thorium Bar	133221		ingot	1	0	4
+item-r10620	Thorium Ore	134578		ore	1	1	4
+item-r3576	Tin Bar	133219		ingot	1	0	0
+item-r2771	Tin Ore	134579		ore	1	1	0
+item-r6037	Truesilver Bar	133222		ingot	2	0	3
+item-r7911	Truesilver Ore	134580		ore	2	0	3
+item-r11371	Dark Iron Bar	133233		ingot	1	0	4
+item-r11370	Dark Iron Ore	134575		ore	1	0	4
+item-r3820	Stranglekelp	134191		herb	1	1	1
+item-r8845	Ghost Mushroom	134529		herb	1	0	2
+item-r13468	Black Lotus	134202		herb	2	0	4
+item-r2452	Swiftthistle	134184		herb	1	1	0
+item-r8831	Purple Lotus	134198		herb	1	0	3
+item-r13466	Sorrowmoss	134219		herb	1	0	4
+item-r2450	Briarthorn	134412		herb	1	1	0
+item-r2447	Peacebloom	133939		herb	1	1	0
+item-r765	Silverleaf	134190		herb	1	1	0
+item-r3821	Goldthorn	134196		herb	1	1	2
+item-r8838	Sungrass	134199		herb	1	0	2
+item-r3818	Fadeleaf	134193		herb	1	1	1
+item-r785	Mageroyal	133436		herb	1	1	0
+item-r2449	Earthroot	134187		herb	1	0	0
+item-r8836	Arthas' Tears	134194		herb	1	0	3
+item-r22788	Flame Cap	134209		herb	1	0	4
+item-r22790	Ancient Lichen	134201		herb	1	0	4
+item-r13463	Dreamfoil	134204		herb	1	0	3
+item-r3358	Khadgar's Whisker	134188		herb	1	1	1
+item-r8839	Blindweed	134195		herb	1	1	2
+item-r13467	Icecap	134212		herb	1	0	4
+item-r4625	Firebloom	134200		herb	1	0	3
+item-r8846	Gromsblood	134197		herb	1	0	2
+item-r3357	Liferoot	134413		herb	1	1	1
+item-r13465	Mountain Silversage	134215		herb	1	1	3
+item-r3355	Wild Steelbloom	133938		herb	1	0	1
+item-r3356	Kingsblood	134183		herb	1	1	1
+item-r2453	Bruiseweed	134181		herb	1	1	0
+item-r13464	Golden Sansam	134221		herb	1	1	3
+item-r3369	Grave Moss	133849		herb	1	0	2
+item-r3819	Dragon's Teeth	459148		herb	1	0	4
+item-r8170	Rugged Leather	134251	Leather obtained from creatures from harsh environments.	skinning	1	0	4
+item-r2318	Light Leather	134252	Leather obtained from small creatures like rabbits and foxes.	skinning	1	1	0
+item-r2319	Medium Leather	134254	Leather obtained from medium creatures like cattle and worgs.	skinning	1	1	1
+item-r4234	Heavy Leather	134256	Leather obtained from tough, medium-large creatures like crocolisks, bears and raptors.	skinning	1	0	2
+item-r4304	Thick Leather	134257	Leather obtained from large creatures like kodo and dinosaurs.	skinning	1	0	3
+item-r8167	Turtle Scale	134313	Scales obtained from a turtle.	skinning	1	0	2
+item-r29539	Cobra Scales	134320	Scales obtained from a cobra.	skinning	1	0	3
+item-r4235	Heavy Hide	134370	The heavy hide of a large creature.	skinning	1	0	2
+item-r783	Light Hide	134369	The hide of a small creature.	skinning	1	1	0
+item-r15416	Black Dragonscale	134309	Scales obtained from a black dragon.	skinning	1	0	5
+item-r29547	Wind Scales	134308	Scales obtained from a wind serpent.	skinning	1	0	4
+item-r29548	Nether Dragonscales	134312	Scales obtained from a netherdrake.	skinning	1	0	5
+item-r15417	Devilsaur Leather	134347	Leather obtained from a devilsaur.	skinning	1	0	5
+item-r4232	Medium Hide	134254	The hide of a medium creature.	skinning	1	0	1
+item-r17012	Core Leather	132386	Leather obtained from a core hound.	skinning	1	0	5
+item-r8171	Rugged Hide	134357	The rugged hide of a creature from a harsh environment.	skinning	1	0	4
+item-r15415	Blue Dragonscale	134311	Scales obtained from a blue dragon.	skinning	1	0	5
+item-r15412	Green Dragonscale	134313	Scales obtained from a green dragon.	skinning	1	0	5
+item-r20381	Dreamscale	134313	Scales obtained from a green dragon.	skinning	2	0	5
+item-r15414	Red Dragonscale	134317	Scales obtained from a red dragon.	skinning	1	0	5
+item-r8154	Scorpid Scale	134304	Scales obtained from a scorpid.	skinning	1	0	3
+item-r8169	Thick Hide	134356	The thick hide of a large, tough beast.	skinning	1	0	3
+item-r14256	Felcloth	132888		cloth	1	0	5
+item-r14047	Runecloth	132903		cloth	1	0	4
+item-r4338	Mageweave Cloth	132892		cloth	1	0	3
+item-r3182	Spider's Silk	136113		gossamer	1	0	2
+item-r2592	Wool Cloth	132911		cloth	1	1	1
+item-r4306	Silk Cloth	132905		cloth	1	0	2
+item-r2589	Linen Cloth	132889		cloth	1	1	0
+item-r4291	Silken Thread	132906		thread	1	1	2
+item-r14227	Ironweb Spider Silk	136113		gossamer	1	0	2
+item-r2320	Coarse Thread	132891		thread	1	1	0
+item-r14341	Rune Thread	136120		thread	1	1	4
+item-r4305	Bolt of Silk Cloth	132907		cloth	1	0	2
+item-r2321	Fine Thread	132912		thread	1	1	1
+item-r10285	Shadow Silk	136113		gossamer	1	0	4
+item-r14048	Bolt of Runecloth	132904		cloth	1	0	4
+item-r2996	Bolt of Linen Cloth	132890		cloth	1	0	0
+item-r2997	Bolt of Woolen Cloth	132913		cloth	1	0	1
+item-r4339	Bolt of Mageweave	132894		cloth	1	0	3
+item-r7909	Aquamarine	134088	Obtained by prospecting ores from Kalimdor and the Eastern Kingdoms.	roughgem	2	0	1
+item-r12363	Arcane Crystal	134135	Obtained from thorium deposits.	roughgem	2	0	4
+item-r3864	Citrine	134117	Obtained by prospecting ores from Kalimdor and the Eastern Kingdoms.	roughgem	2	0	1
+item-r7971	Black Pearl	134120	Obtained from big-mouth clams.	roughgem	2	0	2
+item-r12361	Blue Sapphire	134132	Obtained by prospecting thorium and mithril ores.	roughgem	2	0	3
+item-r12799	Large Opal	134116	Obtained by prospecting ores from Kalimdor and the Eastern Kingdoms.	roughgem	2	0	2
+item-r1206	Moss Agate	134105	Obtained by prospecting tin ore.	roughgem	2	0	0
+item-r5498	Small Lustrous Pearl	134122	Obtained from saltwater clams.	roughgem	2	0	1
+item-r7910	Star Ruby	134129	Obtained by prospecting iron, mithril and thorium ore.	roughgem	2	0	3
+item-r818	Tigerseye	134118	Obtained by prospecting copper ore.	roughgem	2	0	0
+item-r1529	Jade	134134	Obtained by prospecting ores from Kalimdor and the Eastern Kingdoms.	roughgem	2	0	2
+item-r12364	Huge Emerald	134104	Obtained by prospecting ores from Kalimdor and the Eastern Kingdoms.	roughgem	2	0	2
+item-r18335	Pristine Black Diamond	134072		roughgem	3	0	4
+item-r25867	Earthstorm Diamond	134097		roughgem	3	0	4
+item-r1705	Lesser Moonstone	134087	Obtained by prospecting ores from Kalimdor and the Eastern Kingdoms.	roughgem	2	0	1
+item-r24479	Shadow Pearl	134120	Obtained from jaggal clams.	roughgem	2	0	3
+item-r774	Malachite	134106	Obtained by prospecting copper ore.	roughgem	2	0	0
+item-r1210	Shadowgem	134074	Obtained by prospecting tin and copper ores.	roughgem	2	0	0
+item-rblacksmith	Blacksmith's Hammer	133057		tool, blacksmithing	1	1	0
+item-rjewelcrafting	Jeweler's Kit	132595		tool, jewelcrafting	1	1	0
+item-rinscription	Virtuoso Inking Set	133877		tool, inscription	1	1	0
+item-rgrinder	Simple Grinder	135243		tool, jewelcrafting	1	1	0
+item-rengi_spanner	Arclight Spanner	134520		tool, engineering	1	1	0
+item-r6218	Runed Copper Rod	135225		tool, enchanting	1	0	0
+item-r11130	Runed Golden Rod	135147		tool, enchanting	1	0	2
+item-r11145	Runed Truesilver Rod	135148		tool, enchanting	1	0	3
+item-r16207	Runed Arcanite Rod	135471		tool, enchanting	1	0	5
+item-r6217	Copper Rod	133942		enchanting	1	1	0
+item-r11128	Golden Rod	135147		enchanting	1	0	2
+item-r11144	Truesilver Rod	135148		enchanting	1	0	3
+item-r16206	Arcanite Rod	135156		enchanting	1	0	5
+item-r10940	Strange Dust	132858		dust	1	1	0
+item-r11083	Soul Dust	132857		dust	1	0	2
+item-r11137	Vision Dust	132859		dust	1	0	3
+item-r11176	Dream Dust	132855		dust	1	0	4
+item-r16204	Illusion Dust	132856		dust	1	0	5
+item-r10939	Magic Essence	132866		essence	2	1	0
+item-r11082	Astral Essence	132862		essence	2	0	2
+item-r11135	Mystic Essence	132868		essence	2	0	3
+item-r11175	Nether Essence	132870		essence	2	0	4
+item-r16203	Eternal Essence	132864		essence	2	0	5
+item-r7082	Essence of Air	136022		essence	2	0	1
+item-r7076	Essence of Earth	136102		essence	2	0	1
+item-r7078	Essence of Fire	135830		essence	2	0	1
+item-r7080	Essence of Water	136007		essence	2	0	1
+item-r12808	Essence of Undeath	136195		essence	2	0	2
+item-r12803	Living Essence	136006		essence	2	0	2
+item-r11084	Glimmering Shard	132876		shard	3	0	2
+item-r11139	Glowing Shard	132878		shard	3	0	3
+item-r11178	Radiant Shard	132883		shard	3	0	4
+item-r14344	Brilliant Shard	132873		shard	3	0	5
+item-r20725	Nexus Crystal	132880		shard	4	0	5
+item-r12811	Righteous Orb	134122		shard	2	0	4
+item-r3371	Empty Vial	132793		alchemy	1	1	0
+item-r11291	Star Wood	135437		enchanting	1	1	0
+item-r4382	Bronze Framework	133006		component, engineering	1	0	1
+item-r4371	Bronze Tube	133024		component, engineering	1	1	1
+item-r4364	Coarse Blasting Powder	133849		component, engineering	1	0	0
+item-r4363	Copper Modulator	132997		component, engineering	1	0	0
+item-r4361	Copper Tube	133025		component, engineering	1	0	0
+item-r16006	Delicate Arcanite Converter	133001		component, engineering	1	0	5
+item-r15992	Dense Blasting Powder	133587		component, engineering	1	0	3
+item-r7191	Fused Wiring	134065		component, engineering	1	0	3
+item-r10558	Gold Power Core	132489		component, engineering	1	0	2
+item-r4389	Gyrochronatom	134377		component, engineering	1	0	2
+item-r10498	Gyromatic Micro-Adjustor	134429		component, engineering	1	0	4
+item-r4359	Handful of Copper Bolts	134068		component, engineering	1	0	0
+item-r4377	Heavy Blasting Powder	133853		component, engineering	1	0	2
+item-r4400	Heavy Stock	133486		component, engineering	1	1	2
+item-r4387	Iron Strut	135128		component, engineering	1	0	1
+item-r10561	Mithril Casing	133021		component, engineering	1	0	3
+item-r10559	Mithril Tube	134535		component, engineering	1	0	3
+item-r234005	Obsidian Blasting Powder	133592		component, engineering	1	0	4
+item-r4357	Rough Blasting Powder	133848		component, engineering	1	0	0
+item-r4404	Silver Contact	133218		component, engineering	1	0	1
+item-r10505	Solid Blasting Powder	134380		component, engineering	1	0	3
+item-r16000	Thorium Tube	133027		component, engineering	1	0	4
+item-r15994	Thorium Widget	132998		component, engineering	1	0	4
+item-r238737	Tinkerbox	133015		component, engineering	1	0	2
+item-r18631	Truesilver Transformer	135155		component, engineering	1	0	3
+item-r10560	Unstable Trigger	132488		component, engineering	1	0	4
+item-r4375	Whirring Bronze Gizmo	132996		component, engineering	1	0	1
+item-r4399	Wooden Stock	133486		component, engineering	1	1	0
+item-r2591	Light Parchment	134051		parchment	1	0	0
+item-r4407	Heavy Parchment	134052		parchment	1	0	2
+item-r14116	Resilient Parchment	134053		parchment	1	0	4
+item-r765	Apricate Ink	134060		ink	1	0	0
+item-r2822	Blackfallow Ink	134061		ink	1	0	3
+item-r5817	Blazing Ink	134062		ink	1	0	2
+item-r5816	Burnished Ink	134063		ink	1	0	3
+item-r10651	Celestial Ink	134064		ink	1	0	2
+item-r18710	Cosmic Ink	134065		ink	1	0	3
+item-r39469	Crimson Ink	134066		ink	1	0	4
+item-r52027	Darkflame Ink	134067		ink	1	0	5
+item-r52028	Dawnstar Ink	134068		ink	1	0	5
+item-r5815	Ethereal Ink	134069		ink	1	0	1
+item-r5814	Fiery Ink	134070		ink	1	0	0
+item-r52029	Flourishing Ink	134071		ink	1	0	5
+item-r39466	Hunter's Ink	134072		ink	1	0	4
+item-r5818	Inferno Ink	134073		ink	1	0	2
+item-r39624	Ink of Dreams	134074		ink	1	0	4
+item-r22572	Ink of the Sea	134075		ink	1	0	3
+item-r61178	Ink of the Sky	134076		ink	1	0	5
+item-r5819	Jadefire Ink	134077		ink	1	0	2
+item-r10652	Lion's Ink	134078		ink	1	0	1
+item-r52030	Luminous Ink	134079		ink	1	0	5
+item-r52031	Maroon Ink	134080		ink	1	0	5
+item-r2823	Midnight Ink	134081		ink	1	0	1
+item-r2821	Moonglow Ink	134082		ink	1	0	0
+item-r39467	Royal Ink	134083		ink	1	0	4
+item-r52032	Serene Ink	134084		ink	1	0	5
+item-r39468	Shadow Ink	134085		ink	1	0	4
+item-r52033	Shimmering Ink	134086		ink	1	0	5
+item-r43127	Snowfall Ink	134087		ink	1	0	3
+item-r39465	Starlight Ink	134088		ink	1	0	4
+item-r10653	Tranquil Ink	134089		ink	1	0	1
+item-r61177	Ultramarine Ink	134090		ink	1	0	3
+item-r52034	Umbral Ink	134091		ink	1	0	5
+item-r52035	Viridescent Ink	134092		ink	1	0	5
+item-r52036	Warbinder's Ink	134093		ink	1	0	5
+item-r7912	Solid Stone	135236		ore, mining, stone	1	0	0
+item-r7069	Elemental Air	136107		essence, enchanting	1	0	1
+item-r7067	Elemental Earth	134572		essence, enchanting	1	0	1
+item-r7070	Elemental Water	134714		essence, enchanting	1	0	1
+item-r7068	Elemental Fire	135805		essence, enchanting	1	0	1
+item-r7076	Essence of Earth	136102		essence, enchanting	2	0	1
+item-r7080	Essence of Water	136007		essence, enchanting	2	0	1
+item-r7082	Essence of Air	136022		essence, enchanting	2	0	1
+item-r7078	Essence of Fire	135830		essence, enchanting	2	0	1
+item-r2325	Black Dye	134843		tailoring	1	1	0
+item-r4340	Gray Dye	132797		tailoring	1	1	0
+item-r3857	Coal	134579		ore, mining, stone	1	1	0
+item-r12360	Arcanite Bar	134459		ingot	2	0	5
+item-r27422	Barbed Gill Trout	133923		meat	1	1	2
+item-r27669	Bat Flesh	134026		meat	1	1	0
+item-r3173	Bear Meat	134027		meat	1	1	0
+item-r3730	Big Bear Meat	133970		meat	1	1	1
+item-r2677	Boar Ribs	133972		meat	1	1	0
+item-r3404	Buzzard Wing	134304		meat	1	1	0
+item-r769	Chunk of Boar Meat	133970		meat	1	1	0
+item-r5503	Clam Meat	134007		meat	1	1	1
+item-r2673	Coyote Meat	134025		meat	1	1	0
+item-r2886	Crag Boar Rib	133972		meat	1	1	1
+item-r2675	Crawler Claw	133708		meat	1	1	0
+item-r2674	Crawler Meat	134007		meat	1	1	0
+item-r2924	Crocolisk Meat	133970		meat	1	1	1
+item-r22644	Crunchy Spider Leg	133571		meat	1	1	1
+item-r13888	Darkclaw Lobster	133900		meat	1	0	4
+item-r8150	Deeprock Salt	133849		meat	1	1	1
+item-r4655	Giant Clam Meat	134007		meat	1	1	2
+item-r12207	Giant Egg	132834		meat	1	1	2
+item-r9061	Goblin Rocket Fuel	132621		meat	1	1	1
+item-r2251	Gooey Spider Leg	134321		meat	1	1	1
+item-r723	Goretusk Liver	134341		meat	1	1	0
+item-r12204	Heavy Kodo Meat	134026		meat	1	1	2
+item-r17194	Holiday Spices	133644	A sprinkle of festivity.	meat	1	1	2
+item-r24477	Jaggal Clam Meat	134007		meat	1	1	3
+item-r5467	Kodo Meat	133970		meat	1	1	1
+item-r1015	Lean Wolf Flank	133970		meat	1	1	0
+item-r13757	Lightning Eel	133898		meat	1	0	4
+item-r3731	Lion Meat	134027		meat	1	1	1
+item-r12223	Meaty Bat Wing	134360		meat	1	1	2
+item-r2678	Mild Spices	134059		meat	1	1	0
+item-r23676	Moongraze Stag Tenderloin	134025	Dripping with tender juicy goodness.	meat	1	1	1
+item-r1468	Murloc Fin	134304		meat	1	1	0
+item-r12037	Mystery Meat	134023		meat	1	0	1
+item-r3685	Raptor Egg	132834		meat	1	1	1
+item-r12184	Raptor Flesh	134025		meat	1	1	1
+item-r31670	Raptor Ribs	133972		meat	1	1	1
+item-r6291	Raw Brilliant Smallfish	133894		meat	1	1	1
+item-r6308	Raw Bristle Whisker Catfish	133916		meat	1	1	2
+item-r13754	Raw Glossy Mightfish	134301		meat	1	1	4
+item-r21153	Raw Greater Sagefish	133907		meat	1	1	3
+item-r6317	Raw Loch Frenzy	133889		meat	1	1	2
+item-r6289	Raw Longjaw Mud Snapper	133918		meat	1	1	2
+item-r8365	Raw Mithril Head Trout	133888		meat	1	1	3
+item-r13759	Raw Nightfin Snapper	133909		meat	1	1	3
+item-r6361	Raw Rainbow Fin Albacore	133911		meat	1	1	2
+item-r13758	Raw Redgill	133892		meat	1	1	1
+item-r6362	Raw Rockscale Cod	133890		meat	1	1	1
+item-r21071	Raw Sagefish	133906		meat	1	1	2
+item-r6303	Raw Slitherskin Mackerel	133910		meat	1	1	2
+item-r4603	Raw Spotted Yellowtail	133887		meat	1	1	1
+item-r13756	Raw Summer Bass	133889		meat	1	1	1
+item-r13760	Raw Sunscale Salmon	133905		meat	1	1	3
+item-r13889	Raw Whitescale Salmon	133906		meat	1	1	3
+item-r12203	Red Wolf Meat	134027		meat	1	1	1
+item-r20424	Sandworm Meat	134007		meat	1	0	3
+item-r5466	Scorpid Stinger	136067		meat	1	1	2
+item-r31671	Serpent Flesh	134054		meat	1	0	2
+item-r30817	Simple Flour	134058		meat	1	1	1
+item-r6889	Small Egg	132832		meat	1	1	0
+item-r4402	Small Flame Sac	134343		meat	1	0	1
+item-r5465	Small Spider Leg	134321		meat	1	1	0
+item-r5468	Soft Frenzy Flesh	133890		meat	1	0	1
+item-r27425	Spotted Feltail	133925		meat	1	0	2
+item-r5471	Stag Meat	134370		meat	1	1	1
+item-r5469	Strider Meat	133972		meat	1	1	1
+item-r2672	Stringy Wolf Meat	133970		meat	1	1	0
+item-r5504	Tangy Clam Meat	134007		meat	1	1	2
+item-r12206	Tender Crab Meat	134007		meat	1	1	2
+item-r3667	Tender Crocolisk Meat	133970		meat	1	1	1
+item-r12208	Tender Wolf Meat	133970		meat	1	1	1
+item-r5470	Thunder Lizard Tail	133721		meat	1	1	2
+item-r12202	Tiger Meat	133970		meat	1	1	1
+item-r1080	Tough Condor Meat	134343		meat	1	1	1
+item-r3712	Turtle Meat	134026		meat	1	1	1
+item-r12205	White Spider Meat	134007		meat	1	1	1
+item-r7974	Zesty Clam Meat	134007		meat	1	1	2

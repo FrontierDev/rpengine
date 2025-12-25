@@ -14,33 +14,72 @@ local MultiSelectDropdown = setmetatable({}, { __index = FrameElement })
 MultiSelectDropdown.__index = MultiSelectDropdown
 RPE_UI.Elements.MultiSelectDropdown = MultiSelectDropdown
 
-local function _ctxMenu(btn, choices, onPick, currentValues, onSelectAll)
+local function _ctxMenu(btn, choices, onPick, currentValues, onClearAll)
     if not (RPE_UI and RPE_UI.Common and RPE_UI.Common.ContextMenu) then return end
-    RPE_UI.Common:ContextMenu(btn.frame or UIParent, function(level)
-        if level ~= 1 then return end
+    RPE_UI.Common:ContextMenu(btn.frame or UIParent, function(level, menuList)
         local info = UIDropDownMenu_CreateInfo()
-        info.isTitle = true; info.notCheckable = true; info.text = "Select Categories"
-        UIDropDownMenu_AddButton(info, level)
         
-        -- Select All button
-        local selectAllInfo = UIDropDownMenu_CreateInfo()
-        selectAllInfo.text = "Select All"
-        selectAllInfo.func = function() if onSelectAll then onSelectAll() end end
-        selectAllInfo.notCheckable = true
-        UIDropDownMenu_AddButton(selectAllInfo, level)
-        
-        -- Divider
-        local dividerInfo = UIDropDownMenu_CreateInfo()
-        dividerInfo.isTitle = true; dividerInfo.notCheckable = true; dividerInfo.text = ""
-        UIDropDownMenu_AddButton(dividerInfo, level)
-        
-        for _, v in ipairs(choices or {}) do
-            local nfo = UIDropDownMenu_CreateInfo()
-            nfo.text = tostring(v)
-            nfo.func = function() if onPick then onPick(v) end end
-            nfo.checked = (currentValues[v] == true)
-            nfo.keepShownOnClick = true
-            UIDropDownMenu_AddButton(nfo, level)
+        if level == 1 then
+            -- Title
+            info.isTitle = true; info.notCheckable = true; info.text = "Select Categories"
+            UIDropDownMenu_AddButton(info, level)
+            
+            -- Clear Selections button
+            local clearInfo = UIDropDownMenu_CreateInfo()
+            clearInfo.text = "Clear Selections"
+            clearInfo.func = function() if onClearAll then onClearAll() end end
+            clearInfo.notCheckable = true
+            UIDropDownMenu_AddButton(clearInfo, level)
+            
+            -- Divider
+            local dividerInfo = UIDropDownMenu_CreateInfo()
+            dividerInfo.isTitle = true; dividerInfo.notCheckable = true; dividerInfo.text = ""
+            UIDropDownMenu_AddButton(dividerInfo, level)
+            
+            -- Add choices - check if they have subcategories
+            for _, v in ipairs(choices or {}) do
+                local nfo = UIDropDownMenu_CreateInfo()
+                if type(v) == "table" and v.name then
+                    -- This is a category with subchoices
+                    nfo.text = v.name
+                    nfo.hasArrow = true
+                    nfo.menuList = v
+                    nfo.notCheckable = true
+                    nfo.keepShownOnClick = true
+                elseif type(v) == "table" and v.id then
+                    -- Choice with id and label
+                    nfo.text = v.label or tostring(v.id)
+                    nfo.func = function() if onPick then onPick(v.id, v.label) end end
+                    nfo.checked = (currentValues[v.id] == true)
+                    nfo.keepShownOnClick = true
+                else
+                    -- Simple string choice
+                    nfo.text = tostring(v)
+                    nfo.func = function() if onPick then onPick(v, v) end end
+                    nfo.checked = (currentValues[v] == true)
+                    nfo.keepShownOnClick = true
+                end
+                UIDropDownMenu_AddButton(nfo, level)
+            end
+        elseif level == 2 and menuList then
+            -- Subcategory items
+            for _, v in ipairs(menuList.choices or {}) do
+                local nfo = UIDropDownMenu_CreateInfo()
+                if type(v) == "table" and v.id then
+                    -- Choice with id and label
+                    nfo.text = v.label or tostring(v.id)
+                    nfo.func = function() if onPick then onPick(v.id, v.label) end end
+                    nfo.checked = (currentValues[v.id] == true)
+                    nfo.keepShownOnClick = true
+                else
+                    -- Simple string choice
+                    nfo.text = tostring(v)
+                    nfo.func = function() if onPick then onPick(v, v) end end
+                    nfo.checked = (currentValues[v] == true)
+                    nfo.keepShownOnClick = true
+                end
+                UIDropDownMenu_AddButton(nfo, level)
+            end
         end
     end)
 end
@@ -68,7 +107,8 @@ function MultiSelectDropdown:New(name, opts)
 
     local o = FrameElement.New(self, "MultiSelectDropdown", f, opts.parent)
     o.choices   = opts.choices or {}
-    o.values    = {}
+    o.values    = {}       -- id -> true
+    o.labels    = {}       -- id -> label (for display)
     o.onChanged = opts.onChanged
 
     -- Initialize with provided values
@@ -83,19 +123,20 @@ function MultiSelectDropdown:New(name, opts)
     o.button = ButtonEl:New(name .. "_Btn", {
         parent = o, width = w, height = h, text = _formatValues(o.values) ~= "Filters: 0" and _formatValues(o.values) or "Filters: 0",
         onClick = function(btn)
-            _ctxMenu(btn, o.choices, function(v)
-                if o.values[v] then
-                    o.values[v] = nil
+            _ctxMenu(btn, o.choices, function(id, label)
+                if o.values[id] then
+                    o.values[id] = nil
+                    o.labels[id] = nil
                 else
-                    o.values[v] = true
+                    o.values[id] = true
+                    o.labels[id] = label or id
                 end
                 o:_updateButton()
                 if o.onChanged then o.onChanged(o, o:GetValue()) end
             end, o.values, function()
-                -- Select All handler
-                for _, choice in ipairs(o.choices) do
-                    o.values[choice] = true
-                end
+                -- Clear All handler
+                o.values = {}
+                o.labels = {}
                 o:_updateButton()
                 if o.onChanged then o.onChanged(o, o:GetValue()) end
             end)
@@ -122,16 +163,25 @@ function MultiSelectDropdown:New(name, opts)
 
     function o:GetValue()
         local list = {}
-        for v, _ in pairs(self.values) do
-            table.insert(list, v)
+        for id, _ in pairs(self.values) do
+            table.insert(list, id)
+        end
+        table.sort(list)
+        return list
+    end
+
+    function o:GetLabels()
+        local list = {}
+        for id, _ in pairs(self.values) do
+            table.insert(list, self.labels[id] or tostring(id))
         end
         table.sort(list)
         return list
     end
 
     function o:GetValueAsString()
-        local list = self:GetValue()
-        return table.concat(list, ",")
+        local list = self:GetLabels()
+        return table.concat(list, ", ")
     end
 
     function o:SetChoices(list)

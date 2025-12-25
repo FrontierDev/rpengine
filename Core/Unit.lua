@@ -337,8 +337,9 @@ end
 function Unit:_UpdateThreatIconForPortraits()
     if not self._portraits then return end
     local myId  = getLocalPlayerUnitId()
-    local topId = self:GetTopThreat()
+    local topId, topVal = self:GetTopThreat()
     local isTop = (myId ~= nil and topId == myId)
+    local myThreat = (myId and self.threat and self.threat[myId]) or 0
 
     for i = #self._portraits, 1, -1 do
         local p = self._portraits[i]
@@ -347,6 +348,9 @@ function Unit:_UpdateThreatIconForPortraits()
             table.remove(self._portraits, i)
         else
             p:SetThreatTop(isTop)
+            if p.SetThreatAmount then
+                p:SetThreatAmount(myThreat)
+            end
         end
     end
 end
@@ -381,7 +385,7 @@ end
 --- Add (or subtract) threat delta (<=0 after addition clears). Enforces non-ally rule.
 function Unit:AddThreat(attackerId, delta)
     attackerId = tonumber(attackerId); delta = tonumber(delta)
-    if not attackerId or attackerId <= 0 or not delta then return end
+    if not attackerId or attackerId <= 0 or delta == nil then return end
 
     local attacker = resolveUnitById(attackerId)
     if attacker and tonumber(attacker.team) == tonumber(self.team) then
@@ -689,7 +693,7 @@ end
 ---@param parent FrameElement
 ---@param unit EventUnit
 ---@return FrameElement
-function Unit:CreatePortrait(parent, size)
+function Unit:CreatePortrait(parent, size, noHealthBar)
     local UnitPortrait = RPE_UI and RPE_UI.Prefabs and RPE_UI.Prefabs.UnitPortrait
     assert(UnitPortrait, "UnitPortrait prefab not loaded (check TOC load order).")
 
@@ -697,6 +701,7 @@ function Unit:CreatePortrait(parent, size)
         parent = parent,
         unit   = self,
         size   = size or 36,
+        noHealthBar = noHealthBar or false,
     })
 
     -- Track and immediately sync current "top threat" state for the local player

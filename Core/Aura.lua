@@ -23,6 +23,7 @@ end
 ---@field nextTick integer|nil
 ---@field stacks integer
 ---@field charges integer|nil
+---@field rank integer       -- rank of the aura (default 1)
 ---@field snapshot table|nil -- author-defined values frozen at apply
 ---@field rngSeed integer|nil
 ---@field isTrait boolean|nil -- whether this aura is a permanent trait
@@ -58,6 +59,7 @@ function Aura.New(def, sourceId, targetId, nowTurn, opts)
         targetId     = targetId,
         startTurn  = nowTurn,
         stacks     = math.max(1, tonumber(opts.stacks) or 1),
+        rank       = math.max(1, tonumber(opts.rank) or 1),
         charges    = opts.charges,            -- optional
         rngSeed    = opts.rngSeed,
         snapshot   = opts.snapshot,           -- optional
@@ -141,6 +143,7 @@ function Aura:ToState()
         expiresOn = self.expiresOn,
         nextTick = self.nextTick,
         stacks = self.stacks,
+        rank = self.rank,
         charges = self.charges,
         rngSeed = self.rngSeed,
         snapshot = self.snapshot,
@@ -264,7 +267,16 @@ function Aura:RenderDescription(vars, tmpl)
         vars.profile = Common:ProfileForUnit(tu) or (_activeProfile and _activeProfile())
     end
 
-    return template:gsub("%$%[(%d+)%]%.([%w_%.]+)%$", repl)
+    local result = template:gsub("%$%[(%d+)%]%.([%w_%.]+)%$", repl)
+    
+    -- Also resolve direct snapshot variables like $amount$
+    if self.snapshot then
+        for key, value in pairs(self.snapshot) do
+            result = result:gsub("%$" .. key .. "%$", tostring(value))
+        end
+    end
+    
+    return result
 end
 
 function Aura:RefreshDescription(vars)

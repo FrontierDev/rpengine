@@ -91,10 +91,13 @@ end
 local function _sendAll(prefix, flat)
     local ActiveSupergrp = RPE.Core and RPE.Core.ActiveSupergroup
     if IsInRaid() then
+        RPE.Debug:Internal(string.format("[Broadcast] _sendAll(%s) sending to RAID", prefix))
         Comms:Send(prefix, flat, "RAID")
     elseif IsInGroup() then
+        RPE.Debug:Internal(string.format("[Broadcast] _sendAll(%s) sending to PARTY", prefix))
         Comms:Send(prefix, flat, "PARTY")
     else
+        RPE.Debug:Internal(string.format("[Broadcast] _sendAll(%s) sending to WHISPER (solo)", prefix))
         Comms:Send(prefix, flat, "WHISPER", UnitName("player"))
     end
 
@@ -102,6 +105,7 @@ local function _sendAll(prefix, flat)
         local myKey = toKey(GetFullName("player"))
         for _, memberKey in ipairs(ActiveSupergrp:GetMembers()) do
             if memberKey ~= myKey and not IsInMyBlizzardGroup(memberKey) then
+                RPE.Debug:Internal(string.format("[Broadcast] _sendAll(%s) sending WHISPER to supergroup member %s", prefix, memberKey))
                 Comms:Send(prefix, flat, "WHISPER", memberKey)
             end
         end
@@ -126,6 +130,9 @@ function Broadcast:SendActiveRulesetToSupergroup()
     end
 
     self:_StreamRuleset(rs)
+    
+    -- Clear any hash mismatch locks since we just sent our ruleset
+    self:_clearHashMismatchLocks()
 end
 
 -- Stream a single ruleset to supergroup (sends metadata, then rules)
@@ -257,6 +264,9 @@ function Broadcast:SendActiveDatasetToSupergroup()
     end
 
     RPE.Debug:Print(string.format("[Broadcast] Streaming %d custom datasets to Supergroup: %s", #sentNames, table.concat(sentNames, ", ")))
+    
+    -- Clear any hash mismatch locks since we just sent our datasets
+    self:_clearHashMismatchLocks()
 end
 
 -- Stream a single dataset to supergroup (sends metadata, then objects)
@@ -267,13 +277,31 @@ function Broadcast:_StreamDataset(ds)
     end
 
     -- Debug: log what's in the dataset before streaming
-    RPE.Debug:Internal(string.format("[Broadcast] Dataset '%s' before stream: items=%d, spells=%d, auras=%d, npcs=%d", 
-        ds.name, 
-        (ds.items and #(ds.items or {})) or 0,
-        (ds.spells and #(ds.spells or {})) or 0,
-        (ds.auras and #(ds.auras or {})) or 0,
-        (ds.npcs and #(ds.npcs or {})) or 0
-    ))
+    local counts = ds:Counts()
+    local extraCounts = {}
+    for categoryName, categoryItems in pairs(ds.extra or {}) do
+        if type(categoryItems) == "table" then
+            local count = 0
+            for _ in pairs(categoryItems) do count = count + 1 end
+            if count > 0 then
+                extraCounts[categoryName] = count
+            end
+        end
+    end
+    
+    local recipeCount = ds.recipes and 0 or 0
+    if ds.recipes then
+        for _ in pairs(ds.recipes) do recipeCount = recipeCount + 1 end
+    end
+    
+    local extraStr = ""
+    if recipeCount > 0 then extraStr = extraStr .. ", recipes=" .. recipeCount end
+    for categoryName, count in pairs(extraCounts) do
+        extraStr = extraStr .. ", " .. categoryName .. "=" .. count
+    end
+    
+    RPE.Debug:Internal(string.format("[Broadcast] Dataset '%s' before stream: items=%d, spells=%d, auras=%d, npcs=%d%s", 
+        ds.name, counts.items, counts.spells, counts.auras, counts.npcs, extraStr))
     
     -- Debug: also show actual keys
     if ds.items then
@@ -311,6 +339,7 @@ function Broadcast:_StreamDataset(ds)
         tostring(ds.version or 1),
         ds.author or "",
         ds.notes or "",
+        ds.description or "",
         "1",  -- autoActivate: 1=true (activate when received), 0=false (just save, don't activate)
     }
     
@@ -438,6 +467,32 @@ function Broadcast:_StreamDataset(ds)
         end
     end
 
+    -- Stream setup wizard if present
+    if ds.setupWizard and type(ds.setupWizard) == "table" then
+        local wizardStr = self:_ser(ds.setupWizard)
+        for _, ch in ipairs(channels) do
+            if ch.type == "WHISPER" then
+                Comms:Send("DATASET_SETUP_WIZARD", { ds.name, wizardStr }, ch.type, ch.target)
+            else
+                Comms:Send("DATASET_SETUP_WIZARD", { ds.name, wizardStr }, ch.type)
+            end
+        end
+    end
+
+    -- Stream metadata (description and security level)
+    local metaFlags = {
+        ds.name,
+        ds.description or "",
+        ds.securityLevel or "Open",
+    }
+    for _, ch in ipairs(channels) do
+        if ch.type == "WHISPER" then
+            Comms:Send("DATASET_META_FLAGS", metaFlags, ch.type, ch.target)
+        else
+            Comms:Send("DATASET_META_FLAGS", metaFlags, ch.type)
+        end
+    end
+
     -- Send completion signal
     local completePayload = { ds.name }
     for _, ch in ipairs(channels) do
@@ -546,11 +601,14 @@ function Broadcast:StartEvent(ev)
     local flat = { ev.id or "", ev.name or "" }
     flat[#flat+1] = (ev.subtext or "")
     flat[#flat+1] = (ev.difficulty or "NORMAL")
+    flat[#flat+1] = (ev.turnOrderType or "INITIATIVE")
 
     -- serialize teamNames
     local tnParts = {}
-    for i = 1, #ev.teamNames do
-        tnParts[#tnParts+1] = tostring(ev.teamNames[i] or "")
+    if ev.teamNames and type(ev.teamNames) == "table" then
+        for i = 1, #ev.teamNames do
+            tnParts[#tnParts+1] = tostring(ev.teamNames[i] or "")
+        end
     end
     flat[#flat+1] = table.concat(tnParts, ",")
 
@@ -614,6 +672,103 @@ function Broadcast:StartEvent(ev)
     end
 end
 
+--- Resync a single player with the full event state (player logged in during event).
+--- Only sends to the specified player via whisper.
+---@param playerKey string  -- "Name-Realm" (lowercased) of the player to resync
+function Broadcast:ResyncPlayer(playerKey)
+    if not playerKey or playerKey == "" then return end
+    
+    local ev = RPE.Core.ActiveEvent
+    if not ev or not ev.units then
+        RPE.Debug:Print("[Broadcast] ResyncPlayer: No active event to resync")
+        return
+    end
+    
+    -- Build the same payload as StartEvent, but include current turn/tick info
+    local flat = { ev.id or "", ev.name or "" }
+    flat[#flat+1] = (ev.subtext or "")
+    flat[#flat+1] = (ev.difficulty or "NORMAL")
+    flat[#flat+1] = (ev.turnOrderType or "INITIATIVE")
+
+    -- Add turn and tickIndex so player catches up to current progress
+    flat[#flat+1] = tostring(ev.turn or 1)
+    flat[#flat+1] = tostring(ev.tickIndex or 0)
+
+    -- serialize teamNames
+    local tnParts = {}
+    for i = 1, #ev.teamNames do
+        tnParts[#tnParts+1] = tostring(ev.teamNames[i] or "")
+    end
+    flat[#flat+1] = table.concat(tnParts, ",")
+
+    for _, u in pairs(ev.units or {}) do
+        flat[#flat+1] = tostring(u.id or 0)
+        flat[#flat+1] = tostring(u.key or "")
+        flat[#flat+1] = tostring(u.name or "")
+        flat[#flat+1] = tostring(u.team or 1)
+        flat[#flat+1] = u.isNPC and "1" or "0"
+        flat[#flat+1] = tostring(u.hp or 0)
+        flat[#flat+1] = tostring(u.hpMax or 0)
+        flat[#flat+1] = tostring(u.initiative or 0)
+        flat[#flat+1] = tostring(u.raidMarker or 0)
+        flat[#flat+1] = tostring(u.unitType or "")
+        flat[#flat+1] = tostring(u.unitSize or "")
+        flat[#flat+1] = u.active and "1" or "0"
+        flat[#flat+1] = u.hidden and "1" or "0"
+        flat[#flat+1] = u.flying and "1" or "0"
+
+        -- Serialize stats table
+        local statParts = {}
+        if type(u.stats) == "table" then
+            for statId, val in pairs(u.stats) do
+                statParts[#statParts+1] = statId .. "=" .. tostring(val or 0)
+            end
+        end
+        flat[#flat+1] = table.concat(statParts, ",")
+        flat[#flat+1] = tostring(u.fileDataId or "")
+        flat[#flat+1] = tostring(u.displayId or "")
+        flat[#flat+1] = tostring(u.cam or "")
+        flat[#flat+1] = tostring(u.rot or "")
+        flat[#flat+1] = tostring(u.z or "")
+        
+        -- Serialize spells (comma-separated string)
+        local spellParts = {}
+        if type(u.spells) == "table" then
+            for _, sid in ipairs(u.spells) do
+                table.insert(spellParts, tostring(sid or ""))
+            end
+        end
+        flat[#flat+1] = table.concat(spellParts, ",")
+        flat[#flat+1] = tostring(u.summonedBy or 0)
+        
+        -- Serialize auras for this unit
+        local auraParts = {}
+        if ev._auraManager then
+            local auras = ev._auraManager:All(u.id)
+            for _, aura in ipairs(auras or {}) do
+                if aura and aura.def then
+                    -- Format: auraId|instanceId|stacks|duration
+                    local auraEntry = string.format("%s|%s|%d|%d",
+                        tostring(aura.def.id or ""),
+                        tostring(aura.instanceId or ""),
+                        tonumber(aura.stacks or 1),
+                        tonumber(aura.duration or 0)
+                    )
+                    table.insert(auraParts, auraEntry)
+                end
+            end
+        end
+        flat[#flat+1] = table.concat(auraParts, ",")
+    end
+
+    -- Send only to the specified player via whisper
+    local playerName = playerKey:match("^([^-]+)") or playerKey
+    Comms:Send("START_EVENT", flat, "WHISPER", playerName)
+    
+    RPE.Debug:Print(string.format("[Broadcast] Resynced player %s with event state (turn %d, tick %d)", playerKey, ev.turn or 1, ev.tickIndex or 0))
+end
+
+
 --- Tell the other members of the group to execute OnTurn().
 function Broadcast:Advance(payload)
     local UnitClass = RPE.Core.Unit
@@ -672,8 +827,18 @@ function Broadcast:EndEvent()
     _sendAll("END_EVENT", { "ok" })
 end
 
+--- Broadcast that the current player is ending their turn
+---@param unitId number -- ID of the unit ending their turn
+function Broadcast:EndTurn(unitId)
+    _sendAll("END_TURN", { tostring(unitId or 0) })
+end
+
+function Broadcast:SendIntermission(isIntermission)
+    _sendAll("INTERMISSION", { isIntermission and "1" or "0" })
+end
+
 --- Apply aura (minimal: auraId + description text).
---- opts: { stacks?:number, instanceId?:string }
+--- opts: { stacks?:number, rank?:number, instanceId?:string }
 function Broadcast:AuraApply(source, target, auraId, description, opts)
     opts = opts or {}
     if not auraId or auraId == "" then return end
@@ -693,6 +858,7 @@ function Broadcast:AuraApply(source, target, auraId, description, opts)
         tostring(inst or ""),
         tostring(tonumber(opts.stacks or 0) or 0),
         _esc(description or ""),
+        tostring(tonumber(opts.rank or 1) or 1),
     }
 
     _sendAll("AURA_APPLY", flat)
@@ -781,7 +947,7 @@ function Broadcast:Damage(source, targets, amount, opts)
         
         if totalAmount <= 0 then return end
         
-        local tDelta = (o and o.threat ~= nil) and tostring(math.floor(tonumber(o.threat) or 0)) or tostring(totalAmount)
+        local tDelta = (o and o.threat ~= nil) and tostring(math.floor(totalAmount * (tonumber(o.threat) or 1))) or tostring(totalAmount)
         flat[#flat+1] = tostring(tId)
         flat[#flat+1] = tostring(totalAmount)  -- Total damage (for historical reasons)
         flat[#flat+1] = school                  -- Single school or CSV of schools:amounts
@@ -847,7 +1013,7 @@ function Broadcast:Heal(source, targets, amount, opts)
         local a   = math.max(0, math.floor(tonumber(amt) or 0))
         if tId == 0 or a <= 0 then return end
         local crit   = ((o and o.crit) and "1") or "0"
-        local tDelta = (o and o.threat ~= nil) and tostring(math.floor(tonumber(o.threat) or 0)) or ""
+        local tDelta = (o and o.threat ~= nil) and tostring(math.floor(a * (tonumber(o.threat) or 1))) or ""
         flat[#flat+1] = tostring(tId)
         flat[#flat+1] = tostring(a)
         flat[#flat+1] = crit
@@ -1245,10 +1411,488 @@ function Broadcast:SendClearCasting(unitId)
     _sendAll("CLEAR_CASTING", { tostring(tId) })
 end
 
---- Announce the player's TRP3 display name to the supergroup.
---- The payload is a single string (display name/title). Recipients who are leaders
---- will apply the name to the corresponding EventUnit for that sender.
-function Broadcast:AnnounceTRPName(name)
-    if not name or name == "" then return end
-    _sendAll("TRP_NAME", { tostring(name) })
+--- Say hello to the group with TRP3 display name and dataset/ruleset hash.
+--- The payload includes the TRP name and hash. Recipients who are leaders will apply the name to EventUnits
+--- and check if the hash matches their own. If not, they'll initiate automatic syncing.
+function Broadcast:Hello(trpName)
+    if not trpName or trpName == "" then return end
+    
+    -- Generate hash for current datasets and ruleset
+    local hash = self:_generateDatasetRulesetHash()
+    
+    RPE.Debug:Internal(string.format("[Broadcast] _sendAll(HELLO) with name: %s, hash: %s", trpName, hash))
+    _sendAll("HELLO", { tostring(trpName), tostring(hash) })
+end
+
+-- Generate a hash representing the current active datasets and ruleset (same logic as Request.lua)
+function Broadcast:_generateDatasetRulesetHash()
+    local hashData = {}
+    
+    -- Helper function to recursively hash table contents
+    local function hashTable(tbl, prefix)
+        if not tbl or type(tbl) ~= "table" then return end
+        
+        local keys = {}
+        for k, _ in pairs(tbl) do
+            table.insert(keys, tostring(k))
+        end
+        table.sort(keys)  -- Ensure consistent ordering
+        
+        for _, k in ipairs(keys) do
+            local v = tbl[k]
+            local key = prefix .. k
+            
+            if type(v) == "table" then
+                hashTable(v, key .. ".")
+            else
+                table.insert(hashData, key .. "=" .. tostring(v))
+            end
+        end
+    end
+    
+    -- Add active ruleset data with full rule content
+    if RPE.ActiveRules then
+        table.insert(hashData, "RULESET:" .. tostring(RPE.ActiveRules.name or ""))
+        
+        -- Hash the actual rules content
+        if RPE.ActiveRules.rules then
+            hashTable(RPE.ActiveRules.rules, "RULE.")
+        end
+        
+        -- Include other ruleset data
+        if RPE.ActiveRules.data then
+            hashTable(RPE.ActiveRules.data, "DATA.")
+        end
+    end
+    
+    -- Add active datasets with actual content
+    local DatasetDB = RPE.Profile and RPE.Profile.DatasetDB
+    if DatasetDB then
+        local activeNames = DatasetDB.GetActiveNamesForCurrentCharacter()
+        if activeNames then
+            table.sort(activeNames)  -- Ensure consistent ordering
+            
+            for _, datasetName in ipairs(activeNames) do
+                table.insert(hashData, "DATASET:" .. datasetName)
+                
+                -- Get the actual dataset and hash its content
+                local dataset = DatasetDB.GetByName(datasetName)
+                if dataset then
+                    -- Hash spells, items, NPCs, stats, etc.
+                    if dataset.spells then hashTable(dataset.spells, "SPELL.") end
+                    if dataset.items then hashTable(dataset.items, "ITEM.") end
+                    if dataset.npcs then hashTable(dataset.npcs, "NPC.") end
+                    if dataset.stats then hashTable(dataset.stats, "STAT.") end
+                    if dataset.auras then hashTable(dataset.auras, "AURA.") end
+                    if dataset.recipes then hashTable(dataset.recipes, "RECIPE.") end
+                    if dataset.reagents then hashTable(dataset.reagents, "REAGENT.") end
+                end
+            end
+        end
+    end
+    
+    -- Create a simple hash from the concatenated data
+    local dataString = table.concat(hashData, "|")
+    local hash = 0
+    for i = 1, #dataString do
+        hash = (hash * 31 + string.byte(dataString, i)) % 2147483647
+    end
+    return tostring(hash)
+end
+
+-- Track ongoing sync operations
+Broadcast._syncOperations = {}
+
+--- Automatically sync datasets and ruleset to a player with mismatched hash
+---@param playerKey string The player's key (Name-Realm lowercased)
+---@param playerName string The player's display name
+function Broadcast:_autoSyncPlayer(playerKey, playerName)
+    if self._syncOperations[playerKey] then
+        RPE.Debug:Warning(string.format("[Broadcast] Sync already in progress for %s", playerName))
+        return
+    end
+    
+    -- Check if an event is currently running
+    local ev = RPE.Core and RPE.Core.ActiveEvent
+    local isEventRunning = ev and ev.IsRunning and ev:IsRunning()
+    
+    if not isEventRunning then
+        -- If no event is running, just lock the Start Event button
+        RPE.Debug:Print(string.format("[Broadcast] Hash mismatch with %s - locking Start Event button", playerName))
+        
+        -- Mark as a "lock-only" sync operation to prevent starting events
+        self._syncOperations[playerKey] = {
+            playerName = playerName,
+            startTime = GetTime(),
+            step = "locked", -- Special state: just locked, no actual sync
+            lockControls = true,
+        }
+        
+        self:_refreshEventControlSheet()
+        return
+    end
+    
+    -- Event is running, proceed with auto-sync
+    RPE.Debug:Print(string.format("[Broadcast] Auto-syncing datasets and ruleset to %s (event in progress)", playerName))
+    
+    -- Send pause notification to party (excluding leader and target)
+    local pausePayload = { playerName, "START" }
+    _sendAll("SYNC_PAUSE", pausePayload)
+    
+    -- Mark sync as in progress
+    self._syncOperations[playerKey] = {
+        playerName = playerName,
+        startTime = GetTime(),
+        step = "datasets", -- "datasets" -> "ruleset" -> "complete"
+        lockControls = false, -- Don't lock controls during events
+    }
+    
+    -- Start with dataset sync
+    self:_sendActiveDatasetToPlayer(playerKey, playerName)
+end
+
+--- Send active datasets to a specific player
+---@param playerKey string The player's key (Name-Realm lowercased)
+---@param playerName string The player's display name
+function Broadcast:_sendActiveDatasetToPlayer(playerKey, playerName)
+    local DatasetDB = RPE.Profile and RPE.Profile.DatasetDB
+    if not DatasetDB then
+        RPE.Debug:Error("[Broadcast] DatasetDB missing; cannot sync datasets.")
+        self:_completeSyncOperation(playerKey, false)
+        return
+    end
+
+    local names = DatasetDB.GetActiveNamesForCurrentCharacter()
+    if not names or #names == 0 then
+        RPE.Debug:Internal("[Broadcast] No active datasets to sync.")
+        self:_proceedToRulesetSync(playerKey)
+        return
+    end
+
+    -- Default datasets that don't need to be sent
+    local DEFAULT_DATASETS = { "DefaultClassic", "Default5e", "DefaultWarcraft" }
+    local function isDefault(name)
+        for _, dname in ipairs(DEFAULT_DATASETS) do
+            if name == dname then return true end
+        end
+        return false
+    end
+
+    local datasetsToSend = {}
+    for _, name in ipairs(names) do
+        if not isDefault(name) then
+            local ds = DatasetDB.GetByName(name)
+            if ds then
+                table.insert(datasetsToSend, ds)
+            end
+        end
+    end
+
+    if #datasetsToSend == 0 then
+        RPE.Debug:Internal("[Broadcast] Only default datasets active; proceeding to ruleset sync.")
+        self:_proceedToRulesetSync(playerKey)
+        return
+    end
+
+    -- Send datasets to specific player
+    for _, ds in ipairs(datasetsToSend) do
+        self:_streamDatasetToPlayer(ds, playerKey, playerName)
+    end
+    
+    -- After datasets are sent, proceed to ruleset
+    self:_proceedToRulesetSync(playerKey)
+end
+
+--- Send active ruleset to a specific player
+---@param playerKey string The player's key (Name-Realm lowercased)
+function Broadcast:_proceedToRulesetSync(playerKey)
+    local syncOp = self._syncOperations[playerKey]
+    if not syncOp then return end
+    
+    syncOp.step = "ruleset"
+    
+    local RulesetDB = RPE.Profile and RPE.Profile.RulesetDB
+    if not RulesetDB then
+        RPE.Debug:Error("[Broadcast] RulesetDB missing; cannot sync ruleset.")
+        self:_completeSyncOperation(playerKey, false)
+        return
+    end
+
+    local rs = RulesetDB.LoadActiveForCurrentCharacter()
+    if not rs then
+        RPE.Debug:Internal("[Broadcast] No active ruleset to sync.")
+        self:_completeSyncOperation(playerKey, true)
+        return
+    end
+
+    self:_streamRulesetToPlayer(rs, playerKey)
+    self:_completeSyncOperation(playerKey, true)
+end
+
+--- Complete sync operation and unlock UI
+---@param playerKey string The player's key
+---@param success boolean Whether the sync completed successfully
+function Broadcast:_completeSyncOperation(playerKey, success)
+    local syncOp = self._syncOperations[playerKey]
+    if not syncOp then return end
+    
+    local duration = GetTime() - syncOp.startTime
+    if success then
+        RPE.Debug:Print(string.format("[Broadcast] Auto-sync completed for %s in %.1f seconds", syncOp.playerName, duration))
+        
+        -- Send unpause notification to party if this was an event sync
+        if not syncOp.lockControls then
+            local unpausePayload = { syncOp.playerName, "END" }
+            _sendAll("SYNC_PAUSE", unpausePayload)
+        end
+    else
+        RPE.Debug:Error(string.format("[Broadcast] Auto-sync failed for %s after %.1f seconds", syncOp.playerName, duration))
+        
+        -- Send unpause notification even on failure
+        if not syncOp.lockControls then
+            local unpausePayload = { syncOp.playerName, "END" }
+            _sendAll("SYNC_PAUSE", unpausePayload)
+        end
+    end
+    
+    local shouldUnlockControls = syncOp.lockControls
+    
+    -- Remove from tracking
+    self._syncOperations[playerKey] = nil
+    
+    -- Check if any remaining sync operations require control locking
+    local hasLockingSync = false
+    for _, remainingSyncOp in pairs(self._syncOperations) do
+        if remainingSyncOp.lockControls then
+            hasLockingSync = true
+            break
+        end
+    end
+    
+    -- Only unlock UI if this sync was locking controls and no other locking syncs are pending
+    if shouldUnlockControls and not hasLockingSync then
+        self:_unlockEventControls()
+        self:_refreshEventControlSheet()
+        RPE.Debug:Print("[Broadcast] Unlocked Start Event button after sync completion")
+    end
+end
+
+--- Refresh EventControlSheet to update button states
+function Broadcast:_refreshEventControlSheet()
+    local ecs = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.EventControlSheet
+    if ecs and ecs.Refresh then
+        ecs:Refresh()
+        RPE.Debug:Internal("[Broadcast] Refreshed EventControlSheet button states")
+    end
+end
+
+--- Clear hash mismatch locks (called when user wants to start event despite mismatches)
+function Broadcast:ClearHashMismatchLocks()
+    return self:_clearHashMismatchLocks()
+end
+
+--- Internal method to clear hash mismatch locks
+function Broadcast:_clearHashMismatchLocks()
+    local clearedCount = 0
+    for playerKey, syncOp in pairs(self._syncOperations) do
+        if syncOp.step == "locked" then
+            self._syncOperations[playerKey] = nil
+            clearedCount = clearedCount + 1
+            RPE.Debug:Internal(string.format("[Broadcast] Cleared hash mismatch lock for %s", syncOp.playerName))
+        end
+    end
+    
+    if clearedCount > 0 then
+        self:_refreshEventControlSheet()
+        RPE.Debug:Print(string.format("[Broadcast] Unlocked Start Event button (%d hash locks cleared)", clearedCount))
+    end
+    
+    return clearedCount
+end
+
+--- Lock event control buttons during sync operations
+function Broadcast:_lockEventControls()
+    local ecs = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.EventControlSheet
+    if ecs then
+        if ecs.startButton and ecs.startButton.Lock then
+            ecs.startButton:Lock()
+            RPE.Debug:Internal("[Broadcast] Locked Start Event button during sync")
+        end
+        -- Only lock tick button if an event is running
+        local ev = RPE.Core and RPE.Core.ActiveEvent
+        local isEventRunning = ev and ev.IsRunning and ev:IsRunning()
+        if isEventRunning and ecs.tickButton and ecs.tickButton.Lock then
+            ecs.tickButton:Lock()
+            RPE.Debug:Internal("[Broadcast] Locked Next Tick button during sync")
+        end
+    end
+end
+
+--- Unlock event control buttons after sync operations complete
+function Broadcast:_unlockEventControls()
+    local ecs = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.EventControlSheet
+    if ecs then
+        if ecs.startButton and ecs.startButton.Unlock then
+            ecs.startButton:Unlock()
+            RPE.Debug:Internal("[Broadcast] Unlocked Start Event button after sync")
+        end
+        if ecs.tickButton and ecs.tickButton.Unlock then
+            ecs.tickButton:Unlock()
+            -- Re-apply tick button state based on event status
+            ecs:UpdateTickButtonState()
+            RPE.Debug:Internal("[Broadcast] Unlocked Next Tick button after sync")
+        end
+    end
+end
+
+--- Stream dataset to a specific player via whisper
+---@param ds table The dataset to stream
+---@param playerKey string The player's key (Name-Realm lowercased)
+---@param playerName string The player's display name
+function Broadcast:_streamDatasetToPlayer(ds, playerKey, playerName)
+    if not ds or not ds.name then
+        RPE.Debug:Error("[Broadcast] Invalid dataset to stream to player")
+        return
+    end
+
+    local channels = {{ type = "WHISPER", target = playerName }}
+
+    -- Send metadata first (including autoActivate flag)
+    local metaPayload = {
+        ds.name,
+        tostring(ds.guid or ""),
+        tostring(ds.version or 1),
+        ds.author or "",
+        ds.notes or "",
+        "1",  -- autoActivate: 1=true (activate when received)
+    }
+    
+    Comms:Send("DATASET_META", metaPayload, "WHISPER", playerName)
+
+    -- Stream each category to the specific player (same logic as _StreamDataset)
+    for itemId, itemDef in pairs(ds.items or {}) do
+        local serialized = self:_ser(itemDef)
+        local msg = ds.name .. "|" .. itemId .. "|" .. serialized
+        Comms:Send("DATASET_ITEM", msg, "WHISPER", playerName)
+    end
+
+    for spellId, spellDef in pairs(ds.spells or {}) do
+        local serialized = self:_ser(spellDef)
+        local msg = ds.name .. "|" .. spellId .. "|" .. serialized
+        Comms:Send("DATASET_SPELL", msg, "WHISPER", playerName)
+    end
+
+    for auraId, auraDef in pairs(ds.auras or {}) do
+        local serialized = self:_ser(auraDef)
+        local msg = ds.name .. "|" .. auraId .. "|" .. serialized
+        Comms:Send("DATASET_AURA", msg, "WHISPER", playerName)
+    end
+
+    for npcId, npcDef in pairs(ds.npcs or {}) do
+        local serialized = self:_ser(npcDef)
+        local msg = ds.name .. "|" .. npcId .. "|" .. serialized
+        Comms:Send("DATASET_NPC", msg, "WHISPER", playerName)
+    end
+
+    for categoryName, categoryItems in pairs(ds.extra or {}) do
+        for objectId, objectDef in pairs(categoryItems) do
+            local serialized = self:_ser(objectDef)
+            local msg = ds.name .. "|" .. categoryName .. "|" .. objectId .. "|" .. serialized
+            Comms:Send("DATASET_EXTRA", msg, "WHISPER", playerName)
+        end
+    end
+
+    -- Send completion signal
+    Comms:Send("DATASET_COMPLETE", { ds.name }, "WHISPER", playerName)
+    
+    RPE.Debug:Internal(string.format("Streaming dataset '%s' to %s", ds.name, playerName))
+end
+
+--- Stream ruleset to a specific player via whisper
+---@param rs table The ruleset to stream
+---@param playerKey string The player's key (Name-Realm lowercased)
+function Broadcast:_streamRulesetToPlayer(rs, playerKey)
+    if not rs or not rs.name then
+        RPE.Debug:Error("[Broadcast] Invalid ruleset to stream to player")
+        return
+    end
+
+    local playerName = playerKey:match("^([^-]+)") or playerKey
+
+    -- Send metadata first
+    Comms:Send("RULESET_META", { rs.name }, "WHISPER", playerName)
+
+    -- Stream each rule as individual key-value pair
+    for ruleKey, ruleValue in pairs(rs.rules or {}) do
+        local valueStr
+        if type(ruleValue) == "string" then
+            valueStr = string.format("%q", ruleValue)
+        elseif type(ruleValue) == "number" or type(ruleValue) == "boolean" then
+            valueStr = tostring(ruleValue)
+        elseif type(ruleValue) == "table" then
+            valueStr = self:_ser(ruleValue)
+        else
+            valueStr = "nil"
+        end
+        
+        valueStr = _esc(valueStr)
+        local rulePayload = { rs.name, ruleKey, valueStr }
+        Comms:Send("RULESET_RULE", rulePayload, "WHISPER", playerName)
+    end
+
+    -- Send completion signal
+    Comms:Send("RULESET_COMPLETE", { rs.name }, "WHISPER", playerName)
+    
+    RPE.Debug:Internal(string.format("Streaming ruleset '%s' to %s", rs.name, playerName))
+end
+
+--- Broadcast a unified LFRP message with location + settings
+---@param mapID integer The map ID where the player is located
+---@param x number Normalized x coordinate (0-100)
+---@param y number Normalized y coordinate (0-100)
+---@param settings table Table with { trpName=..., guildName=..., iAm={...}, lookingFor={...}, recruiting=0|1|2, approachable=0|1, broadcastLocation=true|false }
+function Broadcast:SendLFRPBroadcast(mapID, x, y, settings)
+    if not settings then return end
+    
+    local LFRPComms = RPE.Core and RPE.Core.LFRP and RPE.Core.LFRP.Comms
+    if not LFRPComms then
+        return
+    end
+    
+    local channelNumber = LFRPComms:GetChannelNumber()
+    if not channelNumber or channelNumber == 0 then
+        return
+    end
+    
+    -- Round coordinates to integers for efficiency
+    mapID = tonumber(mapID) or 0
+    x = math.floor(tonumber(x) or 0)
+    y = math.floor(tonumber(y) or 0)
+    
+    -- Get TRP name and guild name or empty strings
+    local trpName = tostring(settings.trpName or "")
+    local guildName = tostring(settings.guildName or "")
+    
+    -- Serialize settings as comma-delimited values within semicolon-delimited fields
+    local iAmStr = table.concat(settings.iAm or {0,0,0,0,0}, ",")
+    local lookingForStr = table.concat(settings.lookingFor or {0,0,0,0,0}, ",")
+    local recruiting = tostring(settings.recruiting or 0)
+    local approachable = tostring(settings.approachable or 0)
+    local broadcastLocation = settings.broadcastLocation and "1" or "0"
+    
+    -- Format: mapID;x;y;trpName;guildName;iAm;lookingFor;recruiting;approachable;broadcastLocation
+    local flat = {
+        tostring(mapID),
+        tostring(x),
+        tostring(y),
+        trpName,
+        guildName,
+        iAmStr,
+        lookingForStr,
+        recruiting,
+        approachable,
+        broadcastLocation,
+    }
+    
+    Comms:Send("LFRP_BROADCAST", flat, "CHANNEL", channelNumber)
 end

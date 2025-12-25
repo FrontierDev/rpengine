@@ -146,10 +146,11 @@ end
 function EventSettingsSheet:BuildUI(opts)
     opts = opts or {}
     self.settings = {
-        title      = "",
-        subtext    = "",
-        difficulty = "NORMAL",
-        teamNames  = { "", "", "", "" },
+        title         = "",
+        subtext       = "",
+        difficulty    = "NORMAL",
+        turnOrderType = "INITIATIVE",
+        teamNames     = { "", "", "", "" },
     }
 
     self.sheet = VGroup:New("RPE_ES_Sheet", {
@@ -178,6 +179,9 @@ function EventSettingsSheet:BuildUI(opts)
 
     -- Difficulty (directly under Subtext)
     AddDropdownRow(self, self.sheet, "Difficulty:", "difficulty", { "NORMAL", "HEROIC", "MYTHIC" })
+
+    -- Turn Order Type
+    AddDropdownRow(self, self.sheet, "Turn Order:", "turnOrderType", { "INITIATIVE", "PHASE", "BALANCED", "NON-COMBAT" })
 
     -- Section heading (muted)
     _heading(self.sheet, "Team Names")

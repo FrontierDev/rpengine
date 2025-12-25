@@ -1,0 +1,6 @@
+.docs
+.vscode
+Test
+*.bat
+*.py
+*.ps1

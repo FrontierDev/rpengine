@@ -54,7 +54,16 @@
         "ITEMS",
         "UIDropDownMenu_SetSelectedValue",
         "RACES",
-        "RAGE"
+        "RAGE",
+        "ChatFrame1",
+        "GameTooltipTextLeft1",
+        "CreateFramePool",
+        "WorldMapFrame",
+        "MapCanvasDataProviderMixin",
+        "UNKNOWN",
+        "BaseMapPoiPinMixin",
+        "ChatFrame_OpenChat",
+        "UIDropDownMenu_SetAnchor"
     ],
     "Lua.diagnostics.disable": [
         "assign-type-mismatch"

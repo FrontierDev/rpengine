@@ -133,7 +133,7 @@ RPE.Data.DefaultClassic.STATS = {
         max     = { ref = "MAX_HEALTH" },
         visible = 1,
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\health.png",
-        tooltip = "If this reaches 0, the character is incapacitated.",
+        tooltip = "If this reaches 0, the character is incapacitated. Your maximum health is $stat.MAX_HEALTH$.",
         recovery = {
             ruleKey = "health_regen",
             default = 0
@@ -161,7 +161,7 @@ RPE.Data.DefaultClassic.STATS = {
         max = { ref = "MAX_MANA" },
         visible = 1,
         icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\mana.png",
-        tooltip = "Used to cast spells.",
+        tooltip = "Used to cast spells. Your maximum mana is $stat.MAX_MANA$.",
         recovery = {
             ruleKey = "mana_regen",
             default = 0

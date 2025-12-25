@@ -65,8 +65,8 @@ function PlayerUnitWidget:BuildUI(opts)
         autoSize = true,
         noBackground = true,
         point    = "CENTER",
-        pointRelative = "TOPLEFT",
-        x        = 0,
+        pointRelative = "TOP",
+        x        = -52,
         y        = 32,
     })
 
@@ -249,6 +249,20 @@ function PlayerUnitWidget:Refresh()
     for resId, bar in pairs(self.bars or {}) do
         if bar and bar.frame and bar.frame:IsShown() then
             local cur, max = Resources:Get(resId)
+            
+            -- If Resources doesn't have it (custom stat), try character stats
+            if not cur and profile then
+                local stat = profile:GetStat(resId)
+                if stat then
+                    cur = stat:GetValue(profile)
+                    max = stat:GetMaxValue(profile)
+                end
+            end
+            
+            -- Fallback: ensure both are numbers (don't pass nil or table to SetValue)
+            cur = tonumber(cur) or 0
+            max = tonumber(max) or 0
+            
             bar:SetValue(cur, max)
             
             -- Show absorption on HEALTH bar
@@ -600,15 +614,18 @@ end
 function PlayerUnitWidget:SetTemporaryStats(unit)
     if not unit or not unit.isNPC then return end
 
-    self._originalResources = self._originalResources or {}
-    self._inTemporaryMode = true
-
-    -- Save current player resource values (from the bar UI, not profile)
-    for resId, bar in pairs(self.bars or {}) do
-        local cur = bar.value or 0
-        local max = bar.max or 1
-        self._originalResources[resId] = { cur = cur, max = max, shown = bar.frame:IsShown() }
+    -- Only save original resources if we're not already in temporary mode
+    if not self._inTemporaryMode then
+        self._originalResources = {}
+        -- Save current player resource values (from the bar UI, not profile)
+        for resId, bar in pairs(self.bars or {}) do
+            local cur = bar.value or 0
+            local max = bar.max or 1
+            self._originalResources[resId] = { cur = cur, max = max, shown = bar.frame:IsShown() }
+        end
     end
+    
+    self._inTemporaryMode = true
 
     -- Save the current cast bar state (player's cast if any)
     local CB = RPE.Core.Windows and RPE.Core.Windows.CastBarWidget

@@ -104,6 +104,10 @@ function SetupWizardEditorSheet:BuildUI(opts)
     self.sheet:Add(titleText)
     
     -- SetupPages prefab with action groups
+    -- Page type schema notes:
+    -- - SELECT_ITEMS: supports optional boolean field "spareChange"
+    --   When true, player's copper currency is set to the leftover amount
+    --   from the item selection page (allowance - spent)
     self.setupPages = SetupPages:New("RPE_SetupWizardEditor_Pages", {
         parent = self.sheet,
         ownerSheet = self.sheet,

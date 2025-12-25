@@ -18,6 +18,131 @@ local function NewRequestId()
     return tostring(Request._counter) .. "-" .. tostring(time())
 end
 
+-- Generate a hash representing the current active datasets and ruleset
+local function GenerateDatasetRulesetHash()
+    local hashData = {}
+    
+    -- Helper function to recursively hash table contents
+    local function hashTable(tbl, prefix)
+        if not tbl or type(tbl) ~= "table" then return end
+        
+        local keys = {}
+        for k, _ in pairs(tbl) do
+            table.insert(keys, tostring(k))
+        end
+        table.sort(keys)  -- Ensure consistent ordering
+        
+        for _, k in ipairs(keys) do
+            local v = tbl[k]
+            local key = prefix .. k
+            
+            if type(v) == "table" then
+                hashTable(v, key .. ".")
+            else
+                table.insert(hashData, key .. "=" .. tostring(v))
+            end
+        end
+    end
+    
+    -- Add active ruleset data with full rule content
+    if RPE.ActiveRules then
+        table.insert(hashData, "RULESET:" .. tostring(RPE.ActiveRules.name or ""))
+        
+        -- Hash the actual rules content
+        if RPE.ActiveRules.rules then
+            hashTable(RPE.ActiveRules.rules, "RULE.")
+        end
+        
+        -- Include other ruleset data
+        if RPE.ActiveRules.data then
+            hashTable(RPE.ActiveRules.data, "DATA.")
+        end
+    end
+    
+    -- Add active datasets with actual content
+    local DatasetDB = RPE.Profile and RPE.Profile.DatasetDB
+    if DatasetDB then
+        local activeNames = DatasetDB.GetActiveNamesForCurrentCharacter()
+        if activeNames then
+            table.sort(activeNames)  -- Ensure consistent ordering
+            
+            for _, datasetName in ipairs(activeNames) do
+                table.insert(hashData, "DATASET:" .. datasetName)
+                
+                -- Get the actual dataset and hash its content
+                local dataset = DatasetDB.GetByName(datasetName)
+                if dataset then
+                    -- Hash spells, items, NPCs, stats, etc.
+                    if dataset.spells then hashTable(dataset.spells, "SPELL.") end
+                    if dataset.items then hashTable(dataset.items, "ITEM.") end
+                    if dataset.npcs then hashTable(dataset.npcs, "NPC.") end
+                    if dataset.stats then hashTable(dataset.stats, "STAT.") end
+                    if dataset.auras then hashTable(dataset.auras, "AURA.") end
+                    if dataset.recipes then hashTable(dataset.recipes, "RECIPE.") end
+                    if dataset.reagents then hashTable(dataset.reagents, "REAGENT.") end
+                end
+            end
+        end
+    end
+    
+    -- Create a simple hash from the concatenated data
+    local dataString = table.concat(hashData, "|")
+    local hash = 0
+    for i = 1, #dataString do
+        hash = (hash * 31 + string.byte(dataString, i)) % 2147483647
+    end
+    return tostring(hash)
+end
+
+-- Check if a member is online in the group or is an NPC in the active event
+local function IsOnlineGroupMember(memberKey)
+    local meName, meRealm = UnitName("player")
+    local meFull = (meName and ((meRealm and meRealm ~= "" and (meName.."-"..meRealm:gsub("%s+", ""))) or (meName.."-"..GetRealmName():gsub("%s+", "")))) or nil
+    local meKey = meFull and meFull:lower()
+    
+    if memberKey == meKey then
+        return true
+    end
+    
+    -- Check if member is an NPC in the active event
+    local ev = RPE.Core.ActiveEvent
+    if ev and ev.units then
+        for _, unit in pairs(ev.units) do
+            if unit.key and unit.key:lower() == memberKey then
+                if unit.isNPC then
+                    return true  -- NPCs are always "ready"
+                end
+            end
+        end
+    end
+    
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            local unitToken = "raid" .. i
+            local n, r = UnitName(unitToken)
+            if n then
+                local lower = (n .. "-" .. (r or GetRealmName())):gsub("%s+", ""):lower()
+                if lower == memberKey then
+                    return UnitIsConnected(unitToken)
+                end
+            end
+        end
+    elseif IsInGroup() then
+        for i = 1, GetNumGroupMembers() - 1 do
+            local unitToken = "party" .. i
+            local n, r = UnitName(unitToken)
+            if n then
+                local lower = (n .. "-" .. (r or GetRealmName())):gsub("%s+", ""):lower()
+                if lower == memberKey then
+                    return UnitIsConnected(unitToken)
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
 ---------------------------------------------------
 -- Ready check
 ---------------------------------------------------
@@ -33,6 +158,7 @@ function Request:CheckReady(callback, onTimeout, timeoutSec)
     end
 
     local rulesetName = RPE.ActiveRules.name
+    local datasetRulesetHash = GenerateDatasetRulesetHash()
 
     -- Make sure my local Blizzard roster is in the supergroup snapshot
     local meName, meRealm = UnitName("player")
@@ -48,7 +174,14 @@ function Request:CheckReady(callback, onTimeout, timeoutSec)
 
     local reqId = NewRequestId()
     local expected = {}
-    for _, key in ipairs(members) do expected[key] = true end
+    
+    for _, key in ipairs(members) do
+        if IsOnlineGroupMember(key) then
+            expected[key] = true
+        else
+            RPE.Debug:Print("Skipping offline/non-group member: " .. key)
+        end
+    end
 
     -- Create pending entry
     self._pending[reqId] = {
@@ -57,6 +190,12 @@ function Request:CheckReady(callback, onTimeout, timeoutSec)
         expected  = expected,          -- map of who we still wait for (keys)
         timeout   = GetTime() + (timeoutSec or 10),
     }
+
+    -- Debug: show who we're waiting for
+    local expectedList = {}
+    for key in pairs(expected) do
+        table.insert(expectedList, key)
+    end
 
     -- Mark self ready immediately (don’t whisper yourself)
     if meKey and expected[meKey] then
@@ -71,7 +210,7 @@ function Request:CheckReady(callback, onTimeout, timeoutSec)
 
     -- Whisper everyone else using the same canonical key string
     for key in pairs(expected) do
-        Comms:Send("REQ_READY", { reqId, "ping", rulesetName }, "WHISPER", key)
+        Comms:Send("REQ_READY", { reqId, "ping", rulesetName, datasetRulesetHash }, "WHISPER", key)
     end
 end
 
@@ -123,19 +262,25 @@ end
 -- Handlers
 ---------------------------------------------------
 
--- Member receives a ready check request. Here we will check if the player's active ruleset
--- matches that of the group leader's. If it does, then we will impose certain restrictions such
+-- Member receives a ready check request. Here we will check if the player's active datasets and ruleset
+-- hash matches that of the group leader's. If it does, then we will impose certain restrictions such
 -- as:
 --     * only allow equipment slots that are in the ruleset; unequip items from others.
 --     * only allow spells from specific datasets.
 --        etc...
 Comms:RegisterHandler("REQ_READY", function(data, sender)
     local args  = { strsplit(";", data) }
-    local reqId, rulesetName = args[1], args[3]
+    local reqId, _, rulesetName, leaderHash = args[1], args[2], args[3], args[4]
 
-    if RPE.ActiveRules.name == rulesetName then
+    -- Generate our own hash and compare with leader's hash
+    local myHash = GenerateDatasetRulesetHash()
+    
+    if myHash == leaderHash then
         Request:Respond(reqId, "READY", "yes", sender)
     else
+        -- Log mismatch for debugging
+        RPE.Debug:Warning(string.format("[ReadyCheck] Dataset/Ruleset mismatch with leader %s. My hash: %s, Leader hash: %s", 
+            sender, myHash or "nil", leaderHash or "nil"))
         Request:Respond(reqId, "READY", "no", sender)
     end
 end)
@@ -159,9 +304,22 @@ Comms:RegisterHandler("RESP_READY", function(data, sender)
         end
     end
 
+    -- Remove any members from expected who are no longer online/in-group
+    for key in pairs(pending.expected) do
+        if not IsOnlineGroupMember(key) then
+            pending.expected[key] = nil
+            RPE.Debug:Warning("Member " .. key .. " no longer online/in-group, removing from ready check.")
+        end
+    end
+
     -- If nobody left waiting, clear the request
     if not next(pending.expected) then
         Request._pending[reqId] = nil
+    else
+        local remainingList = {}
+        for key in pairs(pending.expected) do
+            table.insert(remainingList, key)
+        end
     end
 end)
 
@@ -191,6 +349,7 @@ Comms:RegisterHandler("SG_RESP_ROSTER", function(data, sender)
     for i = 2, #data do
         table.insert(roster, data[i])
     end
+
     RPE.Core.ActiveSupergroup:AddRosterFromLeader(leaderName, roster)
 end)
 

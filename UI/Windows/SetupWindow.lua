@@ -264,6 +264,7 @@ function SetupWindow:BuildUI()
     self.statIncrementBy = {}  -- Maps statId to the incrementBy value from the page where it was first edited
     self._pageItemSelections = {}  -- Maps pageIdx to {itemId -> {id, qty}} for per-page item tracking
     self._pageAllowances = {}  -- Maps pageIdx to spent allowance in copper for that page
+    self._pageSpareChange = {}  -- Maps pageIdx to leftover copper amount if spareChange is enabled
     self._pageSelectedProfessions = {}  -- Maps pageIdx to array of selected profession names
     self._pageProfessionLevels = {}  -- Maps pageIdx -> profName -> level
     self:LoadWizardData()
@@ -2067,6 +2068,11 @@ function SetupWindow:RenderSelectItems(headerGroup, bodyGroup, page)
     local window = self
     local Common = _G.RPE and _G.RPE.Common
     local ItemRegistry = _G.RPE and _G.RPE.Core and _G.RPE.Core.ItemRegistry
+    
+    -- NOTE: spareChange support
+    -- If page.spareChange is true, calculate leftover copper after item selection
+    -- and store in self._pageSpareChange[currentPageIdx] for use in Finish()
+    -- Example: if allowance is 1000 and items cost 700, store 300 in _pageSpareChange
     local IconButton = _G.RPE_UI and _G.RPE_UI.Elements and _G.RPE_UI.Elements.IconButton
     local DBG = _G.RPE and _G.RPE.Debug
     
@@ -2572,6 +2578,13 @@ function SetupWindow:RenderSelectItems(headerGroup, bodyGroup, page)
             parent=selectedContainer, text="(None selected)", fontTemplate="GameFontNormalSmall"
         })
         selectedContainer:Add(noneText)
+    end
+    
+    -- Calculate and store spare change if enabled for this page
+    if page.spareChange and maxAllowanceCopper ~= math.huge then
+        local spareCopper = math.max(0, maxAllowanceCopper - spentAllowanceCopper)
+        self._pageSpareChange[self.currentPageIdx] = spareCopper
+        if DBG then DBG:Internal("SetupWindow: Calculated spare change for page " .. self.currentPageIdx .. ": " .. spareCopper .. " copper") end
     end
 end
 
@@ -3431,6 +3444,20 @@ function SetupWindow:UpdatePageText()
     end
 end
 
+-- Helper function to apply spare change from SELECT_ITEMS pages
+-- Called from Finish() after processing all items for a page
+-- If page.spareChange is true, uses SetCurrency to set leftover amount
+function SetupWindow:_ApplySpareChange(pageIdx, page, profile)
+    if not (page and page.pageType == "SELECT_ITEMS" and page.spareChange) then
+        return
+    end
+    if not profile then return end
+    
+    -- Get the spare change amount calculated during item selection
+    local spareCopper = self._pageSpareChange[pageIdx] or 0
+    profile:SetCurrency("copper", spareCopper)
+end
+
 function SetupWindow:UpdateButtonStates()
     local total = #self.pages
     local current = self.currentPageIdx
@@ -3460,6 +3487,10 @@ end
 
 function SetupWindow:Finish()
     local DBG = _G.RPE and _G.RPE.Debug
+    
+    -- NOTE: spareChange integration
+    -- After processing each SELECT_ITEMS page, call self:_ApplySpareChange(pageIdx, page, profile)
+    -- to apply spare change if page.spareChange is true
     
     local ProfileDB = _G.RPE and _G.RPE.Profile.DB
     if not ProfileDB then
@@ -3647,6 +3678,11 @@ function SetupWindow:Finish()
                     end
                     if DBG then DBG:Internal("SetupWindow: Items added to inventory from page " .. pageIdx) end
                 end
+                
+                -- Apply spare change if enabled for this page
+                self:_ApplySpareChange(pageIdx, page, profile)
+                if DBG then DBG:Internal("SetupWindow: Applied spare change for SELECT_ITEMS page " .. pageIdx) end
+                
                 -- Continue to next page instead of breaking
             end
         end
@@ -3776,6 +3812,13 @@ function SetupWindow:Finish()
     -- Save profile
     ProfileDB.SaveProfile(profile)
     if DBG then DBG:Internal("SetupWindow: Profile saved") end
+    
+    -- Refresh the CharacterSheet UI to show updated currencies
+    local CharacterSheet = _G.RPE_UI and _G.RPE_UI.Windows and _G.RPE_UI.Windows.CharacterSheetInstance
+    if CharacterSheet and CharacterSheet.Refresh then
+        CharacterSheet:Refresh()
+        if DBG then DBG:Internal("SetupWindow: CharacterSheet refreshed") end
+    end
     
     -- Clear all selections after finishing
     self._spellSelectedSpells = {}

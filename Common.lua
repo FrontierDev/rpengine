@@ -14,6 +14,7 @@ Common.SocketTextures = {
 
 -- Common icons
 Common.InlineIcons = {
+    RPE = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\rpe.png:12:12|t",
     Info = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\info.png:12:12|t",
     Warning = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\warning.png:12:12|t",
     Error = "|TInterface\\AddOns\\RPEngine\\UI\\Textures\\error.png:12:12|t",
@@ -153,6 +154,162 @@ Common.RarityRank = {
     rare      = 3,
     epic      = 4,
     legendary = 5,
+}
+
+Common.Looking_For_Choices = {
+    {
+        name = "Activity",
+        choices = {
+            { id = 101, label = "Questing" },
+            { id = 102, label = "Exploration" },
+            { id = 103, label = "Combat" },
+            { id = 104, label = "RPE Crafting" },
+            { id = 105, label = "Trading" },
+            { id = 106, label = "Gathering" },
+            { id = 107, label = "Social" },
+            { id = 108, label = "Storytelling" },
+            { id = 109, label = "Adventurer" },
+            { id = 110, label = "RP-PVP" },
+        },
+    },
+    {
+        name = "Style",
+        choices = {
+            { id = 121, label = "Casual" },
+            { id = 122, label = "Serious" },
+            { id = 123, label = "Dark" },
+            { id = 124, label = "Funny" },
+            { id = 125, label = "Mysterious" },
+            { id = 126, label = "Epic" },
+            { id = 127, label = "Long-term" },
+            { id = 128, label = "Short-term" },
+            { id = 129, label = "Seasonal" }
+        },
+    },
+    {
+        name = "Group Size",
+        choices = {
+            { id = 141, label = "Solo" },
+            { id = 142, label = "Small Group (1-5)" },
+            { id = 143, label = "Large Group (5+)" },
+        },
+    },
+    {
+        name = "Class",
+        choices = {
+            { id = 161, label = "Warrior" },
+            { id = 162, label = "Paladin" },
+            { id = 163, label = "Hunter" },
+            { id = 164, label = "Rogue" },
+            { id = 165, label = "Priest" },
+            { id = 166, label = "Death Knight" },
+            { id = 167, label = "Shaman" },
+            { id = 168, label = "Mage" },
+            { id = 169, label = "Warlock" },
+            { id = 170, label = "Monk" },
+            { id = 171, label = "Druid" },
+            { id = 172, label = "Demon Hunter" },
+            { id = 173, label = "Evoker" },
+        },
+    },
+    {
+        name = "Race",
+        choices = {
+            { id = 181, label = "Human" },
+            { id = 182, label = "Orc" },
+            { id = 183, label = "Dwarf" },
+            { id = 184, label = "Night Elf" },
+            { id = 185, label = "Undead" },
+            { id = 186, label = "Tauren" },
+            { id = 187, label = "Gnome" },
+            { id = 188, label = "Troll" },
+            { id = 189, label = "Goblin" },
+            { id = 190, label = "Blood Elf" },
+            { id = 191, label = "Draenei" },
+            { id = 192, label = "Pandaren" },
+            { id = 193, label = "Nightborne" },
+            { id = 194, label = "Highmountain Tauren" },
+            { id = 195, label = "Void Elf" },
+            { id = 196, label = "Lightforged Draenei" },
+            { id = 197, label = "Zandalari Troll" },
+            { id = 198, label = "Kul Tiran" },
+            { id = 199, label = "Dark Iron Dwarf" },
+            { id = 200, label = "Vulpera" },
+            { id = 201, label = "Mag'har Orc" },
+            { id = 202, label = "Mechagnome" },
+            { id = 203, label = "Worgen" },
+            { id = 204, label = "Dracthyr" },
+        },
+    },
+}
+
+Common.I_Am_Choices = {
+    {
+        name = "Role",
+        choices = {
+            { id = 1, label = "RPE DM" },
+            { id = 2, label = "Non-RPE DM" },
+            { id = 3, label = "Party Member" },
+            { id = 4, label = "Storyteller" },
+            { id = 5, label = "NPC" },
+            { id = 6, label = "Merchant" },
+            { id = 7, label = "Craftsman" },
+            { id = 8, label = "Quest Giver" },
+            { id = 9, label = "Trainer" },
+            { id = 10, label = "Healer" },
+        },
+    },
+    {
+        name = "Permissions",
+        choices = {
+            { id = 41, label = "Attackable" },
+            { id = 45, label = "Muggable" },
+            { id = 47, label = "Killable" },
+        }
+    },
+    {
+        name = "Faction",
+        choices = {
+            { id = 11, label = "Alliance" },
+            { id = 12, label = "Horde" },
+            { id = 13, label = "Neutral" },
+            { id = 14, label = "Hostile" },
+            { id = 15, label = "Protagonist" },
+            { id = 16, label = "Antagonist" },
+        },
+    },
+    {
+        name = "Background",
+        choices = {
+            { id = 21, label = "Acolyte" },
+            { id = 22, label = "Charlatan" },
+            { id = 23, label = "Criminal" },
+            { id = 24, label = "Entertainer" },
+            { id = 25, label = "Hero" },
+            { id = 27, label = "Hermit" },
+            { id = 28, label = "Knight" },
+            { id = 29, label = "Laborer" },
+            { id = 30, label = "Merchant" },
+            { id = 31, label = "Noble" },
+            { id = 32, label = "Outlander" },
+            { id = 33, label = "Sage" },
+            { id = 34, label = "Sailor" },
+            { id = 35, label = "Soldier" },
+            { id = 36, label = "Squire" },
+            { id = 37, label = "Courtier" },
+            { id = 38, label = "Trainee" },
+            { id = 42, label = "Investigator" },
+            { id = 43, label = "Pirate" },
+            { id = 44, label = "City Watch" },
+            { id = 46, label = "Gladiator" },
+            { id = 49, label = "Commoner" },
+            { id = 50, label = "Guard" },
+            { id = 51, label = "Performer" },
+            { id = 52, label = "Adventurer" },
+            { id = 53, label = "Exiled Noble" },
+            { id = 54, label = "Wildcard" },
+        },
+    },
 }
 
 function Common:GenerateGUID(prefix)
@@ -521,6 +678,21 @@ function Common:FormatCopper(copper)
     if copperOnly > 0 or #parts == 0 then table.insert(parts, copperOnly .. "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t") end
 
     return table.concat(parts, " ")
+end
+
+--- Format a currency amount with its icon.
+---@param amount number The currency amount
+---@param iconId number The WoW texture/icon file ID
+---@return string Formatted currency string with icon
+function Common:FormatCurrency(amount, iconId)
+    amount = tonumber(amount) or 0
+    iconId = tonumber(iconId) or 0
+    
+    if iconId > 0 then
+        return amount .. "|T" .. iconId .. ":0:0:2:0|t"
+    else
+        return tostring(amount)
+    end
 end
 
 --- Get a unit's TRP3 roleplay/display name, falling back to the game name.

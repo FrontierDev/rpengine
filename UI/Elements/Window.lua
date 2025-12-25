@@ -45,13 +45,26 @@ function Window:New(name, opts)
     ---@type FrameWithBackdrop
     local f = CreateFrame("Frame", name, parentFrame, "BackdropTemplate")
     f:SetSize(opts.width or 480, opts.height or 320)
-    f:SetPoint(
-        opts.point or "CENTER",
-        opts.relativeTo or parentFrame,
-        opts.pointRelative or opts.relativePoint or "CENTER",
-        opts.x or 0,
-        opts.y or 0
-    )
+    
+    -- Try to restore saved position from character profile
+    local ProfileDB = RPE and RPE.Profile and RPE.Profile.DB
+    local savedPos = nil
+    if ProfileDB and ProfileDB.GetOrCreateActive then
+        local profile = ProfileDB.GetOrCreateActive()
+        savedPos = profile and profile.windowPositions and profile.windowPositions[name]
+    end
+    
+    if savedPos and savedPos.point then
+        f:SetPoint(savedPos.point, parentFrame, savedPos.relativePoint or "CENTER", savedPos.x or 0, savedPos.y or 0)
+    else
+        f:SetPoint(
+            opts.point or "CENTER",
+            opts.relativeTo or parentFrame,
+            opts.pointRelative or opts.relativePoint or "CENTER",
+            opts.x or 0,
+            opts.y or 0
+        )
+    end
     
     -- Visuals: plain background (no border/title)
     if not opts.noBackground then
@@ -67,7 +80,28 @@ function Window:New(name, opts)
     f:SetMovable(true)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving)
-    f:SetScript("OnDragStop",  f.StopMovingOrSizing)
+    f:SetScript("OnDragStop", function(frame)
+        frame:StopMovingOrSizing()
+        -- Save window position to character profile
+        local ProfileDB = RPE and RPE.Profile and RPE.Profile.DB
+        if ProfileDB and ProfileDB.GetOrCreateActive and ProfileDB.SaveProfile then
+            local profile = ProfileDB.GetOrCreateActive()
+            if profile then
+                profile.windowPositions = profile.windowPositions or {}
+                local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint()
+                if point then
+                    profile.windowPositions[name] = {
+                        point = point,
+                        relativePoint = relativePoint,
+                        x = xOfs,
+                        y = yOfs
+                    }
+                    -- Save the profile immediately
+                    ProfileDB.SaveProfile(profile)
+                end
+            end
+        end
+    end)
     if opts.clampToScreen ~= false then f:SetClampedToScreen(true) end
 
     ---@type Window

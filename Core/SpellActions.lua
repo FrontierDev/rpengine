@@ -177,7 +177,7 @@ function Actions:Run(key, ctx, cast, targets, args)
 
     if not fn then
         if RPE.Debug and RPE.Debug.Warn then
-            RPE.Debug:Warn("Unknown action: " .. tostring(key))
+            RPE.Debug:Warning("Unknown action: " .. tostring(key))
         end
         return
     end
@@ -842,6 +842,23 @@ Actions:Register("APPLY_AURA", function(ctx, cast, targets, args)
         -- keep caster profile for $stat.*$ resolution on ticks
         if profile ~= nil then snap.profile = profile end
 
+        -- Calculate final amount including rank scaling for snapshot
+        local rank = tonumber(cast and cast.def and cast.def.rank) or 1
+        if snap and snap.amount then
+            local auraReg = RPE.Core.AuraRegistry:Get(auraId)
+            if auraReg and auraReg.modifiers then
+                for _, mod in ipairs(auraReg.modifiers) do
+                    if mod.value == "$amount$" and mod.perRank then
+                        local baseAmount = tonumber(snap.amount) or 0
+                        local perRank = tonumber(mod.perRank) or 0
+                        snap.amount = baseAmount + (perRank * (rank - 1))
+                        snap._amountIncludesRank = true  -- flag to skip perRank in _computeInstanceMods
+                        break
+                    end
+                end
+            end
+        end
+
         local ok, res = mgr:Apply(
             cast and cast.caster or ctx.caster,
             tgt,
@@ -850,9 +867,10 @@ Actions:Register("APPLY_AURA", function(ctx, cast, targets, args)
                 stacks          = tonumber(args.stacks) or 1,
                 charges         = args.charges,
                 rngSeed         = args.rngSeed,
-                snapshot        = snap,               -- 👈 includes amount (string or number)
+                snapshot        = snap,
                 stackingPolicy  = args.stackingPolicy,
                 uniqueByCaster  = args.uniqueByCaster,
+                rank            = rank,
             }
         )
 

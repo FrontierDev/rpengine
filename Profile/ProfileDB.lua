@@ -152,6 +152,12 @@ function ProfileDB.GetOrCreateActive()
 
     local profile = ProfileDB.GetOrCreateByName(profName)
     _activeInstance = profile  -- Cache it for session
+    
+    -- Re-apply equipped item mods now that profile is fully set up as active
+    if profile and profile._ReapplyEquipMods then
+        profile:_ReapplyEquipMods()
+    end
+    
     return profile
 end
 
@@ -321,7 +327,7 @@ function ProfileDB.InitializeUI()
 
     -- Create the action bar widget and hide it.
     local ABW = RPE.Core.Windows.ActionBarWidget or RPE_UI.Windows.ActionBarWidget.New({
-        numSlots = RPE.ActiveRules:Get("action_bar_slots") or 12,
+        numSlots = RPE.ActiveRules:Get("action_bar_slots") or 5,
         slotSize = 32,
         spacing  = 4,
         point = "BOTTOM", rel = "BOTTOM", y = 60,

@@ -4,7 +4,7 @@
 RPE      = RPE or {}
 RPE.Core = RPE.Core or {}
 
----@alias ItemCategory "CONSUMABLE"|"EQUIPMENT"|"MATERIAL"|"QUEST"|"MISC"
+---@alias ItemCategory "CONSUMABLE"|"EQUIPMENT"|"MATERIAL"|"QUEST"|"MISC"|"MODIFICATION"
 
 ---@class Item
 ---@field id string
@@ -90,6 +90,8 @@ function Item:New(id, name, category, opts)
         vendorSellable  = opts.vendorSellable and true or false,
         priceOverrideC  = tonumber(opts.priceOverrideC) or 0,
         tags            = type(opts.tags) == "table" and opts.tags or {},
+        spellId = (opts.spellId and opts.spellId ~= "") and opts.spellId or nil,  -- spell to cast when consumed (string or number)
+        spellRank = tonumber(opts.spellRank) or nil,  -- rank of spell to cast
     }
 
     -- ID
@@ -254,6 +256,8 @@ function Item:Serialize()
         vendorSellable  = self.vendorSellable,
         priceOverrideC  = self.priceOverrideC,
         tags            = self.tags and deepcopy(self.tags) or nil,
+        spellId = self.spellId,
+        spellRank = self.spellRank,
     }
 end
 
@@ -275,6 +279,8 @@ function Item.FromTable(t)
             vendorSellable  = t.vendorSellable,
             priceOverrideC  = t.priceOverrideC,
             tags            = t.tags,
+            spellId = t.spellId,
+            spellRank = t.spellRank,
         }
     )
 end
@@ -314,8 +320,9 @@ function Item:GetPrice()
     return math.floor(price)
 end
 
-function Item:ShowTooltip()
+function Item:ShowTooltip(instanceGuid)
     -- Build a tooltip spec the renderer can consume.
+    -- instanceGuid: optional instance GUID for this item (used for retrieving instance-specific modifications)
     local spec = {
         title = Common and Common.ColorByQuality and Common:ColorByQuality(self.name or "Item", self.rarity) or (self.name or "Item"),
         lines = {}
@@ -323,11 +330,228 @@ function Item:ShowTooltip()
 
     local lines = spec.lines
 
+    -- For MODIFICATION items, show socket type (for gems), stats, and description
+    if self.category == "MODIFICATION" then
+        -- Check if this is a gem by looking for the "gem" tag
+        local isGem = false
+        if self.tags then
+            for _, tag in ipairs(self.tags) do
+                if tag == "gem" then
+                    isGem = true
+                    break
+                end
+            end
+        end
+        
+        -- For gems, show socket type in grey text (like spell ranks)
+        if isGem and self.data and self.data.socket_type then
+            local socketType = self.data.socket_type
+            
+            -- Split by comma and title case each part
+            local parts = {}
+            for part in socketType:gmatch("[^,]+") do
+                local trimmed = part:match("^%s*(.-)%s*$")  -- trim whitespace
+                if trimmed ~= "" then
+                    -- Title case: capitalize first letter, lowercase the rest
+                    local titleCased = trimmed:sub(1, 1):upper() .. trimmed:sub(2):lower()
+                    table.insert(parts, titleCased)
+                end
+            end
+            
+            if #parts > 0 then
+                local formatted = table.concat(parts, "/")
+                table.insert(lines, {
+                    text = formatted .. " Gem",
+                    r = 0.7, g = 0.7, b = 0.7,  -- grey, like spell ranks
+                    wrap = false
+                })
+            end
+        end
+
+        -- Show stats from the modification (only for gems)
+        if isGem then
+            local statLines = {}
+            for k, v in pairs(self.data or {}) do
+                if type(k) == "string" and k:match("^stat_") then
+                    local statId = k:gsub("^stat_", "")
+                    local stat = RPE.Stats and RPE.Stats.Get and RPE.Stats:Get(statId)
+                    if stat then
+                        local formatted = stat.FormatForItemTooltip and stat:FormatForItemTooltip(v)
+                        if formatted and formatted ~= "" then
+                            -- Support $value_pct$ token: convert decimal to percentage (0.1 → +10%)
+                            formatted = formatted:gsub("%$value_pct%$", function()
+                                local pctValue = tonumber(v)
+                                if pctValue then
+                                    return string.format("%+.0f%%", pctValue * 100)
+                                end
+                                return "$value_pct$"
+                            end)
+                            
+                            local r, g, b, a = 1, 1, 1, 1
+                            if stat.GetItemTooltipColor then
+                                local R, G, B, A = stat:GetItemTooltipColor()
+                                r = R or r; g = G or g; b = B or b; a = A or a
+                            end
+
+                            local priority = stat.itemTooltipPriority or 0
+
+                            -- Allowed stats are determined by presence in the StatRegistry
+                            local allowed = false
+                            local reg = RPE.Core and RPE.Core.StatRegistry
+                            if reg and reg.Get then
+                                local s = reg:Get(statId)
+                                if s ~= nil then allowed = true end
+                            end
+
+                            if not allowed then
+                                r, g, b, a = 0.5, 0.5, 0.5, 1
+                                priority = priority * 0.5
+                            end
+
+                            table.insert(statLines, { priority = priority, text = formatted, r = r, g = g, b = b, a = a })
+                        end
+                    end
+                end
+            end
+
+            -- Sort by priority (higher first)
+            table.sort(statLines, function(a, b) return (a.priority or 0) > (b.priority or 0) end)
+            for _, s in ipairs(statLines) do
+                table.insert(lines, { text = s.text, r = s.r, g = s.g, b = s.b, wrap = false })
+            end
+        end
+
+        -- Description for modifications (green text for enchants/other mods)
+        if self.description and self.description ~= "" then
+            table.insert(lines, { text = self.description, r = 0, g = 1, b = 0, wrap = true })
+            table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
+        end
+
+        table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
+        if isGem and self.spellId then
+            local SpellReg = RPE and RPE.Core and RPE.Core.SpellRegistry
+            if SpellReg and SpellReg.Get then
+                local spell = SpellReg:Get(self.spellId)
+                if spell and spell.description then
+                    -- Set rank override from item's spellRank
+                    spell.rankOverride = self.spellRank or 1
+                    local renderedDesc = spell:RenderDescription()
+                    spell.rankOverride = nil
+                    
+                    -- Build cost string like "Use (1 bonus action, 5 mana): "
+                    local costParts = {}
+                    if spell.costs and #spell.costs > 0 then
+                        -- Format resource costs (ACTION, BONUS_ACTION, REACTION, and custom resources)
+                        local function formatResourceName(res)
+                            local formatted = tostring(res):upper():gsub("_", " ")
+                            formatted = formatted:gsub("(%S)(%S*)", function(first, rest)
+                                return first:upper() .. rest:lower()
+                            end)
+                            return formatted
+                        end
+                        
+                        local actionOnly = { ACTION = true, BONUS_ACTION = true, REACTION = true }
+                        
+                        for _, c in ipairs(spell.costs) do
+                            local resId = string.upper(c.resource or "")
+                            local formatted = formatResourceName(c.resource or "")
+                            
+                            -- For action economy resources, omit the amount; for others, include it
+                            local text
+                            if actionOnly[resId] then
+                                text = formatted
+                            else
+                                text = tostring(c.amount or 0) .. " " .. formatted
+                            end
+                            table.insert(costParts, text)
+                        end
+                    end
+                    
+                    local usePrefix = "Use"
+                    if #costParts > 0 then
+                        usePrefix = usePrefix .. " (" .. table.concat(costParts, ", ") .. ")"
+                    end
+                    usePrefix = usePrefix .. ": "
+                    
+                    local spellText = usePrefix .. renderedDesc
+                    
+                    -- Append cooldown info if spell has one
+                    if spell.cooldown and spell.cooldown.turns and tonumber(spell.cooldown.turns) > 0 then
+                        local t = tonumber(spell.cooldown.turns) or 0
+                        local cdText = (" (%d turn%s cooldown)"):format(t, (t == 1 and "" or "s"))
+                        spellText = spellText .. cdText
+                    end
+                    
+                    table.insert(lines, { text = spellText, r = 0.2, g = 1, b = 0.2, wrap = true })
+                    table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
+                end
+            end
+        end
+        
+        local priceC = self:GetPrice()
+        if priceC and priceC > 0 then
+            local formatted = Common and Common.FormatCopper and Common:FormatCopper(priceC) or (tostring(priceC) .. "c")
+            table.insert(lines, { text = "Market Price: " .. formatted, r = 1, g = 1, b = 1, wrap = false })
+        end
+        
+        return spec
+    end
+
     if self.itemLevel and RPE.ActiveRules:Get("show_item_level") == 1 and self.category == "EQUIPMENT" then
-        local itemLevel = "Item Level "..tostring(self.itemLevel)
-        table.insert(lines, { text = itemLevel, r = 1, g = 1, b = 0, wrap = false })
+        local baseItemLevel = self.itemLevel
+        local effectiveItemLevel = baseItemLevel
+        
+        -- Calculate effective item level based on total stats (base + mods)
+        local ItemMod = RPE.Core and RPE.Core.ItemModification
+        local ItemLevelCalc = RPE.Core and RPE.Core.ItemLevel
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+        
+        if ItemMod and ItemLevelCalc and profile and instanceGuid then
+            local modBonuses = ItemMod:GetTotalModificationBonuses(profile, instanceGuid) or {}
+            
+            -- Check if there are any mod bonuses
+            local hasModBonuses = false
+            for _, _ in pairs(modBonuses) do
+                hasModBonuses = true
+                break
+            end
+            
+            if hasModBonuses then
+                -- Build a combined stat table for item level calculation
+                local combinedStats = {}
+                
+                -- Add base stats
+                for k, v in pairs(self.data or {}) do
+                    if type(k) == "string" and k:match("^stat_") then
+                        combinedStats[k] = (combinedStats[k] or 0) + (tonumber(v) or 0)
+                    end
+                end
+                
+                -- Add mod bonuses
+                for statId, bonus in pairs(modBonuses) do
+                    local key = "stat_" .. statId
+                    combinedStats[key] = (combinedStats[key] or 0) + (tonumber(bonus) or 0)
+                end
+                
+                -- Calculate effective item level
+                local tempItem = { data = combinedStats, rarity = self.rarity }
+                effectiveItemLevel = ItemLevelCalc:FromItem(tempItem) or baseItemLevel
+            end
+        end
+        
+        local itemLevelText
+        if effectiveItemLevel ~= baseItemLevel then
+            itemLevelText = "Item Level " .. tostring(baseItemLevel) .. " (" .. tostring(effectiveItemLevel) .. ")"
+        else
+            itemLevelText = "Item Level " .. tostring(baseItemLevel)
+        end
+        table.insert(lines, { text = itemLevelText, r = 1, g = 1, b = 0, wrap = false })
     elseif self.category == "MATERIAL" then
-        table.insert(lines, { text = "Crafting Reagent", r = 0, g = 0.66, b = 0.66, wrap = false })
+        if RPE.ActiveRules:Get("show_reagent_tiers") == 1 and self.data.tier then
+            table.insert(lines, { text = "Tier " .. self.data.tier ..  " Crafting Material", r = 0, g = 0.66, b = 0.66, wrap = false })
+        else
+            table.insert(lines, { text = "Crafting Reagent", r = 0, g = 0.66, b = 0.66, wrap = false })
+        end
     elseif self.category == "QUEST" then
         table.insert(lines, { text = "Quest Item", r = 1, g = 1, b = 1, wrap = false })
     end
@@ -349,16 +573,42 @@ function Item:ShowTooltip()
 
     -- ==== Stats ====
     local statLines = {}
+    
+    -- Get modification bonuses if available
+    local modBonuses = {}
+    if self.category == "EQUIPMENT" then
+        local ItemMod = RPE.Core and RPE.Core.ItemModification
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+        if ItemMod and profile and instanceGuid then
+            modBonuses = ItemMod:GetTotalModificationBonuses(profile, instanceGuid) or {}
+        end
+    end
+    
+    -- Collect all stat IDs from both base item and modifications
+    local allStatIds = {}
     for k, v in pairs(self.data or {}) do
         if type(k) == "string" and k:match("^stat_") then
             local statId = k:gsub("^stat_", "")
+            allStatIds[statId] = true
+        end
+    end
+    for statId, _ in pairs(modBonuses) do
+        allStatIds[statId] = true
+    end
+    
+    for statId, _ in pairs(allStatIds) do
+        local baseValue = tonumber(self.data["stat_" .. statId]) or 0
+        local modValue = tonumber(modBonuses[statId]) or 0
+        local totalValue = baseValue + modValue
+        
+        if totalValue ~= 0 then
             local stat = RPE.Stats and RPE.Stats.Get and RPE.Stats:Get(statId)
             if stat then
-                local formatted = stat.FormatForItemTooltip and stat:FormatForItemTooltip(v)
+                local formatted = stat.FormatForItemTooltip and stat:FormatForItemTooltip(totalValue)
                 if formatted and formatted ~= "" then
                     -- Support $value_pct$ token: convert decimal to percentage (0.1 → +10%)
                     formatted = formatted:gsub("%$value_pct%$", function()
-                        local pctValue = tonumber(v)
+                        local pctValue = tonumber(totalValue)
                         if pctValue then
                             return string.format("%+.0f%%", pctValue * 100)
                         end
@@ -398,28 +648,235 @@ function Item:ShowTooltip()
         table.insert(lines, { text = s.text, r = s.r, g = s.g, b = s.b, wrap = false })
     end
 
-    -- Spacer --
-    table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
-
-    -- ==== Sockets ====
+    -- ==== Sockets (with Applied Gems) ====
+    local displayedGemIds = {}  -- Track which gems we display in sockets
     if self.data then
+        local ItemMod = RPE.Core and RPE.Core.ItemModification
+        local ItemReg = RPE.Core and RPE.Core.ItemRegistry
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+        
+        -- Build a map of applied gems by socket type
+        local appliedGemsBySocket = {}
+        if ItemMod and profile then
+            -- Use instanceGuid if provided, otherwise fall back to self.id
+            local lookupId = instanceGuid or self.id
+            local applied = ItemMod:GetAppliedModifications(profile, lookupId)
+            for _, mod in ipairs(applied) do
+                -- Look up the full item data from the registry using itemId
+                local fullMod = ItemReg and ItemReg:Get(mod.itemId)
+                if not fullMod then fullMod = mod end  -- fallback to the mod object itself
+                
+                -- Check if this is a gem
+                local isGem = false
+                if fullMod.tags then
+                    for _, tag in ipairs(fullMod.tags) do
+                        if tag == "gem" then
+                            isGem = true
+                            break
+                        end
+                    end
+                end
+                
+                if isGem and fullMod.data and fullMod.data.socket_type then
+                    -- Parse socket types and map each to the gem
+                    for socketType in fullMod.data.socket_type:gmatch("[^,]+") do
+                        local trimmed = socketType:match("^%s*(.-)%s*$"):lower()
+                        if trimmed ~= "" then
+                            appliedGemsBySocket[trimmed] = fullMod
+                        end
+                    end
+                end
+            end
+        end
+        
         local socketTypes = {
-            { key = "red_sockets",    icon = Common.InlineIcons.Socket_Red,    label = "Red Socket" },
-            { key = "blue_sockets",   icon = Common.InlineIcons.Socket_Blue,   label = "Blue Socket" },
-            { key = "yellow_sockets", icon = Common.InlineIcons.Socket_Yellow, label = "Yellow Socket" },
-            { key = "meta_sockets",   icon = Common.InlineIcons.Socket_Meta,   label = "Meta Socket" },
-            { key = "cog_sockets",    icon = Common.InlineIcons.Socket_Cog,    label = "Cogwheel Socket" },
+            { key = "red_sockets",    icon = Common.InlineIcons.Socket_Red,    label = "Red Socket",      socketName = "red" },
+            { key = "blue_sockets",   icon = Common.InlineIcons.Socket_Blue,   label = "Blue Socket",     socketName = "blue" },
+            { key = "yellow_sockets", icon = Common.InlineIcons.Socket_Yellow, label = "Yellow Socket",   socketName = "yellow" },
+            { key = "meta_sockets",   icon = Common.InlineIcons.Socket_Meta,   label = "Meta Socket",     socketName = "meta" },
+            { key = "cog_sockets",    icon = Common.InlineIcons.Socket_Cog,    label = "Cogwheel Socket", socketName = "cogwheel" },
         }
 
+        local shownGemsInThisLoop = {}  -- Track gems we've already shown in this socket loop
+        local socketSectionStarted = false  -- Track if we've added a spacer for sockets
         for _, st in ipairs(socketTypes) do
             local count = tonumber(self.data[st.key]) or 0
-            for i = 1, count do
+            local socketName = st.socketName
+            local gemInSocket = appliedGemsBySocket[socketName]
+            
+            -- Only add spacer before the first socket section
+            if (count > 0 or gemInSocket) and not socketSectionStarted then
+                table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
+                socketSectionStarted = true
+            end
+            
+            -- Display the gem if one is applied (and we haven't shown it yet)
+            if gemInSocket and not shownGemsInThisLoop[gemInSocket.id or gemInSocket.name] then
+                local gemIcon = (type(gemInSocket.icon) == "number") and ("|T" .. gemInSocket.icon .. ":0:0:2:0|t") or tostring(gemInSocket.icon or "")
+                local gemDisplay = Common and Common.ColorByQuality and Common:ColorByQuality(gemInSocket.name, gemInSocket.rarity) or gemInSocket.name
+                table.insert(lines, {
+                    text = gemIcon .. " " .. gemDisplay,
+                    r = 1, g = 1, b = 1, wrap = false
+                })
+                -- Track this gem as shown in both tracking systems
+                shownGemsInThisLoop[gemInSocket.id or gemInSocket.name] = true
+                displayedGemIds[gemInSocket.name] = true
+                if gemInSocket.id then displayedGemIds[gemInSocket.id] = true end
+            end
+            
+            -- Display empty sockets (only those not filled by a gem that we showed)
+            local gemShownForThisSocket = gemInSocket and not not shownGemsInThisLoop[gemInSocket.id or gemInSocket.name]
+            local startIndex = gemShownForThisSocket and 2 or 1
+            for i = startIndex, count do
                 table.insert(lines, {
                     text = st.icon .. " " .. st.label,
                     r = 1, g = 1, b = 1, wrap = false
                 })
             end
         end
+    end
+
+    -- Store displayedGemIds in the object so we can access it later
+    self._displayedGemIds = displayedGemIds
+
+    -- ==== Applied Modifications (non-gem) ====
+    -- Show non-gem modifications (enchants, etc.) grouped by primary tag
+    if self.category == "EQUIPMENT" then
+        local ItemMod = RPE.Core and RPE.Core.ItemModification
+        local ItemReg = RPE.Core and RPE.Core.ItemRegistry
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+        
+        if ItemMod and profile then
+            -- Use instanceGuid if provided, otherwise fall back to self.id
+            local lookupId = instanceGuid or self.id
+            local applied = ItemMod:GetAppliedModifications(profile, lookupId)
+            local displayedGemIds = self._displayedGemIds or {}
+            
+            -- Group non-gem modifications by their primary tag
+            local modsByTag = {}
+            local tagOrder = {}  -- to preserve insertion order
+            
+            for _, mod in ipairs(applied) do
+                -- Look up the full item data from the registry using itemId
+                local fullMod = ItemReg and ItemReg:Get(mod.itemId)
+                if not fullMod then fullMod = mod end  -- fallback to the mod object itself
+                
+                -- Skip if we already displayed this gem in the sockets section
+                if displayedGemIds[fullMod.name] or displayedGemIds[fullMod.id] then
+                    -- Skip this gem, it was already displayed in sockets
+                else
+                    local isGem = false
+                    if fullMod.tags then
+                        for _, tag in ipairs(fullMod.tags) do
+                            if tag == "gem" then
+                                isGem = true
+                                break
+                            end
+                        end
+                    end
+                    
+                    if not isGem then
+                        -- Get primary tag (first tag, or "other" if no tags)
+                        local primaryTag = (fullMod.tags and fullMod.tags[1]) or "other"
+                        
+                        if not modsByTag[primaryTag] then
+                            modsByTag[primaryTag] = {}
+                            table.insert(tagOrder, primaryTag)
+                        end
+                        table.insert(modsByTag[primaryTag], fullMod)
+                    end
+                end
+            end
+            
+            -- Display mods grouped by tag with spacing between groups
+            for i, tag in ipairs(tagOrder) do
+                local mods = modsByTag[tag]
+                if #mods > 0 then
+                    -- Add spacer before this group
+                    table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
+                    
+                    for _, mod in ipairs(mods) do
+                        -- Show modification icon and name with rarity coloring
+                        local modIcon = (type(mod.icon) == "number") and ("|T" .. mod.icon .. ":0:0:2:0|t") or tostring(mod.icon or "")
+                        local modDisplay = Common and Common.ColorByQuality and Common:ColorByQuality(mod.name, mod.rarity) or mod.name
+                        table.insert(lines, { text = modIcon .. " " .. modDisplay, r = 1, g = 1, b = 1, wrap = true })
+                    end
+                end
+            end
+            
+            -- Add trailing spacer if we displayed any mods
+            if #tagOrder > 0 then
+                table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
+            end
+        end
+    end
+
+    -- ==== Consumable Spell ====
+    if self.spellId then
+        local SpellReg = RPE and RPE.Core and RPE.Core.SpellRegistry
+        if SpellReg and SpellReg.Get then
+            local spell = SpellReg:Get(self.spellId)
+            if spell and spell.description then
+                -- Set rank override from item's spellRank
+                spell.rankOverride = self.spellRank or 1
+                local renderedDesc = spell:RenderDescription()
+                spell.rankOverride = nil
+                
+                -- Build cost string like "Use (1 bonus action, 5 mana): "
+                local costParts = {}
+                if spell.costs and #spell.costs > 0 then
+                    -- Format resource costs (ACTION, BONUS_ACTION, REACTION, and custom resources)
+                    local function formatResourceName(res)
+                        local formatted = tostring(res):upper():gsub("_", " ")
+                        formatted = formatted:gsub("(%S)(%S*)", function(first, rest)
+                            return first:upper() .. rest:lower()
+                        end)
+                        return formatted
+                    end
+                    
+                    local actionOnly = { ACTION = true, BONUS_ACTION = true, REACTION = true }
+                    
+                    for _, c in ipairs(spell.costs) do
+                        local resId = string.upper(c.resource or "")
+                        local formatted = formatResourceName(c.resource or "")
+                        
+                        -- For action economy resources, omit the amount; for others, include it
+                        local text
+                        if actionOnly[resId] then
+                            text = formatted
+                        else
+                            text = tostring(c.amount or 0) .. " " .. formatted
+                        end
+                        table.insert(costParts, text)
+                    end
+                end
+                
+                local usePrefix = "Use"
+                if #costParts > 0 then
+                    usePrefix = usePrefix .. " (" .. table.concat(costParts, ", ") .. ")"
+                end
+                usePrefix = usePrefix .. ": "
+                
+                local spellText = usePrefix .. renderedDesc
+                
+                -- Append cooldown info if spell has one
+                if spell.cooldown and spell.cooldown.turns and tonumber(spell.cooldown.turns) > 0 then
+                    local t = tonumber(spell.cooldown.turns) or 0
+                    local cdText = (" (%d turn%s cooldown)"):format(t, (t == 1 and "" or "s"))
+                    spellText = spellText .. cdText
+                end
+                
+                table.insert(lines, { text = spellText, r = 0.2, g = 1, b = 0.2, wrap = true })
+                table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
+            end
+        end
+    end
+
+    -- ==== Description ====
+    if self.description and self.description ~= "" then
+        local descColor = self.category == "MODIFICATION" and { r = 0, g = 1, b = 0 } or { r = 1, g = 1, b = 0 }
+        table.insert(lines, { text = self.description, r = descColor.r, g = descColor.g, b = descColor.b, wrap = true })
+        table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
     end
 
     -- ==== Economy ====

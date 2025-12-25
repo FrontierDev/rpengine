@@ -859,15 +859,6 @@ function SpellCast:Start(ctx, currentTurn)
     else
         self.remainingTurns = 0
     end
-    
-    if RPE.Debug and RPE.Debug.Print and ct.type ~= "INSTANT" then
-        RPE.Debug:Internal(('[SpellCast:Start] castType=%s, turns=%s, remainingTurns=%d, startedTurn=%d'):format(
-            ct.type or "nil",
-            tostring(ct.turns),
-            self.remainingTurns,
-            self.startedTurn
-        ))
-    end
 
     local cd = self.def.cooldown
     if cd and ctx.cooldowns and cd.starts == "onStart" then
@@ -930,21 +921,10 @@ function SpellCast:Tick(ctx, currentTurn)
 
     -- Decrement remainingTurns only once per turn (not once per tick when there are multiple ticks per turn)
     local shouldDecrement = not self.lastDecrementTurn or self.lastDecrementTurn < currentTurn
-    if RPE.Debug and RPE.Debug.Print then
-        RPE.Debug:Internal(('[SpellCast:Tick] Turn=%d, lastDecrementTurn=%s, shouldDecrement=%s, remainingTurns=%d'):format(
-            currentTurn, 
-            tostring(self.lastDecrementTurn or "nil"), 
-            tostring(shouldDecrement),
-            self.remainingTurns or 0
-        ))
-    end
     if shouldDecrement then
         self.remainingTurns = math.max(0, (self.remainingTurns or 0) - 1)
         self.lastDecrementTurn = currentTurn
-        if RPE.Debug and RPE.Debug.Print then
-            RPE.Debug:Internal(('[SpellCast:Tick] Decremented remainingTurns to %d'):format(self.remainingTurns))
-        end
-        
+
         -- Broadcast updated cast progress to group
         local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
         if Broadcast then
@@ -1021,10 +1001,6 @@ function SpellCast:Resolve(ctx, currentTurn)
         local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
         if Broadcast and Broadcast.Unhide then
             Broadcast:Unhide(self.caster)
-        end
-        
-        if RPE and RPE.Debug and RPE.Debug.Print then
-            RPE.Debug:Internal(('[SpellCast:Resolve] Unhiding caster (unitId=%d) after spell cast'):format(self.caster))
         end
     end
 

@@ -18,6 +18,7 @@ local Resources = RPE.Core.Resources
 ---@field localPlayerKey string|nil
 ---@field teamNames table[]
 ---@field _activeCasts table<integer, SpellCast>  -- caster unit ID -> active SpellCast object
+---@field isIntermission boolean|nil              -- true if currently in intermission
 local Event = {}
 Event.__index = Event
 RPE.Core.Event = Event
@@ -78,11 +79,35 @@ end
 
 -- Recompute tick buckets without advancing the turn; keep current tickIndex valid.
 function Event:RebuildTicks()
+    local turnOrderType = self.turnOrderType or "INITIATIVE"
+    
+    if turnOrderType == "INITIATIVE" then
+        self:RebuildInitiativeTicks()
+    elseif turnOrderType == "PHASE" then
+        self:RebuildPhaseTicks()
+    elseif turnOrderType == "BALANCED" then
+        self:RebuildBalancedTicks()
+    elseif turnOrderType == "NON-COMBAT" then
+        self:RebuildNonCombatTicks()
+    else
+        -- Default to initiative if unknown type
+        self:RebuildInitiativeTicks()
+    end
+    
+    if not self.tickIndex or self.tickIndex < 1 then self.tickIndex = 1 end
+    if self.tickIndex > #self.ticks then self.tickIndex = #self.ticks end
+end
+
+function Event:RebuildInitiativeTicks()
     local maxTickUnits = (RPE.ActiveRules and RPE.ActiveRules.rules.max_tick_units) or 5
 
-    -- collect + sort by initiative (desc)
+    -- collect + sort by initiative (desc), filtering for active units only
     local list = {}
-    for _, u in pairs(self.units or {}) do list[#list+1] = u end
+    for _, u in pairs(self.units or {}) do
+        if u.active then
+            list[#list+1] = u
+        end
+    end
     table.sort(list, function(a,b) return (a.initiative or 0) > (b.initiative or 0) end)
 
     -- re-bucket
@@ -97,8 +122,114 @@ function Event:RebuildTicks()
     if #grp > 0 then ticks[#ticks+1] = grp end
 
     self.ticks = ticks
-    if not self.tickIndex or self.tickIndex < 1 then self.tickIndex = 1 end
-    if self.tickIndex > #self.ticks then self.tickIndex = #self.ticks end
+end
+
+function Event:RebuildPhaseTicks()
+    local teamGroups = {}
+    
+    -- Group active units by team
+    for _, u in pairs(self.units or {}) do
+        if u.active then
+            local team = u.team or "default"
+            if not teamGroups[team] then
+                teamGroups[team] = {}
+            end
+            table.insert(teamGroups[team], u)
+        end
+    end
+    
+    -- Convert to ticks (one per team)
+    local ticks = {}
+    for _, teamUnits in pairs(teamGroups) do
+        table.insert(ticks, teamUnits)
+    end
+    
+    self.ticks = ticks
+end
+
+function Event:RebuildBalancedTicks()
+    local maxTickUnits = (RPE.ActiveRules and RPE.ActiveRules.rules.max_tick_units) or 5
+
+    -- Group active units by team and sort by initiative (desc)
+    local teamGroups = {}
+    for _, u in pairs(self.units or {}) do
+        if u.active then
+            local team = u.team or "default"
+            if not teamGroups[team] then
+                teamGroups[team] = {}
+            end
+            table.insert(teamGroups[team], u)
+        end
+    end
+    
+    -- Sort each team's units by initiative (descending)
+    for team, units in pairs(teamGroups) do
+        table.sort(units, function(a, b)
+            return (a.initiative or 0) > (b.initiative or 0)
+        end)
+    end
+    
+    -- Track the current index for each team
+    local teamIndices = {}
+    for team, _ in pairs(teamGroups) do
+        teamIndices[team] = 1
+    end
+    
+    -- Build ticks by pulling maxTickUnits from each team per tick
+    local ticks = {}
+    local hasUnitsLeft = true
+    
+    while hasUnitsLeft do
+        local tick = {}
+        hasUnitsLeft = false
+        
+        -- For each team, add up to maxTickUnits to this tick
+        for team, units in pairs(teamGroups) do
+            local idx = teamIndices[team]
+            for i = 1, maxTickUnits do
+                local unitIdx = idx + i - 1
+                if unitIdx <= #units then
+                    table.insert(tick, units[unitIdx])
+                    hasUnitsLeft = true
+                end
+            end
+            teamIndices[team] = idx + maxTickUnits
+        end
+        
+        if #tick > 0 then
+            table.insert(ticks, tick)
+        end
+    end
+    
+    self.ticks = ticks
+end
+
+function Event:RebuildNonCombatTicks()
+    local maxTickUnits = (RPE.ActiveRules and RPE.ActiveRules.rules.max_tick_units) or 5
+
+    -- Collect only active NPCs (exclude all players)
+    local list = {}
+    for _, u in pairs(self.units or {}) do
+        if u.active and u.isNPC then
+            list[#list+1] = u
+        end
+    end
+    
+    -- Sort by initiative (descending)
+    table.sort(list, function(a,b) return (a.initiative or 0) > (b.initiative or 0) end)
+
+    -- Bucket into ticks
+    local ticks, grp = {}, {}
+    for _, u in ipairs(list) do
+        grp[#grp+1] = u
+        if #grp >= maxTickUnits then
+            ticks[#ticks+1] = grp
+            grp = {}
+        end
+    end
+    if #grp > 0 then ticks[#ticks+1] = grp end
+
+    self.ticks = ticks
 end
 
 function Event:IsRunning()
@@ -438,6 +569,7 @@ function Event:OnAwake(opts)
     self.name = (opts and opts.name) or "<opts.name> missing"
     self.subtext = (opts and opts.subtext) or ""
     self.difficulty = (opts and opts.difficulty) or "NORMAL"
+    self.turnOrderType = (opts and opts.turnOrderType) or "INITIATIVE"
     self.localPlayerKey = getLocalPlayerKey()
     self.readyResponses = {}
     self.teamNames = opts.teamNames or {
@@ -487,9 +619,9 @@ function Event:OnPlayerReadyResponse(sender, answer)
     if answer == "yes" then
         self.readyResponses[key] = true
         if u then
-            RPE.Debug:Print(string.format("   - %s [Team %d | ID #%d] is ready.", sender, u.team, u.id))
+            RPE.Debug:Internal(string.format("   - %s [Team %d | ID #%d] is ready.", sender, u.team, u.id))
         else
-            RPE.Debug:Print(string.format("   - %s is ready.", sender))
+            RPE.Debug:Internal(string.format("   - %s is ready.", sender))
         end
     elseif answer == "no" then
         self.readyResponses[key] = false
@@ -504,10 +636,50 @@ function Event:OnPlayerReadyResponse(sender, answer)
     local sg = RPE.Core.ActiveSupergroup
     local allReady = true
     if sg and sg.GetMembers then
+        -- Helper to check if a member is online and in the current group
+        local function isOnlineGroupMember(memberKey)
+            local meName, meRealm = UnitName("player")
+            local meFull = (meName and ((meRealm and meRealm ~= "" and (meName.."-"..meRealm:gsub("%s+", ""))) or (meName.."-"..GetRealmName():gsub("%s+", "")))) or nil
+            local meKey = meFull and meFull:lower()
+            
+            if memberKey == meKey then
+                return true
+            end
+            
+            if IsInRaid() then
+                for i = 1, GetNumGroupMembers() do
+                    local unitToken = "raid" .. i
+                    local n, r = UnitName(unitToken)
+                    if n then
+                        local lower = (n .. "-" .. (r or GetRealmName())):gsub("%s+", ""):lower()
+                        if lower == memberKey then
+                            return UnitIsConnected(unitToken)
+                        end
+                    end
+                end
+            elseif IsInGroup() then
+                for i = 1, GetNumGroupMembers() - 1 do
+                    local unitToken = "party" .. i
+                    local n, r = UnitName(unitToken)
+                    if n then
+                        local lower = (n .. "-" .. (r or GetRealmName())):gsub("%s+", ""):lower()
+                        if lower == memberKey then
+                            return UnitIsConnected(unitToken)
+                        end
+                    end
+                end
+            end
+            
+            return false
+        end
+        
         for _, member in ipairs(sg:GetMembers()) do
-            if not self.readyResponses[member:lower()] then
-                allReady = false
-                break
+            -- Only check members who are actually online and in the group
+            if isOnlineGroupMember(member:lower()) then
+                if not self.readyResponses[member:lower()] then
+                    allReady = false
+                    break
+                end
             end
         end
     else
@@ -519,32 +691,132 @@ function Event:OnPlayerReadyResponse(sender, answer)
 
     if allReady then
         self:OnPlayersReady()
+    else
+        -- Cleanup offline players from units while waiting
+        self:RemoveOfflineUnits()
     end
 end
 
+--- Remove units for players who have gone offline/left the group
+function Event:RemoveOfflineUnits()
+    if not self.units then return end
+    
+    local function isOnlineGroupMember(memberKey)
+        local meName, meRealm = UnitName("player")
+        local meFull = (meName and ((meRealm and meRealm ~= "" and (meName.."-"..meRealm:gsub("%s+", ""))) or (meName.."-"..GetRealmName():gsub("%s+", "")))) or nil
+        local meKey = meFull and meFull:lower()
+        
+        if memberKey == meKey then
+            return true
+        end
+        
+        -- NPCs are always "online"
+        for _, unit in pairs(self.units or {}) do
+            if unit.key and unit.key:lower() == memberKey and unit.isNPC then
+                return true
+            end
+        end
+        
+        if IsInRaid() then
+            for i = 1, GetNumGroupMembers() do
+                local unitToken = "raid" .. i
+                local n, r = UnitName(unitToken)
+                if n then
+                    local lower = (n .. "-" .. (r or GetRealmName())):gsub("%s+", ""):lower()
+                    if lower == memberKey then
+                        return UnitIsConnected(unitToken)
+                    end
+                end
+            end
+        elseif IsInGroup() then
+            for i = 1, GetNumGroupMembers() - 1 do
+                local unitToken = "party" .. i
+                local n, r = UnitName(unitToken)
+                if n then
+                    local lower = (n .. "-" .. (r or GetRealmName())):gsub("%s+", ""):lower()
+                    if lower == memberKey then
+                        return UnitIsConnected(unitToken)
+                    end
+                end
+            end
+        end
+        
+        return false
+    end
+    
+    for key, u in pairs(self.units) do
+        if not isOnlineGroupMember(key) then
+            self.units[key] = nil
+            if u then
+                RPE.Debug:Print("Removing offline player " .. key .. " (ID #" .. (u.id or "?") .. ") from event")
+            end
+        end
+    end
+end
 --- Leader-side: everyone ready → roll initiatives and broadcast start.
 function Event:OnPlayersReady()
-    RPE.Debug:Print("All players are ready. Starting event.")
+    RPE.Debug:Internal("All players are ready. Starting event.")
 
     self:RollInitiatives(0, 20)
 
     RPE.Core.Comms.Broadcast:StartEvent({
-        id        = self.id,
-        name      = self.name,
-        subtext   = self.subtext,
-        difficulty = self.difficulty,
-        teamNames = self.teamNames,
-        units     = self:_serializeUnits(),
+        id            = self.id,
+        name          = self.name,
+        subtext       = self.subtext,
+        difficulty    = self.difficulty,
+        turnOrderType = self.turnOrderType,
+        teamNames     = self.teamNames,
+        units         = self:_serializeUnits(),
     })
 end
 
 --- Client-side (and also executed on leader after broadcast): start the event UI, hydrate units if provided.
 function Event:OnStart(opts)
     self:_ensureCollections()
-    self.turn = 1
+    self.turn = (opts and tonumber(opts.turn)) or 1
     self.ticks = {}
-    self.tickIndex = 0
+    self.tickIndex = (opts and tonumber(opts.tickIndex)) or 0
     self.localPlayerKey = getLocalPlayerKey()
+
+    -- Initialize stats tracking: { unitId -> { damage, healing, threat } }
+    self.stats = {}
+
+    -- Detect if this is a resync (turn > 1 indicates player rejoining mid-event, not initial start)
+    local isResync = (opts and opts.turn and tonumber(opts.turn) > 1) or false
+
+    -- Initialize Supergroup's member tracking on initial start only
+    -- This prevents rejoin detection from triggering for all members on first CheckForOfflineMembers call
+    if not isResync and RPE.Core.ActiveSupergroup then
+        local SG = RPE.Core.ActiveSupergroup
+        SG._trackedMembers = {}
+        -- Snapshot current group members so rejoin detection only triggers for actual reconnects
+        if IsInRaid() then
+            for i = 1, GetNumGroupMembers() do
+                local unitToken = "raid" .. i
+                local name, realm = UnitName(unitToken)
+                if name and UnitIsConnected(unitToken) then
+                    local lower = (name .. "-" .. (realm or GetRealmName())):gsub("%s+", ""):lower()
+                    SG._trackedMembers[lower] = true
+                end
+            end
+        elseif IsInGroup() then
+            for i = 1, GetNumGroupMembers() - 1 do
+                local unitToken = "party" .. i
+                local name, realm = UnitName(unitToken)
+                if name and UnitIsConnected(unitToken) then
+                    local lower = (name .. "-" .. (realm or GetRealmName())):gsub("%s+", ""):lower()
+                    SG._trackedMembers[lower] = true
+                end
+            end
+        end
+        -- Always add self
+        local me = UnitName("player")
+        local meRealm = GetRealmName()
+        if me then
+            local lower = (me .. "-" .. meRealm):gsub("%s+", ""):lower()
+            SG._trackedMembers[lower] = true
+        end
+    end
 
     -- Track last-turn highlights
     self.attackedThisTurn   = {}
@@ -556,12 +828,13 @@ function Event:OnStart(opts)
     self.name = (opts and opts.name) or self.name
     self.subtext = (opts and opts.subtext) or self.subtext or ""
     self.difficulty = (opts and opts.difficulty) or self.difficulty or "NORMAL"
+    self.turnOrderType = (opts and opts.turnOrderType) or self.turnOrderType or "INITIATIVE"
     self.teamNames = (opts and opts.teamNames) or {}
 
     -- If the leader sent units, hydrate from payload (preserve our id counters)
     self.units = {}
     if opts and type(opts.units) == "table" and next(opts.units) ~= nil then
-        for _, dto in ipairs(opts.units) do
+        for idx, dto in ipairs(opts.units) do
             local key = toKey(dto.key)
             if key and not self.units[key] then
                 local u = UnitClass.New(dto.id, {
@@ -618,60 +891,79 @@ function Event:OnStart(opts)
     end
 
     -- Event started debug message.
-    RPE.Debug:Print(string.format("Event started: %s (%s)", self.name or "(nil)", self.id or "(nil)"))
+    RPE.Debug:Print(string.format("%s", self.name or "(Starting Event)"))
 
     -- Make this event globally accessible to UI helpers that expect ActiveEvent
     RPE.Core.ActiveEvent = self
     isRunning = true
+    
+    -- Detect if this is a non-combat event
+    local isNonCombat = (self.turnOrderType == "NON-COMBAT")
+    
     RPE.Core.Windows.EventControlSheet:UpdateTickButtonState()
+    RPE.Core.Windows.EventControlSheet:UpdateTickButtonLabel()
 
-    -- Launch the event widget
-    local uiOpts = { name = self.name, eventSubtext = self.subtext, difficulty = self.difficulty, showTurnProgress = false }
-    local eventWidget = RPE_UI.Windows.EventWidget.New(uiOpts)
-    RPE_UI.Common:Show(eventWidget)
-
-    -- Launch the action bar widget
+    -- Launch the action bar widget (reuse existing or create new) - skip for non-combat
     local bar = nil
-    if not RPE.Core.Windows.ActionBarWidget then
-        bar = RPE_UI.Windows.ActionBarWidget.New({
-            numSlots = RPE.ActiveRules:Get("action_bar_slots") or 12,
-            slotSize = 32,
-            spacing  = 4,
-            point = "BOTTOM", rel = "BOTTOM", y = 60,
-        })
-    else
-        RPE_UI.Common:Toggle(RPE.Core.Windows.ActionBarWidget)
-        bar = RPE.Core.Windows.ActionBarWidget
-    end
+    if not isNonCombat then
+        if not RPE.Core.Windows.ActionBarWidget then
+            bar = RPE_UI.Windows.ActionBarWidget.New({
+                numSlots = RPE.ActiveRules:Get("action_bar_slots") or 5,
+                slotSize = 32,
+                spacing  = 4,
+                point = "BOTTOM", rel = "BOTTOM", y = 60,
+            })
+        else
+            RPE_UI.Common:Toggle(RPE.Core.Windows.ActionBarWidget)
+            bar = RPE.Core.Windows.ActionBarWidget
+        end
 
-    -- Bind the action bar to RPE.Core.Cooldowns
-    -- Use the player's numeric unit ID so cooldowns match what SpellCast.New produces
-    local CD = RPE.Core.Cooldowns
-    if CD and self.localPlayerKey and bar then
-        local playerUnit = self.units[self.localPlayerKey]
-        local playerNumericId = playerUnit and playerUnit.id
-        if playerNumericId then
-            CD:BindActionBar(tostring(playerNumericId), bar)
+        -- Initially lock the end turn button since it's not the player's turn yet
+        if bar and bar.endTurnBtn and bar.endTurnBtn.Lock then
+            bar.endTurnBtn:Lock()
+        end
+
+        -- Bind the action bar to RPE.Core.Cooldowns
+        -- Use the player's numeric unit ID so cooldowns match what SpellCast.New produces
+        local CD = RPE.Core.Cooldowns
+        if CD and self.localPlayerKey and bar then
+            local playerUnit = self.units[self.localPlayerKey]
+            local playerNumericId = playerUnit and playerUnit.id
+            if playerNumericId then
+                CD:BindActionBar(tostring(playerNumericId), bar)
+            end
         end
     end
 
-    -- Launch the player unit frame.
-    local unitFrame = RPE_UI.Windows.PlayerUnitWidget.New({ resources = { "HEALTH", "MANA" }})
-    unitFrame:Show()
-    RPE.Core.Windows.PlayerUnitWidget = unitFrame
+    -- Launch the player unit frame (only if not already created) - skip for non-combat
+    if not isNonCombat then
+        if not RPE.Core.Windows.PlayerUnitWidget then
+            local unitFrame = RPE_UI.Windows.PlayerUnitWidget.New({ resources = { "HEALTH", "MANA" }})
+            unitFrame:Show()
+            RPE.Core.Windows.PlayerUnitWidget = unitFrame
+        end
+    end
 
-    -- Launch the unit frame grid
-    local unitFrameGrid = RPE_UI.Windows.UnitFrameWidget.New()
-    unitFrameGrid:Show()
+    -- Launch the unit frame grid (only if not already created) - skip for non-combat
+    if not isNonCombat then
+        if not RPE.Core.Windows.UnitFrameWidget then
+            local unitFrameGrid = RPE_UI.Windows.UnitFrameWidget.New()
+            unitFrameGrid:Show()
+            RPE.Core.Windows.UnitFrameWidget = unitFrameGrid
+        end
+    end
 
     -- Prepare targeting window (hidden until a spell is cast)
-    local TW = RPE_UI.Windows.TargetWindowInstance
-               or RPE_UI.Windows.TargetWindow.New()
-    RPE_UI.Windows.TargetWindowInstance = TW
-    TW:Hide()
+    if not RPE_UI.Windows.TargetWindowInstance then
+        local TW = RPE_UI.Windows.TargetWindow.New()
+        RPE_UI.Windows.TargetWindowInstance = TW
+        TW:Hide()
+    end
 
-    -- Attach aura manager to event.
-    self._auraManager = RPE.Core.AuraManager.New(self)
+    -- Attach aura manager to event (only create if it doesn't exist)
+    if not self._auraManager then
+        self._auraManager = RPE.Core.AuraManager.New(self)
+    end
 
     -- Default chat channel (optional)
     RPE.Core.Windows.Chat:SetChannel("SAY")
@@ -704,40 +996,98 @@ function Event:OnStart(opts)
         actionBar:RefreshRequirements()
     end
 
-    -- Build initial ticks for turn 1 (same logic as OnTurn, but without incrementing turn)
-    self.ticks = {}
-    self.tickIndex = 0
+    -- Build ticks for the current turn based on turn order type
+    -- On initial start: turn 1, tickIndex 0
+    -- On resync: same turn as leader, with current tickIndex
+    self:RebuildTicks()
     
-    local maxTickUnits = (RPE.ActiveRules and RPE.ActiveRules.rules.max_tick_units) or 5
-    local units = {}
-    for _, u in pairs(self.units) do table.insert(units, u) end
-    table.sort(units, function(a, b)
-        return (a.initiative or 0) > (b.initiative or 0)
-    end)
+    RPE.Debug:Internal(string.format("Turn %d started with %d ticks", self.turn, #self.ticks))
     
-    local tick = {}
-    for i, u in ipairs(units) do
-        if u.active then
-            table.insert(tick, u)
-            if #tick >= maxTickUnits then
-                table.insert(self.ticks, tick)
-                tick = {}
+    -- Apply auras from the deserialized unit data (from resync or initial start)
+    -- This is done LAST, after all units are hydrated and event structure is stable
+    if opts and type(opts.units) == "table" then
+        for _, dto in ipairs(opts.units) do
+            if dto.auras and type(dto.auras) == "table" and #dto.auras > 0 then
+                local unitId = dto.id
+                -- Ensure unit exists in event before applying auras
+                local targetUnit = self:_LookupUnitById(unitId)
+                if targetUnit then
+                    for _, auraData in ipairs(dto.auras) do
+                        if auraData.id and auraData.id ~= "" then
+                            -- Look up the aura definition
+                            local auraDef = RPE.Core.AuraRegistry and RPE.Core.AuraRegistry:Get(auraData.id)
+                            if auraDef then
+                                -- Apply the aura to this unit (with error handling)
+                                -- Note: source is nil during resync since we don't know the original caster
+                                -- AuraManager:Apply signature is (source, target, auraId, opts)
+                                local ok, err = pcall(function()
+                                    self._auraManager:Apply(nil, unitId, auraData.id, {
+                                        instanceId = auraData.instanceId,
+                                        stacks = auraData.stacks or 1,
+                                        duration = auraData.duration or 0
+                                    })
+                                end)
+                                if not ok then
+                                    RPE.Debug:Print(string.format("[Event] Failed to apply aura %s to unit %d: %s", auraData.id, unitId, err))
+                                end
+                            else
+                                RPE.Debug:Internal(string.format("[Event] Aura definition not found: %s", auraData.id))
+                            end
+                        end
+                    end
+                else
+                    RPE.Debug:Internal(string.format("[Event] Cannot apply auras: unit %d not found in event", unitId))
+                end
             end
         end
     end
     
-    if #tick > 0 then
-        table.insert(self.ticks, tick)
+    -- Show the first tick (initial start) or keep current tick (resync)
+    -- Only call OnTick on initial start - on resync, we're already in progress at tickIndex
+    if not isResync then
+        self.tickIndex = 0
+        self:OnTick()
     end
     
-    RPE.Debug:Internal(string.format("Turn %d started with %d ticks", self.turn, #self.ticks))
+    -- Always recreate the event widget to ensure it has current turn and units
+    -- Destroy old widget if it exists
+    if RPE.Core.Windows and RPE.Core.Windows.EventWidget then
+        if RPE.Core.Windows.EventWidget.Hide then
+            RPE.Core.Windows.EventWidget:Hide()
+        end
+        RPE.Core.Windows.EventWidget = nil
+    end
     
-    -- Show the first tick
-    self:OnTick()
+    -- Create fresh EventWidget with current event data
+    local uiOpts = { 
+        name = self.name, 
+        eventSubtext = self.subtext, 
+        difficulty = self.difficulty, 
+        showTurnProgress = false,
+        turnNumber = self.turn,
+        isNonCombat = isNonCombat,
+    }
+    local eventWidget = RPE_UI.Windows.EventWidget.New(uiOpts)
+    RPE_UI.Common:Show(eventWidget)
+    
+    -- Lock the next tick button for non-combat events
+    if isNonCombat then
+        local EventControlSheet = RPE.Core.Windows and RPE.Core.Windows.EventControlSheet
+        if EventControlSheet and EventControlSheet.LockTickButton then
+            EventControlSheet:LockTickButton()
+        end
+    end
 end
 
 -- Leader-side
 function Event:Advance()
+    -- Clear intermission state when advancing
+    self.isIntermission = false
+    local widget = RPE.Core.Windows and RPE.Core.Windows.EventWidget
+    if widget and widget.HideIntermission then
+        widget:HideIntermission()
+    end
+    
     local UnitClass = RPE.Core.Unit
     self._snapshot = self._snapshot or {}
 
@@ -816,6 +1166,7 @@ function Event:OnEndClient(opts)
     isRunning = false
     isPlayerTurn = false
     RPE.Core.Windows.EventControlSheet:UpdateTickButtonState()
+    RPE.Core.Windows.EventControlSheet:UpdateTickButtonLabel()
 end
 
 function Event:MarkAttacked(unitId)
@@ -917,38 +1268,19 @@ function Event:OnTurn()
     
     -- Increment damage tracking counters for all units
     self:_IncrementDamageTracking()
-    
-    self.ticks = {}
-    self.tickIndex = 0
 
     -- Roll previous-turn markers, then clear current-turn accumulators
     self.attackedLastTurn  = self.attackedThisTurn  or {}
     self.protectedLastTurn = self.protectedThisTurn or {}
     self.attackedThisTurn, self.protectedThisTurn = {}, {}
 
-    local maxTickUnits = (RPE.ActiveRules and RPE.ActiveRules.rules.max_tick_units) or 5
-
-    -- collect + sort
-    local units = {}
-    for _, u in pairs(self.units) do table.insert(units, u) end
-    table.sort(units, function(a, b)
-        return (a.initiative or 0) > (b.initiative or 0)
-    end)
-
-    -- assign only active units into tick groups
-    local tick = {}
-    for i, u in ipairs(units) do
-        if u.active then
-            table.insert(tick, u)
-            if #tick >= maxTickUnits then
-                table.insert(self.ticks, tick)
-                tick = {}
-            end
-        end
-    end
-
-    if #tick > 0 then
-        table.insert(self.ticks, tick)
+    -- Rebuild ticks based on turn order type
+    self:RebuildTicks()
+    self.tickIndex = 0
+    
+    -- Refresh stats table to recalculate per-turn values
+    if RPE.Core and RPE.Core.Windows and RPE.Core.Windows.EventControlSheet then
+        RPE.Core.Windows.EventControlSheet:RefreshStatsTable()
     end
 
     RPE.Debug:Internal(string.format("Turn %d started with %d ticks", self.turn, #self.ticks))
@@ -1015,6 +1347,18 @@ end
 function Event:OnPlayerTickStart()
     if not isPlayerTurn then isPlayerTurn = true end
 
+    -- Unlock and restore the end turn button to normal appearance
+    local actionBar = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+    if actionBar and actionBar.endTurnBtn then
+        if actionBar.endTurnBtn.Unlock then
+            actionBar.endTurnBtn:Unlock()
+        end
+        -- Restore to white
+        if actionBar.endTurnBtn.SetColor then
+            actionBar.endTurnBtn:SetColor(1, 1, 1, 1)
+        end
+    end
+
     -- Reset help flag for new turn
     local prWidget = RPE.Core.Windows and RPE.Core.Windows.PlayerReactionWidget
     if prWidget and prWidget._helpUsedThisTurn ~= nil then
@@ -1033,10 +1377,13 @@ function Event:OnPlayerTickStart()
         end
         if not r then r, g, b, a = 0.55, 0.95, 0.65, 1.00 end
         local hex = string.format("%02X%02X%02X", r*255, g*255, b*255)
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("|cFF%s→ Your turn started (Turn %d)|r", hex, self.turn),
-            r, g, b
-        )
+        local msg
+        if self.turnOrderType == "PHASE" then
+            msg = string.format("|cFF%s→ Attack Phase (Turn %d)|r", hex, self.turn)
+        else
+            msg = string.format("|cFF%s→ Your turn started (Turn %d)|r", hex, self.turn)
+        end
+        DEFAULT_CHAT_FRAME:AddMessage(msg, r, g, b)
     end
     
     -- Also push to ChatBoxWidget
@@ -1075,6 +1422,12 @@ function Event:OnPlayerTickStart()
     local CD = RPE.Core.Cooldowns
     if CD then CD:OnPlayerTickStart(self.turn) end
 
+    -- Refresh inventory cooldowns
+    local invSheet = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.InventorySheet
+    if invSheet and invSheet.Refresh then
+        invSheet:Refresh()
+    end
+
     -- Refresh action bar button states at player turn start
     local actionBar = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
     if actionBar and actionBar.RefreshRequirements then
@@ -1112,6 +1465,12 @@ function Event:OnPlayerTickStart()
 end
 
 function Event:OnPlayerTickEnd()
+    -- Lock the end turn button
+    local actionBar = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+    if actionBar and actionBar.endTurnBtn and actionBar.endTurnBtn.Lock then
+        actionBar.endTurnBtn:Lock()
+    end
+
     -- Ping the player and alert them that their turn ended.
     local icon = (RPE.Common and RPE.Common.InlineIcons and RPE.Common.InlineIcons.Warning) or ""
     
@@ -1123,10 +1482,13 @@ function Event:OnPlayerTickEnd()
         end
         if not r then r, g, b, a = 0.95, 0.55, 0.55, 1.00 end
         local hex = string.format("%02X%02X%02X", r*255, g*255, b*255)
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("|cFF%s← Your turn ended|r", hex),
-            r, g, b
-        )
+        local msg
+        if self.turnOrderType == "PHASE" then
+            -- msg = string.format("|cFF%s← Defence Phase|r", hex)
+        else
+            msg = string.format("|cFF%s← Your turn ended|r", hex)
+        end
+        DEFAULT_CHAT_FRAME:AddMessage(msg, r, g, b)
     end
     
     -- Also push to ChatBoxWidget
@@ -1351,6 +1713,47 @@ function Event.StartEventClient(opts)
     self:_ensureCollections()
     self:OnStart(opts or {})
     return self
+end
+
+-- ============= Stats tracking =============
+
+function Event:TrackDamage(dealerId, amount)
+    if not dealerId or not amount or amount <= 0 then return end
+    self.stats = self.stats or {}
+    local stats = (self.stats[dealerId] or {})
+    stats.damage = (stats.damage or 0) + amount
+    self.stats[dealerId] = stats
+    
+    -- Notify listeners (e.g., EventControlSheet stats table)
+    if RPE.Core and RPE.Core.Windows and RPE.Core.Windows.EventControlSheet then
+        RPE.Core.Windows.EventControlSheet:RefreshStatsTable()
+    end
+end
+
+function Event:TrackHealing(dealerId, amount)
+    if not dealerId or not amount or amount <= 0 then return end
+    self.stats = self.stats or {}
+    local stats = (self.stats[dealerId] or {})
+    stats.healing = (stats.healing or 0) + amount
+    self.stats[dealerId] = stats
+    
+    -- Notify listeners
+    if RPE.Core and RPE.Core.Windows and RPE.Core.Windows.EventControlSheet then
+        RPE.Core.Windows.EventControlSheet:RefreshStatsTable()
+    end
+end
+
+function Event:TrackThreat(dealerId, amount)
+    if not dealerId or not amount or amount <= 0 then return end
+    self.stats = self.stats or {}
+    local stats = (self.stats[dealerId] or {})
+    stats.threat = (stats.threat or 0) + amount
+    self.stats[dealerId] = stats
+    
+    -- Notify listeners
+    if RPE.Core and RPE.Core.Windows and RPE.Core.Windows.EventControlSheet then
+        RPE.Core.Windows.EventControlSheet:RefreshStatsTable()
+    end
 end
 
 -- ============= Event End =============

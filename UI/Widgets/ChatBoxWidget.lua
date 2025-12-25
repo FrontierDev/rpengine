@@ -509,6 +509,26 @@ function ChatBoxWidget:BuildUI(opts)
         self:_RefreshLogDisplay()
     end)
     
+    -- Create hide button positioned below debug tab
+    self.hideBtn = IconButton:New("RPE_ChatBox_Tab_Hide", {
+        parent = self.root,
+        width = 16,
+        height = 16,
+        point = "TOPRIGHT",
+        relativeTo = self.log,
+        relativePoint = "TOPLEFT",
+        x = -18,
+        y = -48,
+        noBackground = true, hasBackground = false,
+        noBorder = true, hasBorder = false,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\cancel.png",
+        tooltip = "Hide",
+    })
+    self.hideBtn:SetTooltip("Hide")
+    self.hideBtn:SetOnClick(function(btn)
+        self:Hide()
+    end)
+    
     self:_UpdateTabButtons()
 
     -- Chrome

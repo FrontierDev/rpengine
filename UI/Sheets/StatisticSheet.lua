@@ -139,10 +139,6 @@ function StatisticSheet:BuildUI(opts)
     self:BodyGroup()
     self.sheet:Add(self.bodyGroup)
 
-    -- Buttons
-    self:ButtonGroup()
-    self.sheet:Add(self.buttonGroup)
-
     -- Register / expose
     if _G.RPE_UI and _G.RPE_UI.Common then
         RPE.Debug:Internal("Registering StatisticSheet window...")
@@ -254,47 +250,6 @@ function StatisticSheet:BodyGroup()
     section("Attributes",       "PRIMARY",      3)
     section("Stats",            "SECONDARY",    3)
     section("Resistances",      "RESISTANCE",   3)
-end
-
-function StatisticSheet:ButtonGroup()
-    self.buttonGroup = HGroup:New("RPE_SS_ButtonGroup", {
-        parent  = self.sheet,
-        width   = 600,
-        height  = 32,
-        spacingX = 12,
-        alignV  = "CENTER",
-        alignH  = "LEFT",
-        autoSize = true,
-    })
-
-    self.resetBtn = TextBtn:New("RPE_SS_ResetBtn", {
-        parent = self.sheet,
-        width  = 160, height = 28,
-        relativeTo = self.sheet.frame,
-        relativePoint = "BOTTOM",
-        text = "Reset Profile",
-        onClick = function()
-            local newProfile = RPE.Profile.DB.RecreateActive()
-            if newProfile then
-                self.profile = newProfile
-                RPE.Debug:Warning("Active profile reset to defaults.")
-                self:RebuildAll()  -- full rebuild after reset
-            end
-        end,
-    })
-    self.buttonGroup:Add(self.resetBtn)
-
-    self.editBtn = TextBtn:New("RPE_SS_EditBtn", {
-        parent = self.sheet,
-        width  = 160, height = 28,
-        relativeTo = self.sheet.frame,
-        relativePoint = "BOTTOM",
-        text = "Edit Sheet",
-        onClick = function()
-            RPE.Debug:NYI("Stat sheet editing")
-        end,
-    })
-    self.buttonGroup:Add(self.editBtn)
 end
 
 -- Draw stats of a given category into a container.
@@ -538,7 +493,6 @@ function StatisticSheet:RebuildAll()
 
     self:TopGroup();  self.sheet:Add(self.topGroup)
     self:BodyGroup(); self.sheet:Add(self.bodyGroup)
-    self:ButtonGroup(); self.sheet:Add(self.buttonGroup)
     
     -- Now populate with stats - only PRIMARY, SECONDARY, RESISTANCE
     local function section(title, key, columns)
