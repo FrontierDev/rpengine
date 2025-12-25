@@ -245,6 +245,16 @@ function TrainerWindow:BuildUI()
                 end
 
                 profile:LearnSpell(spell.id, rank)
+                
+                -- Spend the training cost (unless no_spell_cost is set)
+                if (RPE.ActiveRules:Get("no_spell_cost") or 0) ~= 1 then
+                    local trainingCost = spell and type(spell.GetTrainingCost) == "function" 
+                        and spell:GetTrainingCost(rank) or 0
+                    if trainingCost > 0 then
+                        profile:SpendCurrency("copper", trainingCost)
+                    end
+                end
+                
                 RPE.Debug:Internal(("Learned %s (Rank %d)"):format(spell.name or spell.id, rank))
                 self:RefreshList()
                 return
@@ -268,6 +278,18 @@ function TrainerWindow:BuildUI()
             end
 
             profile:LearnRecipe(recipe.profession, recipe.id)
+            
+            -- Spend the recipe cost (unless no_recipe_cost is set)
+            if (RPE.ActiveRules:Get("no_recipe_cost") or 0) ~= 1 then
+                local recipeCost = 0
+                if recipe.cost and recipe.cost.copper then
+                    recipeCost = tonumber(recipe.cost.copper) or 0
+                end
+                if recipeCost > 0 then
+                    profile:SpendCurrency("copper", recipeCost)
+                end
+            end
+            
             RPE.Debug:Internal(("Learned recipe: %s"):format(recipe.name or recipe.id))
             self:RefreshList()
         end
@@ -292,7 +314,14 @@ local function clearList(group)
 end
 
 -- Helper to update cost text with color based on affordability
-function TrainerWindow:_updateCostText(costAmount)
+function TrainerWindow:_updateCostText(costAmount, costType)
+    -- Check ActiveRules for cost exemption (costType should be "recipe" or "spell")
+    if costType == "recipe" and (RPE.ActiveRules:Get("no_recipe_cost") or 0) == 1 then
+        costAmount = 0
+    elseif costType == "spell" and (RPE.ActiveRules:Get("no_spell_cost") or 0) == 1 then
+        costAmount = 0
+    end
+    
     local profile = RPE.Profile.DB:GetOrCreateActive()
     local playerCopper = profile:GetCurrency("copper") or 0
     
@@ -337,7 +366,7 @@ function TrainerWindow:_addRecipeEntry(recipe, prof, profile)
             if recipe.cost and recipe.cost.copper then
                 recipeCost = tonumber(recipe.cost.copper) or 0
             end
-            self:_updateCostText(recipeCost)
+            self:_updateCostText(recipeCost, "recipe")
         end,
     })
 
@@ -435,7 +464,7 @@ function TrainerWindow:_addSpellRankEntry(entry, profile)
             )
             local trainingCost = spell and type(spell.GetTrainingCost) == "function" 
                 and spell:GetTrainingCost(entry.rank) or 0
-            self:_updateCostText(trainingCost)
+            self:_updateCostText(trainingCost, "spell")
             self:_updateLearnButton()
         end,
     })

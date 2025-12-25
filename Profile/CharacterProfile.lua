@@ -529,13 +529,23 @@ end
 ---@param itemId string
 ---@param delta number
 ---@param maxStackOverride number|nil -- optional override (defaults to item’s own maxStack or 9999)
+---@param silent boolean|nil -- if true, suppress item receive message
 ---@return number newQty
-function CharacterProfile:AddItem(itemId, delta, maxStackOverride)
+function CharacterProfile:AddItem(itemId, delta, maxStackOverride, silent)
     local d = math.floor(tonumber(delta) or 0)
     if d == 0 then return self:GetItemQty(itemId) end
 
     -- Look up item definition
     local itemDef = RPE.Core.ItemRegistry and RPE.Core.ItemRegistry:Get(itemId)
+    
+    -- Check if this is a currency item; if so, reroute to AddCurrency
+    if itemDef and itemDef.category == "CURRENCY" then
+        -- Use the item's name (lowercase) as the currency key
+        local currencyKey = itemDef.name:lower()
+        self:AddCurrency(currencyKey, d)
+        return self:GetCurrency(currencyKey)
+    end
+    
     local maxStack
     if itemDef then
         if itemDef:IsStackable() then
@@ -603,6 +613,14 @@ function CharacterProfile:AddItem(itemId, delta, maxStackOverride)
     local playerWidget = RPE.Core.Windows and RPE.Core.Windows.PlayerUnitWidget
     if playerWidget and playerWidget.Refresh and not playerWidget._inTemporaryMode then
         playerWidget:Refresh()
+    end
+
+    -- Show item receive message unless silent is true
+    if not silent and delta > 0 then
+        local message = RPE.Common:FormatItemReceiveMessage(itemId, delta)
+        if message and message ~= "" then
+            RPE.Debug:Item(message)
+        end
     end
 
     return self:GetItemQty(itemId)
@@ -685,8 +703,11 @@ function CharacterProfile:AddCurrency(currencyId, amount)
     -- Add the currency
     self.currencies[currencyId] = (self.currencies[currencyId] or 0) + amt
 
-    -- Print the message
-    RPE.Debug:Print(("You receive %d %s"):format(amt, currencyId))
+    -- Print the formatted message in green
+    local message = RPE.Common:FormatCurrencyMessage(currencyId, amt)
+    if message and message ~= "" then
+        RPE.Debug:Currency(message)
+    end
 
     touch(self)
     RPE.Profile.DB.SaveProfile(self)
@@ -1007,7 +1028,7 @@ function CharacterProfile:Unequip(slot)
         -- Reuse the same instance GUID so mods stay associated with this item instance
         -- The equippedInstanceGuid was set when we equipped it, so use that
         local returnedSlotInstanceGuid = equippedInstanceGuid
-        self:AddItem(oldId, 1)
+        self:AddItem(oldId, 1, nil, true)
         
         -- Restore mods to the newly returned inventory slot with the correct instance GUID
         if oldMods then
@@ -1246,7 +1267,19 @@ function CharacterProfile:LearnSpell(spellId, rank)
     local prev = tonumber(self.spells[spellId]) or 0
     if rank > prev then
         self.spells[spellId] = rank
-        RPE.Debug:Print(("Learned spell %s (Rank %d)"):format(spellId, rank))
+        
+        -- Format and output the skill learn message
+        local message = RPE.Common:FormatSkillLearnMessage(spellId, rank)
+        if message and message ~= "" then
+            if DEFAULT_CHAT_FRAME then
+                DEFAULT_CHAT_FRAME:AddMessage(message)
+            end
+            local chatBox = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
+            if chatBox and chatBox.PushDebugMessage then
+                chatBox:PushDebugMessage(message, "Skill")
+            end
+        end
+        
         self.updatedAt = time()
         RPE.Profile.DB.SaveProfile(self)
     end
@@ -1293,9 +1326,25 @@ function CharacterProfile:LearnRecipe(profession, recipeId)
     end
 
     table.insert(prof.recipes, recipeId)
+    
+    -- Format and output the recipe learn message
+    -- Look up recipe name from RecipeRegistry
+    local recipeName = recipeId
+    local RecipeRegistry = RPE.Core and RPE.Core.RecipeRegistry
+    if RecipeRegistry then
+        local recipe = RecipeRegistry:Get(recipeId)
+        if recipe and recipe.name then
+            recipeName = recipe.name
+        end
+    end
+    
+    local message = RPE.Common:FormatRecipeLearnMessage(recipeName)
+    if message and message ~= "" then
+        RPE.Debug:Recipe(message)
+    end
+    
     self.updatedAt = time()
     RPE.Profile.DB.SaveProfile(self)
-    RPE.Debug:Print(("[Profile] Learned recipe %s for %s."):format(recipeId, profession))
 end
 
 --- Forget (unlearn) a recipe for a profession.

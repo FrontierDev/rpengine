@@ -286,7 +286,7 @@ function PinManager:RemoveStaleData(timeoutSeconds)
             -- If broadcastLocation was never set to true, or it's been >timeout since it was true
             local lastTrue = poi.lastBroadcastLocationTrue
             if not lastTrue or (now - lastTrue) > timeoutSeconds then
-                RPE.Debug:Print(string.format("[LFRP.PinManager] Removing stale pin for %s", poi.sender))
+                RPE.Debug:Internal(string.format("[LFRP.PinManager] Removing stale pin for %s", poi.sender))
                 table.remove(locationData, i)
                 hadRemoval = true
             end

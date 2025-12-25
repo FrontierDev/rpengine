@@ -193,10 +193,8 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
 
     -- Reset the caster's combat counter immediately (they are attempting an attack)
     local casterUnit = findUnitById(cast and cast.caster)
-    if RPE.Debug then RPE.Debug:Print(string.format("[SpellActions:DAMAGE] Caster unit %d: %s", cast and cast.caster or 0, casterUnit and casterUnit.name or "NOT FOUND")) end
     if casterUnit then
         -- Reset counter to 0 so unit stays engaged
-        if RPE.Debug then RPE.Debug:Print(string.format("[SpellActions:DAMAGE] Resetting combat for caster %s", casterUnit.name)) end
         if type(casterUnit.ResetCombat) == "function" then
             casterUnit:ResetCombat()
         end
@@ -223,10 +221,6 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
     end
     
     local school  = tostring(args.school or "Physical")
-
-    if not cast or not cast.def then
-        RPE.Debug:Internal("[SpellActions:DAMAGE] Running without a spell definition (likely aura tick).")
-    end
 
     local function rollAmount()
         local base = 0
@@ -282,10 +276,10 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
                 local targetUnit = findUnitById(tonumber(tgt) or 0)
                 if targetUnit and not targetUnit.isNPC then
                     -- Target is a player - non-leaders cannot damage other players
-                    if RPE and RPE.Debug and RPE.Debug.Print then
-                        RPE.Debug:Internal(("[SpellActions:DAMAGE] Non-leader player cannot damage other players"))
-                    end
-                    canDamage = false
+                    -- if RPE and RPE.Debug and RPE.Debug.Print then
+                    --    RPE.Debug:Internal(("[SpellActions:DAMAGE] Non-leader player cannot damage other players"))
+                    --end
+                    -- canDamage = false
                 elseif targetUnit and targetUnit.isNPC then
                     -- Check if NPC is friendly (same team)
                     if casterUnit and targetUnit.team and casterUnit.team and casterUnit.team == targetUnit.team then
@@ -319,20 +313,12 @@ Actions:Register("DAMAGE", function(ctx, cast, targets, args)
                 if allowCrit and args._critThreshold then
                     -- Use the roll stored by CheckHit to determine crit
                     local roll = args._rolls and args._rolls[tgt]
-                    if RPE and RPE.Debug and RPE.Debug.Print then
-                        RPE.Debug:Internal(("  Crit lookup: tgt=%s, roll=%s, threshold=%.1f → %s"):format(
-                            tostring(tgt), tostring(roll), args._critThreshold,
-                            (roll and roll >= args._critThreshold) and "CRIT" or "normal"
-                        ))
-                    end
                     if roll and roll >= args._critThreshold then
                         isCrit = true
                         local mult = math.max(1, args._critMult or 2)
                         local origAmt = amt
                         amt = math.floor(amt * mult)
-                        if RPE and RPE.Debug and RPE.Debug.Print then
-                            RPE.Debug:Internal(("  Crit multiplier applied: %d × %.1f = %d"):format(origAmt, mult, amt))
-                        end
+                        RPE.Debug:Internal(("  Crit multiplier applied: %d × %.1f = %d"):format(origAmt, mult, amt))
                     end
                 end
 

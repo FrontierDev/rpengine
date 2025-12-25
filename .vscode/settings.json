@@ -63,7 +63,8 @@
         "UNKNOWN",
         "BaseMapPoiPinMixin",
         "ChatFrame_OpenChat",
-        "UIDropDownMenu_SetAnchor"
+        "UIDropDownMenu_SetAnchor",
+        "UIDropDownMenu_GetSelectedValue"
     ],
     "Lua.diagnostics.disable": [
         "assign-type-mismatch"

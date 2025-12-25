@@ -369,33 +369,66 @@ function CharacterSheet:DrawCurrencies(currencyRow)
     if currencies.valor == nil then currencies.valor = 0 end
     if currencies.copper == nil then currencies.copper = 0 end
     
-    -- Define currency types with their icon IDs
-    local currencyTypes = {
-        { key = "copper",   name = "Copper",   icon = nil },       -- uses FormatCopper
-        { key = "honor",    name = "Honor",    icon = 1455894 },
-        { key = "conquest", name = "Conquest", icon = 1523630 },
-        { key = "justice",  name = "Justice",  icon = 463446 },
-        { key = "valor",    name = "Valor",    icon = 463447 },
+    -- Define built-in currency types with their icon IDs and descriptions
+    local builtInCurrencies = {
+        { key = "copper",   name = "Copper",   icon = nil, description = "The common currency used all around Azeroth." },
+        { key = "honor",    name = "Honor",    icon = 1455894, description = "Honor points earned through PvP combat." },
+        { key = "conquest", name = "Conquest", icon = 1523630, description = "Conquest points earned through PvP triumphs." },
+        { key = "justice",  name = "Justice",  icon = 463446, description = "Justice points earned through PvE combat." },
+        { key = "valor",    name = "Valor",    icon = 463447, description = "Valor points earned from heroic encounters." },
     }
     
-    -- Collect currencies - always show all defined currencies
-    local activeCurrencies = {}
-    for _, currencyDef in ipairs(currencyTypes) do
-        table.insert(activeCurrencies, currencyDef)
+    -- Collect all currencies (built-in + custom from ItemRegistry)
+    local allCurrencies = {}
+    
+    -- Add built-in currencies first
+    for _, currencyDef in ipairs(builtInCurrencies) do
+        table.insert(allCurrencies, currencyDef)
     end
     
-    if #activeCurrencies == 0 then return end
+    -- Add custom currencies from ItemRegistry
+    local ItemRegistry = RPE.Core and RPE.Core.ItemRegistry
+    if ItemRegistry then
+        local allItems = ItemRegistry:All()
+        if allItems then
+            for itemId, item in pairs(allItems) do
+                -- Check if item is a CURRENCY type
+                local category = item.category
+                if category and category:lower() == "currency" then
+                    -- Add this custom currency (key must match how it's stored in profile)
+                    local customCurrency = {
+                        key = item.name:lower(),  -- Use lowercase name as key (matches Commands.lua storage)
+                        name = item.name or itemId,
+                        icon = item.icon and tonumber(item.icon) or nil,
+                        description = item.description or "",
+                        isCustom = true,
+                    }
+                    table.insert(allCurrencies, customCurrency)
+                end
+            end
+        end
+    end
+    
+    if #allCurrencies == 0 then return end
     
     -- Create a single row with all currencies displayed side-by-side
-    for _, currencyDef in ipairs(activeCurrencies) do
+    for _, currencyDef in ipairs(allCurrencies) do
         local amount = currencies[currencyDef.key] or 0
-        local formatted = (currencyDef.key == "copper") 
-            and Common:FormatCopper(amount) 
-            or Common:FormatCurrency(amount, currencyDef.icon)
+        local formatted
+        local icon = ""
+        
+        if currencyDef.key == "copper" then
+            formatted = RPE.Common:FormatCopper(amount)
+        else
+            formatted = tostring(amount)
+            if currencyDef.icon then
+                icon = "|T" .. currencyDef.icon .. ":16:16|t "
+            end
+        end
         
         local entry = HGroup:New("RPE_CS_Currency_" .. currencyDef.key, {
             parent = currencyRow,
-            spacingX = 2,
+            spacingX = 4,
             alignV = "CENTER",
             alignH = "CENTER",
             autoSize = true,
@@ -404,17 +437,38 @@ function CharacterSheet:DrawCurrencies(currencyRow)
         
         local amountText = Text:New("RPE_CS_CurrencyValue_" .. currencyDef.key, {
             parent = entry,
-            text = formatted,
-            width = 120,
+            text = icon .. formatted,
+            width = 140,
             height = 18,
             fontTemplate = "GameFontNormalSmall",
             justifyH = "CENTER",
         })
         amountText.fs:ClearAllPoints()
         amountText.fs:SetPoint("CENTER", amountText.frame, "CENTER", 0, 0)
+        
+        -- Add tooltip on hover
+        amountText.frame:EnableMouse(true)
+        amountText.frame:SetScript("OnEnter", function(self)
+            if RPE and RPE.Common and RPE.Common.ShowTooltip then
+                RPE.Common:ShowTooltip(self, {
+                    title = currencyDef.name,
+                    lines = currencyDef.description and currencyDef.description ~= "" and {
+                        { text = currencyDef.description }
+                    } or {}
+                })
+            end
+        end)
+        
+        amountText.frame:SetScript("OnLeave", function()
+            if RPE and RPE.Common and RPE.Common.HideTooltip then
+                RPE.Common:HideTooltip()
+            end
+        end)
+        
         entry:Add(amountText)
     end
 end
+
 
 
 function CharacterSheet:ShowLanguageDialog()

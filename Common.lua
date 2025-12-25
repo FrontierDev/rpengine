@@ -67,6 +67,14 @@ Common.ProfessionList = {
     "Leatherworking", "Tailoring", "Inscription", "Jewelcrafting", "Mining", "Skinning", "Herbalism",
 }
 
+-- Currency icons (WoW icon file IDs)
+Common.CurrencyIcons = {
+    honor       = 1455894,
+    conquest    = 1523630,
+    valor       = 463447,
+    justice     = 463446,
+}
+
 Common.DamageSchools = { "Physical", "Force", "Fire", "Frost", "Cold", "Nature", "Acid", "Lightning", "Poison", "Shadow", "Necrotic", "Holy", "Radiant", "Arcane", "Psychic", "Fel" }
 
 -- Shared colors for grouped damage schools
@@ -693,6 +701,169 @@ function Common:FormatCurrency(amount, iconId)
     else
         return tostring(amount)
     end
+end
+
+--- Format a currency gain/loss message with proper formatting and green color.
+---@param currencyId string  -- e.g. "copper", "honor", "conquest", or item name
+---@param amount number     -- the amount gained
+---@param iconId number|nil -- optional override icon ID (for item-based currencies)
+---@return string           -- formatted message in green
+function Common:FormatCurrencyMessage(currencyId, amount, iconId)
+    if not currencyId or not amount or amount <= 0 then return "" end
+    amount = math.floor(tonumber(amount) or 0)
+    currencyId = tostring(currencyId):lower()
+    
+    local message
+    if currencyId == "copper" then
+        -- Use FormatCopper for copper amounts
+        message = "You receive " .. self:FormatCopper(amount) .. "."
+    else
+        -- For other currencies, use icon and name
+        local displayName = currencyId:sub(1, 1):upper() .. currencyId:sub(2)
+        local icon = ""
+        local resolvedIconId = iconId
+        
+        -- If no iconId provided, try to find it from ItemRegistry
+        if not resolvedIconId then
+            local ItemRegistry = RPE.Core and RPE.Core.ItemRegistry
+            if ItemRegistry then
+                local allItems = ItemRegistry:All()
+                if allItems then
+                    for itemId, item in pairs(allItems) do
+                        if item and item.name and item.name:lower() == currencyId and item.data and item.category and item.category:lower() == "currency" then
+                            resolvedIconId = tonumber(item.icon)
+                            displayName = item.name or displayName
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- If still no icon, check hardcoded currencies
+        if not resolvedIconId and self.CurrencyIcons[currencyId] then
+            resolvedIconId = self.CurrencyIcons[currencyId]
+        end
+        
+        -- Format icon if we have one
+        if resolvedIconId then
+            icon = "|T" .. resolvedIconId .. ":12:12|t"
+        end
+        
+        message = "You receive " .. icon .. " " .. displayName .. " x" .. amount .. "."
+    end
+    
+    -- Apply green color (|cff00AA00 is green)
+    return "|cff00AA00" .. message .. "|r"
+end
+
+--- Format a crafting message with item name colored by rarity.
+---@param itemId string|number  -- item ID to look up in ItemRegistry
+---@param quantity number       -- amount crafted
+---@return string              -- formatted message in green
+function Common:FormatCraftingMessage(itemId, quantity)
+    if not itemId or not quantity or quantity <= 0 then return "" end
+    quantity = math.floor(tonumber(quantity) or 0)
+    
+    local itemName = tostring(itemId)
+    local rarity = "common"
+    
+    -- Try to look up item in ItemRegistry
+    local ItemRegistry = RPE.Core and RPE.Core.ItemRegistry
+    if ItemRegistry then
+        local item = ItemRegistry:Get(tostring(itemId))
+        if item then
+            itemName = item.name or itemName
+            rarity = item.rarity or "common"
+        end
+    end
+    
+    -- Color the item name by rarity
+    local coloredName = self:ColorByQuality(itemName, rarity)
+    local message = "You craft " .. coloredName .. " x" .. quantity .. "."
+    
+    -- Apply green color
+    return "|cff00AA00" .. message .. "|r"
+end
+
+--- Format an item receive message with item name colored by rarity.
+---@param itemId string|number  -- item ID to look up in ItemRegistry
+---@param quantity number       -- amount received
+---@return string              -- formatted message in green
+function Common:FormatItemReceiveMessage(itemId, quantity)
+    if not itemId or not quantity or quantity <= 0 then return "" end
+    quantity = math.floor(tonumber(quantity) or 0)
+    
+    local itemName = tostring(itemId)
+    local rarity = "common"
+    
+    -- Try to look up item in ItemRegistry
+    local ItemRegistry = RPE.Core and RPE.Core.ItemRegistry
+    if ItemRegistry then
+        local item = ItemRegistry:Get(tostring(itemId))
+        if item then
+            itemName = item.name or itemName
+            rarity = item.rarity or "common"
+        end
+    end
+    
+    -- Color the item name by rarity
+    local coloredName = self:ColorByQuality(itemName, rarity)
+    local message = "You receive " .. coloredName .. " x" .. quantity .. "."
+    
+    -- Apply green color
+    return "|cff00AA00" .. message .. "|r"
+end
+
+--- Format a skill learn message.
+---@param skillId string        -- skill ID/name
+---@param rank number|nil       -- optional rank number
+---@return string              -- formatted message in green
+function Common:FormatSkillLearnMessage(skillId, rank)
+    if not skillId or skillId == "" then return "" end
+    
+    local skillName = skillId
+    
+    -- Try to look up skill in StatRegistry first
+    local StatRegistry = RPE.Core and RPE.Core.StatRegistry
+    if StatRegistry then
+        local stat = StatRegistry:Get(skillId)
+        if stat then
+            skillName = stat.name or skillId
+        end
+    end
+    
+    -- If not found in StatRegistry, try SpellRegistry
+    if skillName == skillId then
+        local SpellRegistry = RPE.Core and RPE.Core.SpellRegistry
+        if SpellRegistry then
+            local spell = SpellRegistry:Get(skillId)
+            if spell then
+                skillName = spell.name or skillId
+            end
+        end
+    end
+    
+    local message = "You learn " .. skillName
+    if rank and tonumber(rank) then
+        message = message .. " (Rank " .. tonumber(rank) .. ")"
+    end
+    message = message .. "."
+    
+    -- Apply green color
+    return "|cffFFFF00" .. message .. "|r"
+end
+
+--- Format a recipe learn message.
+---@param recipeName string     -- name of the recipe
+---@return string              -- formatted message in green
+function Common:FormatRecipeLearnMessage(recipeName)
+    if not recipeName or recipeName == "" then return "" end
+    
+    local message = "You learn how to create " .. recipeName .. "."
+    
+    -- Apply green color
+    return "|cffFFFF00" .. message .. "|r"
 end
 
 --- Get a unit's TRP3 roleplay/display name, falling back to the game name.

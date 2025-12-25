@@ -45,10 +45,6 @@ local function resolveActionTargets(cast, ctx, action)
     -- Highest priority: directly remembered ref from InitTargeting()
     if action._resolvedRef then
         local resolved = cast.targetSets and cast.targetSets[action._resolvedRef] or {}
-        RPE.Debug:Internal(string.format(
-            "[SpellCast] resolveActionTargets: Using _resolvedRef='%s' → %d targets",
-            action._resolvedRef, #resolved
-        ))
         return resolved
     end
 
@@ -65,24 +61,16 @@ local function resolveActionTargets(cast, ctx, action)
 
     if spec.ref then
         local resolved = cast.targetSets and cast.targetSets[spec.ref] or {}
-        RPE.Debug:Internal(string.format(
-            "[SpellCast] resolveActionTargets: Using ref='%s' → %d targets",
-            spec.ref, #resolved
-        ))
         return resolved
     end
 
     if spec.targeter then
         local sel = Targeters:Select(spec.targeter, ctx, cast, spec.args)
         local targets = sel and sel.targets or {}
-        RPE.Debug:Internal(string.format(
-            "[SpellCast] resolveActionTargets: Using targeter='%s' → %d targets",
-            spec.targeter, #targets
-        ))
         return targets
     end
 
-    RPE.Debug:Warning("[SpellCast] No valid targeting method found for action: " .. tostring(action.key))
+    RPE.Debug:Error("[SpellCast] No valid targeting method found for action: " .. tostring(action.key))
     return {}
 end
 

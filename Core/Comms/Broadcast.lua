@@ -218,7 +218,7 @@ function Broadcast:_StreamRuleset(rs)
     -- Count rules (use pairs iteration to handle sparse tables)
     local ruleCount = 0
     for _ in pairs(rs.rules or {}) do ruleCount = ruleCount + 1 end
-    RPE.Debug:Print(string.format("[Broadcast] Streamed ruleset '%s' (%d rules)", rs.name, ruleCount))
+    RPE.Debug:Print(string.format("[Broadcast] Streamed ruleset '%s' (%d rules in total)", rs.name, ruleCount))
 end
 
 --- Stream dataset objects to supergroup members (one object at a time)
@@ -263,7 +263,7 @@ function Broadcast:SendActiveDatasetToSupergroup()
         return
     end
 
-    RPE.Debug:Print(string.format("[Broadcast] Streaming %d custom datasets to Supergroup: %s", #sentNames, table.concat(sentNames, ", ")))
+    RPE.Debug:Print(string.format("[Broadcast] Streaming %d custom datasets to supergroup: %s", #sentNames, table.concat(sentNames, ", ")))
     
     -- Clear any hash mismatch locks since we just sent our datasets
     self:_clearHashMismatchLocks()
@@ -680,7 +680,7 @@ function Broadcast:ResyncPlayer(playerKey)
     
     local ev = RPE.Core.ActiveEvent
     if not ev or not ev.units then
-        RPE.Debug:Print("[Broadcast] ResyncPlayer: No active event to resync")
+        RPE.Debug:Warning("[Broadcast] ResyncPlayer: No active event to resync")
         return
     end
     
@@ -765,7 +765,7 @@ function Broadcast:ResyncPlayer(playerKey)
     local playerName = playerKey:match("^([^-]+)") or playerKey
     Comms:Send("START_EVENT", flat, "WHISPER", playerName)
     
-    RPE.Debug:Print(string.format("[Broadcast] Resynced player %s with event state (turn %d, tick %d)", playerKey, ev.turn or 1, ev.tickIndex or 0))
+    RPE.Debug:Internal(string.format("[Broadcast] Resynced player %s with event state (turn %d, tick %d)", playerKey, ev.turn or 1, ev.tickIndex or 0))
 end
 
 
@@ -1533,7 +1533,7 @@ function Broadcast:_autoSyncPlayer(playerKey, playerName)
     end
     
     -- Event is running, proceed with auto-sync
-    RPE.Debug:Print(string.format("[Broadcast] Auto-syncing datasets and ruleset to %s (event in progress)", playerName))
+    RPE.Debug:Internal(string.format("[Broadcast] Auto-syncing datasets and ruleset to %s (event in progress).", playerName))
     
     -- Send pause notification to party (excluding leader and target)
     local pausePayload = { playerName, "START" }
@@ -1638,7 +1638,7 @@ function Broadcast:_completeSyncOperation(playerKey, success)
     
     local duration = GetTime() - syncOp.startTime
     if success then
-        RPE.Debug:Print(string.format("[Broadcast] Auto-sync completed for %s in %.1f seconds", syncOp.playerName, duration))
+        RPE.Debug:Internal(string.format("[Broadcast] Auto-sync completed for %s in %.1f seconds", syncOp.playerName, duration))
         
         -- Send unpause notification to party if this was an event sync
         if not syncOp.lockControls then
@@ -1673,7 +1673,6 @@ function Broadcast:_completeSyncOperation(playerKey, success)
     if shouldUnlockControls and not hasLockingSync then
         self:_unlockEventControls()
         self:_refreshEventControlSheet()
-        RPE.Debug:Print("[Broadcast] Unlocked Start Event button after sync completion")
     end
 end
 
@@ -1682,7 +1681,6 @@ function Broadcast:_refreshEventControlSheet()
     local ecs = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.EventControlSheet
     if ecs and ecs.Refresh then
         ecs:Refresh()
-        RPE.Debug:Internal("[Broadcast] Refreshed EventControlSheet button states")
     end
 end
 
@@ -1698,7 +1696,6 @@ function Broadcast:_clearHashMismatchLocks()
         if syncOp.step == "locked" then
             self._syncOperations[playerKey] = nil
             clearedCount = clearedCount + 1
-            RPE.Debug:Internal(string.format("[Broadcast] Cleared hash mismatch lock for %s", syncOp.playerName))
         end
     end
     

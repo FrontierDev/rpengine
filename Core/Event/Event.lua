@@ -445,7 +445,7 @@ function Event:SetTeamFor(keyOrFull, team)
     local u = self.units[key]
     if u then
         u:SetTeam(team)
-        RPE.Debug:Print(string.format("Unit %s now assigned to Team %d (ID #%d)", u.name, u.team, u.id))
+        RPE.Debug:Print(string.format("Unit %s now assigned to Team %d (ID #%d).", u.name, u.team, u.id))
     else
         RPE.Debug:Error("SetTeamFor: no unit found for "..tostring(keyOrFull))
     end
@@ -515,7 +515,7 @@ function Event:UpdateUnits(opts)
         end
     end
 
-    RPE.Debug:Print("Updated units.")
+    RPE.Debug:Internal("Updated units.")
 end
 
 
@@ -599,8 +599,8 @@ function Event:OnAwake(opts)
                 self:OnPlayerReadyResponse(sender, answer)
             end,
             function(missing)         -- timeout
-                RPE.Debug:Print("Ready check timed out. Missing:")
-                for _, key in ipairs(missing) do RPE.Debug:Print(" - "..key) end
+                RPE.Debug:Error("Ready check timed out. Missing:")
+                for _, key in ipairs(missing) do RPE.Debug:Error(" - "..key) end
             end,
             10 -- seconds (optional)
         )
@@ -748,7 +748,7 @@ function Event:RemoveOfflineUnits()
         if not isOnlineGroupMember(key) then
             self.units[key] = nil
             if u then
-                RPE.Debug:Print("Removing offline player " .. key .. " (ID #" .. (u.id or "?") .. ") from event")
+                RPE.Debug:Print("Removing offline player " .. key .. " (ID #" .. (u.id or "?") .. ") from event.")
             end
         end
     end
@@ -891,7 +891,7 @@ function Event:OnStart(opts)
     end
 
     -- Event started debug message.
-    RPE.Debug:Print(string.format("%s", self.name or "(Starting Event)"))
+    RPE.Debug:Internal(string.format("%s", self.name or "(Starting Event)"))
 
     -- Make this event globally accessible to UI helpers that expect ActiveEvent
     RPE.Core.ActiveEvent = self
@@ -1028,7 +1028,7 @@ function Event:OnStart(opts)
                                     })
                                 end)
                                 if not ok then
-                                    RPE.Debug:Print(string.format("[Event] Failed to apply aura %s to unit %d: %s", auraData.id, unitId, err))
+                                    RPE.Debug:Error(string.format("[Event] Failed to apply aura %s to unit %d: %s", auraData.id, unitId, err))
                                 end
                             else
                                 RPE.Debug:Internal(string.format("[Event] Aura definition not found: %s", auraData.id))
@@ -1148,12 +1148,12 @@ end
 
 -- Sent by the group leader to end the event on all clients.
 function Event:OnEnd(opts)
-    RPE.Debug:Print("Ending event: " .. tostring(self.name or "(nil)"))
+    RPE.Debug:Internal("Ending event: " .. tostring(self.name or "(nil)"))
     RPE.Core.Comms.Broadcast:EndEvent()
 end
 
 function Event:OnEndClient(opts)
-    RPE.Debug:Print("Event ended: " .. tostring(self.name or "(nil)"))
+    RPE.Debug:Print("Event ended.")
 
     -- Close all event-related UI
     RPE_UI.Common:Hide(RPE.Core.Windows.EventWidget)

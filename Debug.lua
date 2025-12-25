@@ -113,6 +113,94 @@ function Debug:Skill(message)
     end
 end
 
+function Debug:Currency(message)
+    if not message or not self.debug then return end
+    
+    -- Push to ChatBoxWidget if available (as both chat message and debug message)
+    local chatBox = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
+    if chatBox then
+        -- Push as a chat message with "CURRENCY" channel type
+        if chatBox.PushCurrencyMessage then
+            chatBox:PushCurrencyMessage(message)
+        else
+            chatBox:PushDiceMessage(message) -- fallback for older versions
+        end
+        -- Also push to debug tab
+        chatBox:PushDebugMessage(message, "Currency")
+    end
+    
+    -- Also push to default chat frame
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage(message)
+    end
+end
+
+function Debug:Item(message)
+    if not message or not self.debug then return end
+    
+    -- Push to ChatBoxWidget if available (as both chat message and debug message)
+    local chatBox = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
+    if chatBox then
+        -- Push as a chat message with "ITEM" channel type
+        if chatBox.PushItemMessage then
+            chatBox:PushItemMessage(message)
+        else
+            chatBox:PushDiceMessage(message) -- fallback for older versions
+        end
+        -- Also push to debug tab
+        chatBox:PushDebugMessage(message, "Item")
+    end
+    
+    -- Also push to default chat frame
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage(message)
+    end
+end
+
+function Debug:Craft(message)
+    if not message or not self.debug then return end
+    
+    -- Push to ChatBoxWidget if available (as both chat message and debug message)
+    local chatBox = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
+    if chatBox then
+        -- Push as a chat message with "CRAFT" channel type
+        if chatBox.PushCraftMessage then
+            chatBox:PushCraftMessage(message)
+        else
+            chatBox:PushDiceMessage(message) -- fallback for older versions
+        end
+        -- Also push to debug tab
+        chatBox:PushDebugMessage(message, "Craft")
+    end
+    
+    -- Also push to default chat frame
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage(message)
+    end
+end
+
+function Debug:Recipe(message)
+    if not message or not self.debug then return end
+    
+    -- Push to ChatBoxWidget if available (as both chat message and debug message)
+    local chatBox = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
+    if chatBox then
+        -- Push as a chat message with "RECIPE" channel type
+        if chatBox.PushRecipeMessage then
+            chatBox:PushRecipeMessage(message)
+        else
+            chatBox:PushDiceMessage(message) -- fallback for older versions
+        end
+        -- Also push to debug tab
+        chatBox:PushDebugMessage(message, "Recipe")
+    end
+    
+    -- Also push to default chat frame
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage(message)
+    end
+end
+
 function Debug:Combat(message)
     if not message or not debug then return end
     local icons = (RPE and RPE.Common and RPE.Common.InlineIcons) or {}

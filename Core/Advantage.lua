@@ -45,7 +45,7 @@ function Advantage:Set(statId, level, auraId)
         adv.sources[auraId] = true
         adv.level = level  -- Use the level from this source (last one wins if multiple)
         if RPE and RPE.Debug and RPE.Debug.Print then
-            RPE.Debug:Print(("[Advantage] Set %s to level %d (source: %s)"):format(statId, level, auraId))
+            RPE.Debug:Internal(("[Advantage] Set %s to level %d (source: %s)"):format(statId, level, auraId))
         end
     end
 end
@@ -93,11 +93,11 @@ function Advantage:Remove(statId, auraId)
     if next(adv.sources) == nil then
         advantages[statId] = nil
         if RPE and RPE.Debug and RPE.Debug.Print then
-            RPE.Debug:Print(("[Advantage] Removed advantage from %s (no remaining sources)"):format(statId))
+            RPE.Debug:Internal(("[Advantage] Removed advantage from %s (no remaining sources)"):format(statId))
         end
     else
         if RPE and RPE.Debug and RPE.Debug.Print then
-            RPE.Debug:Print(("[Advantage] Removed source %s from %s (level still %d from other sources)"):format(
+            RPE.Debug:Internal(("[Advantage] Removed source %s from %s (level still %d from other sources)"):format(
                 auraId, statId, adv.level))
         end
     end
@@ -109,7 +109,7 @@ function Advantage:Clear()
         local count = 0
         for _ in pairs(advantages) do count = count + 1 end
         if count > 0 then
-            RPE.Debug:Print(("[Advantage] Cleared all %d advantages"):format(count))
+            RPE.Debug:Internal(("[Advantage] Cleared all %d advantages"):format(count))
         end
     end
     table.wipe(advantages)

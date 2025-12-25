@@ -33,7 +33,7 @@ SlashCmdList["RPE"] = function(msg)
         RPE_UI.Common:Toggle(main)
     elseif arg == "rules" then
         if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then
-            RPE.Debug:Print("Only the supergroup leader can open the Ruleset window.")
+            RPE.Debug:Warning("Only the supergroup leader can open the Ruleset window.")
             return
         end
         local Ruleset = RPE_UI.Common:GetWindow("Ruleset")
@@ -44,7 +44,7 @@ SlashCmdList["RPE"] = function(msg)
         RPE_UI.Common:Toggle(Ruleset)
     elseif arg == "event" then
         if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then
-            RPE.Debug:Print("Only the supergroup leader can open the Event window.")
+            RPE.Debug:Warning("Only the supergroup leader can open the Event window.")
             return
         end
         local Event = RPE_UI.Common:GetWindow("EventWindow")
@@ -70,7 +70,7 @@ SlashCmdList["RPE"] = function(msg)
                 RPE_UI.Common:Show(Setup)
                 isNewWindow = true
             else
-                RPE.Debug:Error("Setup window class not found.")
+                RPE.Debug:Error("Setup window not found.")
                 return
             end
         end
@@ -84,14 +84,14 @@ SlashCmdList["RPE"] = function(msg)
         -- Print the current player's TRP3 character (roleplay) name, falling back to game name
         local getter = RPE and RPE.Common and RPE.Common.GetTRP3NameForUnit
         if not getter then
-            print("TRP3 helper not available (Common:GetTRP3NameForUnit missing).")
+            RPE.Debug:Error("[Commands] TRP3 helper not available (Common:GetTRP3NameForUnit missing).")
             return
         end
         local ok, name = pcall(function() return RPE.Common:GetTRP3NameForUnit("player") end)
         if ok and name and name ~= "" then
-            print("TRP3 name: " .. name)
+            RPE.Debug:Error("[Commands] TRP3 name: " .. name)
         else
-            print("TRP3 name: (none)")
+            RPE.Debug:Error("[Commands] TRP3 name: (none)")
         end
 
         local statId = rest:match("^(%S+)")
@@ -99,7 +99,7 @@ SlashCmdList["RPE"] = function(msg)
             statId = statId:upper()
             local val = RPE.Stats:GetValue(statId)
             if not val then
-                RPE.Debug:Warning(string.format("Stat %s not found.", statId))
+                RPE.Debug:Warning(string.format("[Commands] Stat %s not found.", statId))
                 return
             end
             RPE.Debug:Print(string.format("Stat %s: %d", statId, val))
@@ -131,7 +131,7 @@ SlashCmdList["RPE"] = function(msg)
             end
         end
         if not win then
-            RPE.Debug:Error("Chanter window not found.")
+            RPE.Debug:Error("[Commands] Chanter window not found.")
             return
         end
         -- Only toggle if it wasn't just created
@@ -142,7 +142,7 @@ SlashCmdList["RPE"] = function(msg)
         -- Show the ChatBoxWidget
         local ChatBox = RPE and RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
         if not ChatBox then
-            RPE.Debug:Error("ChatBox widget not found.")
+            RPE.Debug:Error("[Commands] ChatBox widget not found.")
             return
         end
         ChatBox:Show()
@@ -165,14 +165,14 @@ SlashCmdList["RPE"] = function(msg)
     elseif arg == "location" then
         local Location = RPE and RPE.Core and RPE.Core.Location
         if not Location then
-            RPE.Debug:Error("Location module not found.")
+            RPE.Debug:Error("[Commands] Location module not found.")
             return
         end
         local loc = Location:GetPlayerLocation()
         if loc then
             RPE.Debug:Print(string.format("Your Location: %s, %.3f, %.3f (MapID: %d)", loc.zone, loc.x, loc.y, loc.mapID))
         else
-            RPE.Debug:Error("Could not retrieve location.")
+            RPE.Debug:Error("[Commands]Could not retrieve location.")
         end
     elseif arg == "lfrp" then
         local LFRPWindow = RPE_UI.Common:GetWindow("LFRPWindow")
@@ -184,13 +184,70 @@ SlashCmdList["RPE"] = function(msg)
                 RPE_UI.Common:Show(LFRPWindow)
                 isNewWindow = true
             else
-                RPE.Debug:Error("LFRP window class not found.")
+                RPE.Debug:Error("[Commands] LFRP window class not found.")
                 return
             end
         end
         -- Only toggle if it wasn't just created
         if not isNewWindow then
             RPE_UI.Common:Toggle(LFRPWindow)
+        end
+    elseif arg == "currency" then
+        local currencyKey = rest:match("^(%S+)%s+(%S+)")
+        local amount = rest:match("^%S+%s+(%S+)")
+        if not currencyKey or not amount then
+            RPE.Debug:Warning("[Commands] Usage: /rpe currency [key] [amount]")
+            return
+        end
+        amount = tonumber(amount)
+        if not amount or amount <= 0 then
+            RPE.Debug:Warning("[Commands] Amount must be a positive number.")
+            return
+        end
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+        if not profile then
+            RPE.Debug:Error("[Commands] No active profile found.")
+            return
+        end
+        
+        -- Check if it's a hardcoded currency
+        local Common = RPE.Common
+        local hardcodedCurrencies = Common and Common.CurrencyIcons or {}
+        local currencyKeyLower = currencyKey:lower()
+        local foundCurrency = false
+        local iconId = nil
+        
+        if hardcodedCurrencies[currencyKeyLower] then
+            -- Found as hardcoded currency
+            foundCurrency = true
+            iconId = hardcodedCurrencies[currencyKeyLower]
+        else
+            -- Try to find as an item in the ItemRegistry by searching for matching name
+            local ItemRegistry = RPE.Core and RPE.Core.ItemRegistry
+            if ItemRegistry then
+                local allItems = ItemRegistry:All()
+                if allItems then
+                    -- Search through all items for one with matching name and CURRENCY category
+                    for itemId, item in pairs(allItems) do
+                        if item and item.name and item.data then
+                            if item.name:lower() == currencyKeyLower and item.category and item.category:lower() == "currency" then
+                                -- Found a CURRENCY category item by name
+                                foundCurrency = true
+                                iconId = tonumber(item.icon) or nil
+                                currencyKey = currencyKeyLower  -- Normalize to lowercase for storage
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Only add currency if we found it
+        if foundCurrency then
+            profile:AddCurrency(currencyKey, amount)
+        else
+            RPE.Debug:Warning("[Commands] Currency not found: " .. currencyKey)
         end
     elseif arg == "npcinfo" then
             -- Print information about the current target (safe calls)
@@ -227,7 +284,7 @@ SlashCmdList["RPE"] = function(msg)
             ok, hp = pcall(UnitHealth, "target") if not ok then hp = "?" end
             ok, hpmax = pcall(UnitHealthMax, "target") if not ok then hpmax = "?" end
 
-            print(string.format("Target: %s | level=%s | guid=%s | npcId=%s | type=%s | classification=%s | HP=%s/%s",
+            RPE.Debug:Print(string.format("Target: %s | level=%s | guid=%s | npcId=%s | type=%s | classification=%s | HP=%s/%s",
                 tostring(name), tostring(level), tostring(guid), tostring(npcId or ""), tostring(ctype), tostring(classif), tostring(hp), tostring(hpmax)
             ))
     else

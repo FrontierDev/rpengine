@@ -735,7 +735,7 @@ function ItemEditorSheet:BuildUI(opts)
                             else
                                 add.func = function()
                                     local PDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DB
-                                    local profile = PDB and PDB.LoadActiveForCurrentCharacter and PDB.LoadActiveForCurrentCharacter()
+                                    local profile = PDB and PDB.GetOrCreateActive and PDB.GetOrCreateActive()
                                     if not profile then
                                         return
                                     end

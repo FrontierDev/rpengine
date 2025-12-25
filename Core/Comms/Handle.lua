@@ -238,7 +238,7 @@ Comms:RegisterHandler("RULESET_COMPLETE", function(data, sender)
             if exclusive and tonumber(exclusive) == 1 then
                 -- Exclusive mode: ONLY required datasets are active
                 DatasetDB.SetActiveNamesForCurrentCharacter(requiredList)
-                RPE.Debug:Print(string.format("Activated %d required datasets (exclusive mode).", #requiredList))
+                RPE.Debug:Warning(string.format("Activated %d required datasets (exclusive mode).", #requiredList))
             else
                 -- Non-exclusive mode: ensure required datasets are active, keep others
                 local current = DatasetDB.GetActiveNamesForCurrentCharacter()
@@ -1233,7 +1233,7 @@ Comms:RegisterHandler("AURA_STATMOD", function(data, sender)
     RPE.Debug:Internal(string.format("[Handle] AURA_STATMOD FULL DATA:\n%s", data))
     -- Disabled by default: we don't accept remote stat writes yet.
     if RPE and RPE.Debug and RPE.Debug.Print then
-        RPE.Debug:Print("[Handle] Ignored AURA_STATMOD from " .. tostring(sender) .. " (remote stat mods disabled).")
+        RPE.Debug:Internal("[Handle] Ignored AURA_STATMOD from " .. tostring(sender) .. " (remote stat mods disabled).")
     end
 end)
 
