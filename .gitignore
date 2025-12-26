@@ -1,6 +1,8 @@
 .docs
 .vscode
+.readthedocs.yaml
 Test
 *.bat
 *.py
 *.ps1
+.gitignore
