@@ -2693,7 +2693,7 @@ Comms:RegisterHandler("HELLO", function(raw, sender)
     end
     
     -- Check if hashes match
-    if senderHash ~= myHash then
+    if senderHash ~= myHash and RPE.Core.ActiveEvent:IsRunning() then
         RPE.Debug:Warning(string.format("Automatically syncing with %s due to rule or data mismatch. Please wait!", sender, myHash, senderHash))
         
         -- Convert sender to canonical key format for sync tracking
@@ -2945,5 +2945,353 @@ Comms:RegisterHandler("LFRP_BROADCAST", function(raw, sender)
             approachable = approachable,
             broadcastLocation = broadcastLocation,
         })
+    end
+end)
+
+-- Handle loot distribution broadcast
+Comms:RegisterHandler("DISTRIBUTE_LOOT", function(data, sender)
+    local args = { strsplit(";", data) }
+    local distrType = args[1]
+    local timeout = tonumber(args[2]) or 60
+    local entryCount = tonumber(args[3]) or 0
+    
+    if entryCount == 0 then return end
+    
+    -- Parse loot entries (11 fields per entry: category, lootId, name, icon, quantity, rarity, marker, allReceive, restrictedPlayers, spellRank, profession)
+    local lootEntries = {}
+    local idx = 4
+    for i = 1, entryCount do
+        local category = args[idx]
+        local lootId = args[idx + 1]
+        local name = args[idx + 2]
+        local icon = args[idx + 3]
+        local quantity = tonumber(args[idx + 4]) or 1
+        local rarity = args[idx + 5]
+        local marker = tonumber(args[idx + 6]) or 0
+        local allReceive = args[idx + 7] == "1"
+        local restrictedStr = args[idx + 8] or ""
+        local spellRank = tonumber(args[idx + 9]) or 1
+        local profession = args[idx + 10] or ""
+        
+        -- Parse restricted players
+        local restrictedPlayers = {}
+        if restrictedStr ~= "" then
+            for playerKey in string.gmatch(restrictedStr, "[^,]+") do
+                restrictedPlayers[playerKey] = true
+            end
+        end
+        
+        table.insert(lootEntries, {
+            currentCategory = category,
+            currentLootData = {
+                id = lootId,
+                name = name,
+                icon = icon,
+                rarity = rarity
+            },
+            currentQuantity = quantity,
+            raidMarker = marker,
+            allReceive = allReceive,
+            restrictedPlayers = restrictedPlayers,
+            spellRank = spellRank,
+            profession = profession
+        })
+        
+        idx = idx + 11
+    end
+    
+    -- Show loot window with received entries
+    local LootWindow = RPE_UI and RPE_UI.Windows and RPE_UI.Windows.LootWindow
+    if LootWindow then
+        local instance = LootWindow:GetInstance()
+        if instance then
+            instance:ReceiveDistribution(lootEntries, distrType, timeout)
+        end
+    end
+end)
+
+-- Handle loot choice responses from players
+Comms:RegisterHandler("LOOT_CHOICE", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] LOOT_CHOICE received from %s", sender))
+    
+    -- Only process if we're the supergroup leader (or if there's no supergroup - solo play)
+    local ActiveSupergrp = RPE.Core and RPE.Core.ActiveSupergroup
+    if ActiveSupergrp and ActiveSupergrp.GetLeader then
+        local leaderKey = ActiveSupergrp:GetLeader()
+        local myKey = RPE.Common and RPE.Common:LocalPlayerKey()
+        
+        RPE.Debug:Internal(string.format("[Handle] Leader check: leaderKey=%s, myKey=%s", tostring(leaderKey), tostring(myKey)))
+        
+        if leaderKey and myKey and leaderKey ~= myKey then
+            -- There's a leader and it's not us, ignore this message
+            RPE.Debug:Internal("[Handle] Not the leader, ignoring LOOT_CHOICE")
+            return
+        end
+    end
+    
+    RPE.Debug:Internal("[Handle] Processing LOOT_CHOICE (solo or as leader)")
+    
+    local args = { strsplit(";", data) }
+    local distrType = args[1]
+    
+    RPE.Debug:Internal(string.format("[Handle] Parsed distrType: %s", tostring(distrType)))
+    
+    -- Get sender's player key
+    local playerKey = sender
+    if not playerKey or playerKey == "" then 
+        RPE.Debug:Internal("[Handle] No playerKey from sender")
+        return 
+    end
+    
+    -- Parse choices (2 fields per choice: lootId, bid/choice)
+    local choices = {}
+    local idx = 2
+    while idx <= #args do
+        local lootId = args[idx]
+        local value = args[idx + 1]
+        
+        RPE.Debug:Internal(string.format("[Handle] Parsing choice: lootId='%s', value='%s'", tostring(lootId), tostring(value)))
+        
+        if lootId and value then
+            if distrType == "BID" then
+                table.insert(choices, {
+                    lootId = lootId,
+                    bid = tonumber(value) or 0
+                })
+            else
+                table.insert(choices, {
+                    lootId = lootId,
+                    choice = value
+                })
+            end
+        end
+        
+        idx = idx + 2
+    end
+    
+    RPE.Debug:Internal(string.format("[Handle] Parsed %d choices", #choices))
+    
+    -- Record choices in LootManager
+    local LootManager = RPE.Core and RPE.Core.LootManager
+    if LootManager then
+        RPE.Debug:Internal(string.format("[Handle] LootManager: %s, RecordLootChoice: %s", 
+            tostring(LootManager), 
+            tostring(LootManager.RecordLootChoice)))
+        
+        if LootManager.RecordLootChoice then
+            LootManager:RecordLootChoice(playerKey, choices, distrType)
+            RPE.Debug:Internal("[Handle] Called LootManager:RecordLootChoice")
+        else
+            RPE.Debug:Warning("[Handle] LootManager.RecordLootChoice not available")
+        end
+    else
+        RPE.Debug:Warning("[Handle] LootEditorWindow not found")
+    end
+end)
+
+-- Handle loot distribution to players
+Comms:RegisterHandler("SEND_LOOT", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] SEND_LOOT received from %s", sender))
+    
+    local args = { strsplit(";", data) }
+    if #args < 5 then
+        RPE.Debug:Error("[Handle] SEND_LOOT: insufficient arguments")
+        return
+    end
+    
+    local winnerKey = args[1]:lower()
+    local lootId = args[2]
+    local lootName = args[3]
+    local category = args[4]
+    local quantity = tonumber(args[5]) or 1
+    
+    RPE.Debug:Internal(string.format("[Handle] SEND_LOOT: args[5]=%s, quantity=%d", args[5], quantity))
+    RPE.Debug:Internal(string.format("[Handle] SEND_LOOT: winner=%s, loot=%s, category=%s, qty=%d", 
+        winnerKey, lootName, category, quantity))
+    
+    local myKey = RPE.Common and RPE.Common:LocalPlayerKey()
+    if not myKey then
+        RPE.Debug:Warning("[Handle] SEND_LOOT: Could not get local player key")
+        return
+    end
+    
+    myKey = myKey:lower()
+    
+    -- Handle "all" winner key for auto-resolve items
+    if winnerKey == "all" then
+        RPE.Debug:Internal("[Handle] SEND_LOOT: This is for everyone, applying...")
+        
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+        if not profile then
+            RPE.Debug:Warning("[Handle] SEND_LOOT: Could not load character profile")
+            return
+        end
+        
+        if category == "items" then
+            profile:AddItem(lootId, quantity)
+        elseif category == "currency" then
+            profile:AddCurrency(lootName, quantity)
+        elseif category == "spell" or category == "spells" then
+            local rank = tonumber(args[6]) or 1
+            profile:LearnSpell(lootId, rank)
+        elseif category == "recipe" or category == "recipes" then
+            local profession = args[6] or "Crafting"
+            profile:LearnRecipe(profession, lootId)
+        end
+        return
+    end
+    
+    -- Apply loot if recipient matches (case-insensitive)
+    if winnerKey == myKey then
+        RPE.Debug:Internal("[Handle] SEND_LOOT: This is our loot, applying...")
+        
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+        if not profile then
+            RPE.Debug:Warning("[Handle] SEND_LOOT: Could not load character profile")
+            return
+        end
+        
+        if category == "items" then
+            profile:AddItem(lootId, quantity)
+        elseif category == "currency" then
+            -- Currencies use the lootName (e.g. "Bloodstone", "copper") as the currency ID
+            -- This matches what FormatCurrencyMessage expects
+            profile:AddCurrency(lootName, quantity)
+        elseif category == "spell" or category == "spells" then
+            local rank = tonumber(args[6]) or 1
+            profile:LearnSpell(lootId, rank)
+        elseif category == "recipe" or category == "recipes" then
+            local profession = args[6] or "Crafting"
+            profile:LearnRecipe(profession, lootId)
+        end
+    else
+        -- Not our loot, print a message about who received it (unless everyone gets it)
+        local allReceive = tonumber(args[7]) or 0
+        if allReceive == 0 then
+            -- Extract player name from winnerKey (remove realm)
+            local playerName = winnerKey:match("^([^%-]+)")
+            if playerName then
+                -- Title case the name
+                playerName = playerName:sub(1, 1):upper() .. playerName:sub(2):lower()
+                RPE.Debug:PartyLoot(playerName, lootId, lootName, category, quantity, args[6])
+            end
+        end
+    end
+end)
+
+-- Handle item/currency trades between players
+Comms:RegisterHandler("TRADE_ITEM", function(data, sender)
+    local args = { strsplit(";", data) }
+    if #args < 3 then
+        RPE.Debug:Error("[Handle] TRADE_ITEM: insufficient arguments")
+        return
+    end
+    
+    local recipientKey = args[1]:lower()
+    local itemId = args[2]
+    local quantity = tonumber(args[3]) or 1
+    
+    local myKey = RPE.Common and RPE.Common:LocalPlayerKey()
+    if not myKey then
+        RPE.Debug:Warning("[Handle] TRADE_ITEM: Could not get local player key")
+        return
+    end
+    
+    myKey = myKey:lower()
+    local senderKey = sender and sender:lower()
+    
+    -- Apply trade if we are the recipient
+    if recipientKey == myKey then
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+        if not profile then
+            RPE.Debug:Warning("[Handle] TRADE_ITEM: Could not load character profile")
+            return
+        end
+        
+        -- Determine if this is an item or currency
+        local ItemRegistry = RPE.Core and RPE.Core.ItemRegistry
+        local item = ItemRegistry and ItemRegistry:Get(itemId)
+        
+        if item then
+            if item.category == "CURRENCY" then
+                -- Add currency using the item name as the currency ID
+                profile:AddCurrency(item.name, quantity)
+            else
+                -- Add regular item
+                profile:AddItem(itemId, quantity)
+            end
+        else
+            -- If not in registry, try as item by default
+            profile:AddItem(itemId, quantity)
+        end
+    end
+    
+    -- Remove from sender's inventory
+    if senderKey == myKey then
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+        if not profile then
+            RPE.Debug:Warning("[Handle] TRADE_ITEM: Could not load character profile")
+            return
+        end
+        
+        -- Determine if this is an item or currency
+        local ItemRegistry = RPE.Core and RPE.Core.ItemRegistry
+        local item = ItemRegistry and ItemRegistry:Get(itemId)
+        
+        if item then
+            if item.category == "CURRENCY" then
+                -- Remove currency
+                profile:RemoveCurrency(item.name, quantity)
+            else
+                -- Remove regular item
+                profile:RemoveItem(itemId, quantity)
+            end
+        else
+            -- If not in registry, try as item by default
+            profile:RemoveItem(itemId, quantity)
+        end
+    end
+end)
+
+Comms:RegisterHandler("TRADE_CURRENCY", function(data, sender)
+    local args = { strsplit(";", data) }
+    if #args < 3 then
+        RPE.Debug:Error("[Handle] TRADE_CURRENCY: insufficient arguments")
+        return
+    end
+    
+    local recipientKey = args[1]:lower()
+    local currencyKey = args[2]:lower()
+    local amount = tonumber(args[3]) or 1
+    
+    local myKey = RPE.Common and RPE.Common:LocalPlayerKey()
+    if not myKey then
+        RPE.Debug:Warning("[Handle] TRADE_CURRENCY: Could not get local player key")
+        return
+    end
+    
+    myKey = myKey:lower()
+    local senderKey = sender and sender:lower()
+    
+    -- Apply trade if we are the recipient
+    if recipientKey == myKey then
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+        if not profile then
+            RPE.Debug:Warning("[Handle] TRADE_CURRENCY: Could not load character profile")
+            return
+        end
+        
+        profile:AddCurrency(currencyKey, amount)
+    end
+    
+    -- Remove from sender's inventory
+    if senderKey == myKey then
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+        if not profile then
+            RPE.Debug:Warning("[Handle] TRADE_CURRENCY: Could not load character profile")
+            return
+        end
+        
+        profile:SpendCurrency(currencyKey, amount)
     end
 end)

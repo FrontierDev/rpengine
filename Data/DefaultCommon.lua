@@ -8,7 +8,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 		id = "ixn-blacksmithing-supplies",
 		options = {
 			{
-				label = "Shop",
+				label = "Blacksmithing Supplies",
 				action = "SHOP",
 				args = {
 					maxStock = "inf",
@@ -41,7 +41,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 		id = "ixn-tailoring-supplies",
 		options = {
 			{
-				label = "Shop",
+				label = "Tailoring Supplies",
 				action = "SHOP",
 				args = {
 					maxStock = "inf",
@@ -74,7 +74,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 		id = "ixn-leatherworking-supplies",
 		options = {
 			{
-				label = "Shop",
+				label = "Leatherworking Supplies",
 				action = "SHOP",
 				args = {
 					maxStock = "inf",
@@ -107,7 +107,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 		id = "ixn-alchemy-supplies",
 		options = {
 			{
-				label = "Shop",
+				label = "Alchemy Supplies",
 				action = "SHOP",
 				args = {
 					maxStock = "inf",
@@ -192,7 +192,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 		id = "ixn-enchanting-supplies",
 		options = {
 			{
-				label = "Shop",
+				label = "Enchanting Supplies",
 				action = "SHOP",
 				args = {
 					maxStock = "inf",
@@ -226,7 +226,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 		id = "ixn-engineering-supplies",
 		options = {
 			{
-				label = "Shop",
+				label = "Engineering Supplies",
 				action = "SHOP",
 				args = {
 					maxStock = "inf",
@@ -259,7 +259,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 		id = "ixn-jewelcrafting-supplies",
 		options = {
 			{
-				label = "Shop",
+				label = "Jewelcrafting Supplies",
 				action = "SHOP",
 				args = {
 					maxStock = "inf",
@@ -292,7 +292,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 		id = "ixn-inscription-supplies",
 		options = {
 			{
-				label = "Shop",
+				label = "Inscription Supplies",
 				action = "SHOP",
 				args = {
 					maxStock = "inf",
@@ -325,7 +325,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 		id = "ixn-cooking-supplies",
 		options = {
 			{
-				label = "Shop",
+				label = "Cooking Supplies",
 				action = "SHOP",
 				args = {
 					maxStock = "inf",
@@ -397,7 +397,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 				action = "SALVAGE",
 				requiresDead = 1,
 				output = {
-					{ itemId = "linen_cloth", qty = "1d3", chance = 1.0 },
+					{ itemId = "item-r2589", qty = "1d3", chance = 1.0 },
 				},
 			},
 		},
@@ -413,7 +413,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 				action = "SKIN",
 				requiresDead = 1,
 				output = {
-					{ itemId = "light_leather", qty = "1d2", chance = 1.0 },
+					{ itemId = "item-r2318", qty = "1d2", chance = 1.0 },
 				},
 			},
 		},
@@ -435,48 +435,4 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 		},
 		target = "Paladin Trainer",
 	},
-}
-
-RPE.Data.Default.REAGENTS_COMMON = {
-    iron_ingot = {
-        id = "iron_ingot",
-        name = "Iron Ingot",
-        category = "MATERIAL",
-        icon = 133232, -- INV_Ingot_08
-        stackable = true,
-        maxStack = 20,
-        basePriceU = 50,
-        vendorSellable = true,
-        rarity = "common",
-        data = {},
-        tags = { "material", "crafting", "blacksmithing" },
-    },    
-
-    linen_cloth = {
-        id = "linen_cloth",
-        name = "Linen Cloth",
-        category = "MATERIAL",
-        icon = 132889, -- INV_Misc_Cloth_Linen_02
-        stackable = true,
-        maxStack = 20,
-        basePriceU = 2.5,
-        vendorSellable = true,
-        rarity = "common",
-        data = {},
-        tags = { "material", "crafting", "tailoring" },
-    },  
-
-    light_leather = {
-        id = "light_leather",
-        name = "Light Leather",
-        category = "MATERIAL",
-        icon = 134252, -- INV_Misc_LeatherScrap_02
-        stackable = true,
-        maxStack = 20,
-        basePriceU = 5,
-        vendorSellable = true,
-        rarity = "common",
-        data = {},
-        tags = { "material", "crafting", "skinning", "leatherworking" },
-    }
 }

@@ -135,6 +135,58 @@ function Debug:Currency(message)
     end
 end
 
+function Debug:PartyLoot(playerName, lootId, lootName, category, quantity, extraData)
+    if not playerName or not lootName then return end
+    
+    -- Look up item rarity for color formatting
+    local rarity = "common"
+    if lootId then
+        local ItemRegistry = RPE.Core and RPE.Core.ItemRegistry
+        if ItemRegistry then
+            local item = ItemRegistry:Get(tostring(lootId))
+            if item then
+                rarity = item.rarity or "common"
+            end
+        end
+    end
+    
+    -- Color the loot name by rarity
+    local coloredName = RPE.Common and RPE.Common:ColorByQuality(lootName, rarity) or lootName
+    
+    local message = ""
+    if category == "items" or category == "currency" then
+        message = string.format("|cff00AA00%s receives loot: |r%s |cff00AA00x%d|r", playerName, coloredName, quantity or 1)
+    elseif category == "spell" or category == "spells" then
+        local rankStr = quantity and " (Rank " .. tostring(quantity) .. ")" or ""
+        local yellowName = "|cffFFD700" .. lootName .. rankStr .. "|r"
+        message = string.format("|cff00AA00%s learned spell: |r%s", playerName, yellowName)
+    elseif category == "recipe" or category == "recipes" then
+        local profStr = extraData and " (" .. tostring(extraData) .. ")" or ""
+        local yellowName = "|cffFFD700" .. lootName .. profStr .. "|r"
+        message = string.format("|cff00AA00%s learned how to craft: |r%s", playerName, yellowName)
+    else
+        message = string.format("|cff00AA00%s receives loot: |r%s |cff00AA00x%d|r", playerName, coloredName, quantity or 1)
+    end
+    
+    -- Push to ChatBoxWidget if available (as both chat message and debug message)
+    local chatBox = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
+    if chatBox then
+        -- Push as a chat message with "CURRENCY" channel type (for green color)
+        if chatBox.PushCurrencyMessage then
+            chatBox:PushCurrencyMessage(message)
+        else
+            chatBox:PushDiceMessage(message) -- fallback for older versions
+        end
+        -- Also push to debug tab
+        chatBox:PushDebugMessage(message, "Currency")
+    end
+    
+    -- Also push to default chat frame
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage(message)
+    end
+end
+
 function Debug:Item(message)
     if not message or not self.debug then return end
     

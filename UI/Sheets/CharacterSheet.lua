@@ -446,14 +446,20 @@ function CharacterSheet:DrawCurrencies(currencyRow)
         amountText.fs:ClearAllPoints()
         amountText.fs:SetPoint("CENTER", amountText.frame, "CENTER", 0, 0)
         
-        -- Add tooltip on hover
+        -- Add tooltip and right-click menu on hover
         amountText.frame:EnableMouse(true)
+        
+        -- Store currency info for context menu
+        amountText._currencyDef = currencyDef
+        amountText._profile = self.profile
+        amountText._sheet = self
+        
         amountText.frame:SetScript("OnEnter", function(self)
             if RPE and RPE.Common and RPE.Common.ShowTooltip then
                 RPE.Common:ShowTooltip(self, {
-                    title = currencyDef.name,
-                    lines = currencyDef.description and currencyDef.description ~= "" and {
-                        { text = currencyDef.description }
+                    title = amountText._currencyDef.name,
+                    lines = amountText._currencyDef.description and amountText._currencyDef.description ~= "" and {
+                        { text = amountText._currencyDef.description }
                     } or {}
                 })
             end
@@ -462,6 +468,36 @@ function CharacterSheet:DrawCurrencies(currencyRow)
         amountText.frame:SetScript("OnLeave", function()
             if RPE and RPE.Common and RPE.Common.HideTooltip then
                 RPE.Common:HideTooltip()
+            end
+        end)
+        
+        -- Right-click for context menu
+        amountText.frame:SetScript("OnMouseDown", function(self, button)
+            if button == "RightButton" then
+                local currencyDef = amountText._currencyDef
+                local profile = amountText._profile
+                local sheet = amountText._sheet
+                
+                RPE_UI.Common:ContextMenu(self, function(level, menuList)
+                    if level == 1 then
+                        UIDropDownMenu_AddButton({
+                            text = "Send to...",
+                            func = function()
+                                sheet:_ShowSendCurrencyDialog(currencyDef, profile)
+                            end,
+                            notCheckable = true
+                        }, level)
+                        
+                        UIDropDownMenu_AddButton({
+                            text = "|cffff0000Clear Currency|r",
+                            func = function()
+                                profile:SetCurrency(currencyDef.key, 0)
+                                sheet:Refresh()
+                            end,
+                            notCheckable = true
+                        }, level)
+                    end
+                end)
             end
         end)
         
@@ -631,6 +667,162 @@ function CharacterSheet:ShowLanguageDialog()
     )
     
     p:SetButtons("Learn", "Cancel")
+    p:Show()
+end
+
+function CharacterSheet:_ShowSendCurrencyDialog(currencyDef, profile)
+    local Popup = RPE_UI.Prefabs and RPE_UI.Prefabs.Popup
+    local HGroup = RPE_UI.Elements and RPE_UI.Elements.HorizontalLayoutGroup
+    local VGroup = RPE_UI.Elements and RPE_UI.Elements.VerticalLayoutGroup
+    local Text = RPE_UI.Elements and RPE_UI.Elements.Text
+    local Input = RPE_UI.Elements and RPE_UI.Elements.Input
+    local Dropdown = RPE_UI.Elements and RPE_UI.Elements.Dropdown
+    
+    if not (Popup and HGroup and VGroup and Text and Input and Dropdown) then
+        return
+    end
+    
+    -- Build list of group members
+    local players = {}
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name then
+                table.insert(players, name)
+            end
+        end
+    elseif IsInGroup() then
+        for i = 1, GetNumSubgroupMembers() do
+            local unit = "party" .. i
+            if UnitExists(unit) then
+                local name = UnitName(unit)
+                if name then
+                    table.insert(players, name)
+                end
+            end
+        end
+    end
+    
+    if #players == 0 then
+        RPE.Debug:Warning("No group members found to send currency to")
+        return
+    end
+    
+    table.sort(players)
+    
+    -- Create popup dialog
+    local isImmersion = RPE.Core and RPE.Core.ImmersionMode
+    local parentFrame = isImmersion and WorldFrame or UIParent
+    
+    local p = Popup.New({
+        title = "Send " .. currencyDef.name,
+        text = "Select a recipient and amount to send:",
+        width = 400,
+        parentFrame = parentFrame,
+        clickOffToClose = true,
+    })
+    
+    -- Recipient selector
+    local recipientRow = HGroup:New("RPE_SendCurrency_RecipientRow", {
+        parent = p.mid,
+        autoSize = true,
+        spacingX = 10,
+        alignV = "CENTER",
+    })
+    
+    local recipientLabel = Text:New("RPE_SendCurrency_RecipientLabel", {
+        parent = recipientRow,
+        text = "To:",
+        width = 60,
+    })
+    recipientRow:Add(recipientLabel)
+    
+    local recipientDropdown = Dropdown:New("RPE_SendCurrency_RecipientDropdown", {
+        parent = recipientRow,
+        width = 310,
+        choices = players,
+        value = players[1],
+    })
+    recipientRow:Add(recipientDropdown)
+    
+    p.mid:Add(recipientRow)
+    
+    -- Amount selector
+    local amountRow = HGroup:New("RPE_SendCurrency_AmountRow", {
+        parent = p.mid,
+        autoSize = true,
+        spacingX = 10,
+        alignV = "CENTER",
+    })
+    
+    local amountLabel = Text:New("RPE_SendCurrency_AmountLabel", {
+        parent = amountRow,
+        text = "Amount:",
+        width = 60,
+    })
+    amountRow:Add(amountLabel)
+    
+    local currentAmount = profile:GetCurrency(currencyDef.key)
+    local amountInput = Input:New("RPE_SendCurrency_AmountInput", {
+        parent = amountRow,
+        width = 310,
+        height = 20,
+        placeholder = "0",
+        text = tostring(currentAmount),
+    })
+    amountRow:Add(amountInput)
+    
+    p.mid:Add(amountRow)
+    
+    -- Recalculate mid layout
+    if p.mid and p.mid.CalculateLayout then
+        p.mid:CalculateLayout()
+    end
+    
+    -- Resize popup
+    C_Timer.After(0, function()
+        if p and p._autoResize then
+            pcall(p._autoResize, p)
+        end
+    end)
+    
+    -- Set up callbacks
+    p:SetCallbacks(
+        function()
+            local selectedPlayer = recipientDropdown:GetValue()
+            local amountText = amountInput:GetText()
+            local amount = tonumber(amountText) or 0
+            
+            if not selectedPlayer or selectedPlayer == "" then
+                RPE.Debug:Warning("No recipient selected")
+                return
+            end
+            
+            if amount <= 0 then
+                RPE.Debug:Warning("Invalid amount")
+                return
+            end
+            
+            if amount > currentAmount then
+                RPE.Debug:Warning("You don't have enough " .. currencyDef.name)
+                return
+            end
+            
+            -- Send the currency via broadcast
+            local Broadcast = RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
+            if Broadcast and Broadcast.SendCurrency then
+                local realm = GetRealmName():gsub("%s+", "")
+                local playerKey = (selectedPlayer .. "-" .. realm):lower()
+                Broadcast:SendCurrency(playerKey, currencyDef.key, amount)
+                
+                -- Refresh the sheet to show updated amount
+                self:Refresh()
+            end
+        end,
+        function() end  -- Cancel callback
+    )
+    
+    p:SetButtons("Send", "Cancel")
     p:Show()
 end
 

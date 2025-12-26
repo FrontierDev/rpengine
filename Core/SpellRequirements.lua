@@ -217,6 +217,35 @@ local function check_hidden(ctx, reqStr)
     return false, "caster is not hidden", "NOT_HIDDEN"
 end
 
+--- Check if the caster does NOT have a summoned pet.
+--- Format: "nosummoned"
+---@param ctx table - context with caster unit info
+---@param reqStr string - requirement string
+---@return boolean ok, string? reason, string? code
+local function check_no_summon(ctx, reqStr)
+    -- Get the active event
+    local ev = RPE and RPE.Core and RPE.Core.ActiveEvent
+    if not (ev and ev.units) then
+        return false, "event or units not available", "NO_EVENT"
+    end
+    
+    -- Get the local player's unit ID
+    local casterId = ev:GetLocalPlayerUnitId()
+    if not casterId then
+        return false, "caster not identified", "NO_CASTER"
+    end
+    
+    -- Check if caster has a summoned unit of type "Pet"
+    for _, unit in pairs(ev.units) do
+        if unit.summonedBy and tonumber(unit.summonedBy) == tonumber(casterId) then
+            return false, "caster has a pet", "HAS_PET"
+        end
+    end
+    
+    -- No pet found
+    return true
+end
+
 --- Evaluate a single requirement string.
 ---@param ctx table - context (player unit, equipment, inventory, etc.)
 ---@param reqStr string - requirement string to evaluate
@@ -236,6 +265,8 @@ function SpellRequirements:EvalRequirement(ctx, reqStr)
         return check_inventory(ctx, reqStr)
     elseif reqStr == "hidden" then
         return check_hidden(ctx, reqStr)
+    elseif reqStr == "nosummoned" then
+        return check_no_summon(ctx, reqStr)
     else
         return false, "unknown requirement format "..tostring(reqStr), "REQ_UNKNOWN"
     end

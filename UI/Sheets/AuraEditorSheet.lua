@@ -470,6 +470,31 @@ function AuraEditorSheet:BuildUI(opts)
                                 end
                                 UIDropDownMenu_AddButton(copyId, level)
 
+                                -- Export Aura (compact, wrapped with key)
+                                local exportAura = UIDropDownMenu_CreateInfo()
+                                exportAura.notCheckable = true
+                                exportAura.text = "Export Aura"
+                                if not entry then
+                                    exportAura.disabled = true
+                                else
+                                    exportAura.func = function()
+                                        local ds = self:GetEditingDataset()
+                                        if ds and ds.auras and entry.id and ds.auras[entry.id] then
+                                            local Export = _G.RPE and _G.RPE.Data and _G.RPE.Data.Export
+                                            if Export and Export.ToClipboard then
+                                                Export.ToClipboard(ds.auras[entry.id], { format = "compact", key = entry.id })
+                                                if RPE and RPE.Debug and RPE.Debug.Internal then
+                                                    RPE.Debug:Internal("Aura exported to clipboard (compact, wrapped): " .. entry.id)
+                                                end
+                                            else
+                                                print("Export utility not available.")
+                                            end
+                                        end
+                                    end
+                                end
+                                UIDropDownMenu_AddButton(exportAura, level)
+
+                                -- Delete Entry (moved to bottom)
                                 local del = UIDropDownMenu_CreateInfo()
                                 del.notCheckable = true
                                 del.text = "|cffff4040Delete Entry|r"
@@ -497,30 +522,6 @@ function AuraEditorSheet:BuildUI(opts)
                                     end
                                 end
                                 UIDropDownMenu_AddButton(del, level)
-                                -- Export Aura (compact, wrapped with key)
-                                local exportAura = UIDropDownMenu_CreateInfo()
-                                exportAura.notCheckable = true
-                                exportAura.text = "Export Aura"
-                                if not entry then
-                                    exportAura.disabled = true
-                                else
-                                    exportAura.func = function()
-                                        local ds = self:GetEditingDataset()
-                                        if ds and ds.auras and entry.id and ds.auras[entry.id] then
-                                            local Export = _G.RPE and _G.RPE.Data and _G.RPE.Data.Export
-                                            if Export and Export.ToClipboard then
-                                                Export.ToClipboard(ds.auras[entry.id], { format = "compact", key = entry.id })
-                                                if RPE and RPE.Debug and RPE.Debug.Internal then
-                                                    RPE.Debug:Internal("Aura exported to clipboard (compact, wrapped): " .. entry.id)
-                                                end
-                                            else
-                                                print("Export utility not available.")
-                                            end
-                                        end
-                                    end
-                                end
-                                UIDropDownMenu_AddButton(exportAura, level)
-                            elseif level == 2 and menuList == "COPY_FROM_DATASET" then
                                 local info = UIDropDownMenu_CreateInfo()
                                 info.isTitle = true; info.notCheckable = true
                                 info.text = "Select Dataset"

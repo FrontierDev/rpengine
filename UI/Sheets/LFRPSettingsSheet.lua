@@ -466,7 +466,13 @@ function LFRPSettingsSheet:ToggleLFRP()
     LFRP.IsInitialized = newState
 
     if newState then
-        -- Enable: add player's own pin and start broadcasting
+        -- Enable: join channel, add player's own pin and start broadcasting
+        local Comms = LFRP.Comms
+        if Comms and Comms.InitializeChannelOnly then
+            -- Join the LFRP channel
+            Comms:InitializeChannelOnly()
+        end
+
         local Location = RPE.Core.Location
         if Location then
             local loc = Location:GetPlayerLocation()
@@ -480,7 +486,6 @@ function LFRPSettingsSheet:ToggleLFRP()
         end
 
         -- Start periodic broadcasts with callback to get fresh settings each cycle
-        local Comms = LFRP.Comms
         if Comms and Comms.StartBroadcasting then
             -- Pass a callback function that will serialize fresh settings each broadcast
             Comms:StartBroadcasting(function()

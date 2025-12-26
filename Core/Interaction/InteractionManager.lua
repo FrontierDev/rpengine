@@ -70,6 +70,10 @@ end
 local function FilterInteractionsByMapAndType(matches, info)
     local filtered = {}
     local isDead = UnitIsDead("target") or false
+    
+    -- Get the InteractionExecutor to check if NPC has been looted
+    local Executor = RPE.Core.InteractionExecutor
+    local hasBeenLooted = Executor and Executor.HasBeenLooted and Executor.HasBeenLooted(info.guid)
 
     for _, inter in ipairs(matches) do
         -- Type-based rule (e.g., "type:beast")
@@ -82,6 +86,11 @@ local function FilterInteractionsByMapAndType(matches, info)
                 for _, opt in ipairs(inter.options or {}) do
                     local validMap = true
                     local validDead = true
+                    
+                    -- Skip SKIN and SALVAGE_CLOTH if already looted
+                    if hasBeenLooted and (opt.action == "SKIN" or opt.action == "SALVAGE_CLOTH") then
+                        validMap = false
+                    end
 
                     -- Map restriction
                     if opt.mapID then
@@ -116,6 +125,11 @@ local function FilterInteractionsByMapAndType(matches, info)
             for _, opt in ipairs(inter.options or {}) do
                 local validMap = true
                 local validDead = true
+                
+                -- Skip SKIN and SALVAGE_CLOTH if already looted
+                if hasBeenLooted and (opt.action == "SKIN" or opt.action == "SALVAGE_CLOTH") then
+                    validMap = false
+                end
 
                 if opt.mapID then
                     validMap = false
@@ -161,6 +175,83 @@ local function HideWidgetSafe()
     if not InteractionWidget or not InteractionWidget.root then return end
     if InteractionWidget.root.frame and InteractionWidget.root.frame:IsShown() then
         InteractionWidget:Hide()
+    end
+end
+
+-- Hook into GameTooltip to show interaction indicators
+local function HookGameTooltip()
+    if GameTooltip and GameTooltip.HookScript then
+        GameTooltip:HookScript("OnUpdate", function(tooltip)
+            if not tooltip:IsShown() then return end
+            
+            -- Get the NPC name from the tooltip
+            local text = GameTooltipTextLeft1 and GameTooltipTextLeft1:GetText()
+            if not text or text == "" then return end
+            
+            -- Check if this is an NPC by seeing if we can get a GUID
+            if not UnitExists("mouseover") or UnitIsPlayer("mouseover") then return end
+            
+            local name = UnitName("mouseover")
+            local guid = UnitGUID("mouseover") or ""
+            local id = guid:match("-(%d+)-%x+$") or ""
+            local title = _G["GameTooltipTextLeft2"] and _G["GameTooltipTextLeft2"]:GetText()
+            
+            if not name or name == "" then return end
+            
+            -- Check if this NPC has interactions
+            local matches = InteractionRegistry:GetForNPC(id, title)
+            
+            -- Also check for type: rules
+            local all = InteractionRegistry:All()
+            for _, inter in pairs(all) do
+                if inter.target and inter.target:match("^type:") then
+                    table.insert(matches, inter)
+                end
+            end
+            
+            -- Filter by map and dead state
+            local creatureType = UnitCreatureType("mouseover") or "(unknown)"
+            local mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player") or 0
+            local isDead = UnitIsDead("mouseover") or false
+            
+            local info = {
+                name = name,
+                id = id,
+                title = title,
+                guid = guid,
+                creatureType = creatureType,
+                mapID = mapID,
+            }
+            
+            local filtered = FilterInteractionsByMapAndType(matches, info)
+            
+            if filtered and #filtered > 0 then
+                -- Check if we already added the indicator
+                local hasIndicator = false
+                for i = 1, tooltip:NumLines() do
+                    local line = _G["GameTooltipTextLeft" .. i]
+                    if line and line:GetText() and line:GetText():find("RPE Interactions") then
+                        hasIndicator = true
+                        break
+                    end
+                end
+                
+                if not hasIndicator then
+                    tooltip:AddLine(" ")
+                    local iconStr = (RPE.Common and RPE.Common.InlineIcons and RPE.Common.InlineIcons.RPE) or ""
+                    tooltip:AddLine(iconStr .. " RPE Interactions", 1.0, 1.0, 1.0)
+                    
+                    -- List all available interactions
+                    for _, inter in ipairs(filtered) do
+                        for _, opt in ipairs(inter.options or {}) do
+                            tooltip:AddLine("- " .. (opt.label or "Interact"), 1.0, 1.0, 1.0)
+                        end
+                    end
+                    
+                    tooltip:Show()
+                end
+            end
+        end)
     end
 end
 
@@ -255,6 +346,9 @@ function InteractionManager:Init()
     f:SetScript("OnEvent", OnTargetChanged)
 
     self.frame = f
+    
+    -- Hook tooltip for interaction indicators
+    HookGameTooltip()
 end
 
 -- Auto-initialize

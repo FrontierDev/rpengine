@@ -53,6 +53,27 @@ SlashCmdList["RPE"] = function(msg)
             return
         end
         RPE_UI.Common:Toggle(Event)
+    elseif arg == "loot" then
+        if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then
+            RPE.Debug:Warning("Only the supergroup leader can open the Loot Editor.")
+            return
+        end
+        local LootEditorWindow = RPE_UI and RPE_UI.Windows and RPE_UI.Windows.LootEditorWindow
+        if not LootEditorWindow then
+            RPE.Debug:Error("Loot Editor window not found.")
+            return
+        end
+        local LootWin = LootEditorWindow.instance
+        local isNewWindow = false
+        if not LootWin then
+            LootWin = LootEditorWindow.New()
+            RPE_UI.Common:Show(LootWin)
+            isNewWindow = true
+            LootEditorWindow.instance = LootWin
+        end
+        if not isNewWindow then
+            RPE_UI.Common:Toggle(LootWin)
+        end
     elseif arg == "data" then
         local Ruleset = RPE_UI.Common:GetWindow("DatasetWindow")
         if not Ruleset then
@@ -78,8 +99,6 @@ SlashCmdList["RPE"] = function(msg)
         if not isNewWindow then
             RPE_UI.Common:Toggle(Setup)
         end
-    elseif arg == "stat" then
-        
     elseif arg == "trpname" then
         -- Print the current player's TRP3 character (roleplay) name, falling back to game name
         local getter = RPE and RPE.Common and RPE.Common.GetTRP3NameForUnit
@@ -191,63 +210,6 @@ SlashCmdList["RPE"] = function(msg)
         -- Only toggle if it wasn't just created
         if not isNewWindow then
             RPE_UI.Common:Toggle(LFRPWindow)
-        end
-    elseif arg == "currency" then
-        local currencyKey = rest:match("^(%S+)%s+(%S+)")
-        local amount = rest:match("^%S+%s+(%S+)")
-        if not currencyKey or not amount then
-            RPE.Debug:Warning("[Commands] Usage: /rpe currency [key] [amount]")
-            return
-        end
-        amount = tonumber(amount)
-        if not amount or amount <= 0 then
-            RPE.Debug:Warning("[Commands] Amount must be a positive number.")
-            return
-        end
-        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
-        if not profile then
-            RPE.Debug:Error("[Commands] No active profile found.")
-            return
-        end
-        
-        -- Check if it's a hardcoded currency
-        local Common = RPE.Common
-        local hardcodedCurrencies = Common and Common.CurrencyIcons or {}
-        local currencyKeyLower = currencyKey:lower()
-        local foundCurrency = false
-        local iconId = nil
-        
-        if hardcodedCurrencies[currencyKeyLower] then
-            -- Found as hardcoded currency
-            foundCurrency = true
-            iconId = hardcodedCurrencies[currencyKeyLower]
-        else
-            -- Try to find as an item in the ItemRegistry by searching for matching name
-            local ItemRegistry = RPE.Core and RPE.Core.ItemRegistry
-            if ItemRegistry then
-                local allItems = ItemRegistry:All()
-                if allItems then
-                    -- Search through all items for one with matching name and CURRENCY category
-                    for itemId, item in pairs(allItems) do
-                        if item and item.name and item.data then
-                            if item.name:lower() == currencyKeyLower and item.category and item.category:lower() == "currency" then
-                                -- Found a CURRENCY category item by name
-                                foundCurrency = true
-                                iconId = tonumber(item.icon) or nil
-                                currencyKey = currencyKeyLower  -- Normalize to lowercase for storage
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        
-        -- Only add currency if we found it
-        if foundCurrency then
-            profile:AddCurrency(currencyKey, amount)
-        else
-            RPE.Debug:Warning("[Commands] Currency not found: " .. currencyKey)
         end
     elseif arg == "npcinfo" then
             -- Print information about the current target (safe calls)

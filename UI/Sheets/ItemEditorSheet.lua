@@ -764,7 +764,31 @@ function ItemEditorSheet:BuildUI(opts)
                             end
                             UIDropDownMenu_AddButton(copyId, level)
 
-                            -- Delete Entry
+                            -- Export Item (compact, wrapped with key)
+                            local exportItem = UIDropDownMenu_CreateInfo()
+                            exportItem.notCheckable = true
+                            exportItem.text = "Export Item"
+                            if not entry then
+                                exportItem.disabled = true
+                            else
+                                exportItem.func = function()
+                                    local ds = self:GetEditingDataset()
+                                    if ds and ds.items and entry.id and ds.items[entry.id] then
+                                        local Export = _G.RPE and _G.RPE.Data and _G.RPE.Data.Export
+                                        if Export and Export.ToClipboard then
+                                            Export.ToClipboard(ds.items[entry.id], { format = "compact", key = entry.id })
+                                            if RPE and RPE.Debug and RPE.Debug.Internal then
+                                                RPE.Debug:Internal("Item exported to clipboard (compact, wrapped): " .. entry.id)
+                                            end
+                                        else
+                                            print("Export utility not available.")
+                                        end
+                                    end
+                                end
+                            end
+                            UIDropDownMenu_AddButton(exportItem, level)
+
+                            -- Delete Entry (moved to bottom)
                             local del = UIDropDownMenu_CreateInfo()
                             del.notCheckable = true
                             del.text = "|cffff4040Delete Entry|r"
@@ -794,30 +818,6 @@ function ItemEditorSheet:BuildUI(opts)
                                 end
                             end
                             UIDropDownMenu_AddButton(del, level)
-                            
-                            -- Export Item (compact, wrapped with key)
-                            local exportItem = UIDropDownMenu_CreateInfo()
-                            exportItem.notCheckable = true
-                            exportItem.text = "Export Item"
-                            if not entry then
-                                exportItem.disabled = true
-                            else
-                                exportItem.func = function()
-                                    local ds = self:GetEditingDataset()
-                                    if ds and ds.items and entry.id and ds.items[entry.id] then
-                                        local Export = _G.RPE and _G.RPE.Data and _G.RPE.Data.Export
-                                        if Export and Export.ToClipboard then
-                                            Export.ToClipboard(ds.items[entry.id], { format = "compact", key = entry.id })
-                                            if RPE and RPE.Debug and RPE.Debug.Internal then
-                                                RPE.Debug:Internal("Item exported to clipboard (compact, wrapped): " .. entry.id)
-                                            end
-                                        else
-                                            print("Export utility not available.")
-                                        end
-                                    end
-                                end
-                            end
-                            UIDropDownMenu_AddButton(exportItem, level)
                         end)
                         return
                     end

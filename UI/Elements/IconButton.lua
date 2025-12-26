@@ -142,6 +142,14 @@ function IconButton:SetColor(r, g, b, a)
     self._baseG = g or 1
     self._baseB = b or 1
     self._baseA = a ~= nil and a or 1
+    
+    -- Update hover colors to maintain the color scheme
+    local hovFactor = 1.3
+    self._hoverR = math.min(self._baseR * hovFactor, 1)
+    self._hoverG = math.min(self._baseG * hovFactor, 1)
+    self._hoverB = math.min(self._baseB * hovFactor, 1)
+    self._hoverA = self._baseA
+    
     if self.icon and self.icon.SetVertexColor then
         self.icon:SetVertexColor(self._baseR, self._baseG, self._baseB, self._baseA)
     end

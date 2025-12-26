@@ -142,8 +142,8 @@ function TrainerWindow:BuildUI()
     self.filterBtn.frame:ClearAllPoints()
     self.filterBtn.frame:SetPoint("RIGHT", self.header.frame, "RIGHT", -10, 0)
 
-    -- Default filter: only "Available"
-    self.activeFilters = { Available = true }
+    -- Default filter: Available and Unavailable always shown
+    self.activeFilters = { Available = true, Unavailable = true }
     self:_updateFilterText()
 
     -- === Content ===

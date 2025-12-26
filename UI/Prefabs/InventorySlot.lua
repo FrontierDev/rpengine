@@ -276,8 +276,15 @@ function InventorySlot:New(name, opts)
     -- Click handling
     f:HookScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
-            -- Equip only if the item is present in the active registry
+            -- Equip only if the item is present in the active registry and not during an event
             if o.itemId then
+                local Event = RPE.Core and RPE.Core.Event
+                if Event and Event.IsRunning and Event:IsRunning() then
+                    if RPE and RPE.Debug and RPE.Debug.Warning then
+                        RPE.Debug:Warning("Cannot equip items during an event.")
+                    end
+                    return
+                end
                 local reg = RPE.Core and RPE.Core.ItemRegistry
                 local item = reg and reg.Get and reg:Get(o.itemId) or nil
                 if item and item.data and item.data.slot and not o.context then
@@ -510,6 +517,47 @@ function InventorySlot:SetTurnCooldown(turns)
 end
 
 --- Clear cooldown display
+function InventorySlot:_promptAndTradeItem(playerName, itemId, itemDef)
+    -- If item is not stackable, just send quantity 1
+    if not itemDef.stackable then
+        self:_tradeItem(playerName, itemId, 1)
+        return
+    end
+    
+    -- For stackable items, prompt for quantity
+    local Popup = RPE_UI and RPE_UI.Prefabs and RPE_UI.Prefabs.Popup
+    if not Popup then
+        self:_tradeItem(playerName, itemId, 1)
+        return
+    end
+    
+    local quantity = self.quantity or 1
+    Popup.Prompt(
+        "Trade Item",
+        "How many " .. itemDef.name .. " to give to " .. playerName .. "?",
+        tostring(quantity),
+        function(text)
+            local qty = tonumber(text)
+            if qty and qty > 0 and math.floor(qty) == qty then
+                self:_tradeItem(playerName, itemId, qty)
+            end
+        end,
+        nil -- onCancel
+    )
+end
+
+function InventorySlot:_tradeItem(playerName, itemId, quantity)
+    -- Get player key
+    local realm = GetRealmName():gsub("%s+", "")
+    local playerKey = (playerName .. "-" .. realm):lower()
+    
+    -- Send via Broadcast (both sender and receiver will process this through Handle)
+    local Broadcast = RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
+    if Broadcast and Broadcast.SendItemToPlayer then
+        Broadcast:SendItemToPlayer(playerKey, itemId, quantity)
+    end
+end
+
 function InventorySlot:ClearCooldown()
     self._cdRemain = 0
     self._cdTotal = nil
@@ -838,6 +886,7 @@ function InventorySlot:ShowItemContextMenu(slot, item)
                 return
             end
 
+            local slot = self  -- Capture the InventorySlot instance for callbacks
             local added = false
             if IsInRaid() then
                 for i = 1, GetNumGroupMembers() do
@@ -848,7 +897,7 @@ function InventorySlot:ShowItemContextMenu(slot, item)
                             func = function()
                                 local chk = reg and reg:Get(item.id)
                                 if chk then
-                                    GiveToPlayer(name, chk.id)
+                                    slot:_promptAndTradeItem(name, chk.id, chk)
                                 end
                             end,
                             notCheckable = true
@@ -866,7 +915,7 @@ function InventorySlot:ShowItemContextMenu(slot, item)
                             func = function()
                                 local chk = reg and reg:Get(item.id)
                                 if chk then
-                                    RPE.Debug:NYI("Item trading")
+                                    slot:_promptAndTradeItem(name, chk.id, chk)
                                 end
                             end,
                             notCheckable = true
@@ -880,7 +929,7 @@ function InventorySlot:ShowItemContextMenu(slot, item)
                     func = function()
                         local chk = reg and reg:Get(item.id)
                         if chk then
-                            RPE.Debug:NYI("Item trading")
+                            slot:_promptAndTradeItem(playerName, chk.id, chk)
                         end
                     end,
                     notCheckable = true

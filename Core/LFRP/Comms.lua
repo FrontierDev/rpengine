@@ -50,6 +50,12 @@ function Comms:JoinLFRPChannel()
     ChatFrame1EditBox:SetText("/join " .. channelName)
     ChatEdit_SendText(ChatFrame1EditBox, 0)
     
+    -- Save the channel name to profile DB
+    local ProfileDB = RPE and RPE.Profile and RPE.Profile.DB
+    if ProfileDB then
+        ProfileDB.SetLastLFRPChannel(channelName)
+    end
+    
     -- Wait a moment for the channel to be joined, then look it up
     C_Timer.After(0.5, function()
         local channelName = GetChannelName()
@@ -172,6 +178,23 @@ function Comms:StartPeriodicBroadcast()
     
     -- Start the timer (delay first broadcast slightly to allow channel join)
     C_Timer.After(5, BroadcastAndCleanup)
+end
+
+-- Leave the LFRP channel
+function Comms:LeaveChannel()
+    if not isChannelJoined then
+        return
+    end
+
+    RPE.Debug:Print("Leaving LFRP channel...")
+    
+    local channelName = GetChannelName()
+    -- Execute /leave command with the channel name
+    ChatFrame1EditBox:SetText("/leave " .. channelName)
+    ChatEdit_SendText(ChatFrame1EditBox, 0)
+    
+    channelNumber = nil
+    isChannelJoined = false
 end
 
 -- Cleanup on unload

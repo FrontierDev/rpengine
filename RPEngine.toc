@@ -43,6 +43,7 @@ Core/Comms/Broadcast.lua
 Core/Comms/Handle.lua
 Core/Comms/Request.lua
 
+Core/LootManager.lua
 Core/Item.lua
 Core/ItemRegistry.lua
 Core/ItemLevel.lua
@@ -102,6 +103,8 @@ Core/Interaction/InteractionRegistry.lua
 Core/Interaction/InteractionManager.lua
 Core/Interaction/InteractionExecutor.lua
 
+
+
 Core/Event/Supergroup.lua
 Core/Event/Event.lua
 Core/PlayerReaction.lua
@@ -117,6 +120,10 @@ UI/Palettes/WarmAmber.lua
 UI/Palettes/Alliance.lua
 UI/Palettes/Horde.lua
 UI/Palettes/DarkIron.lua
+UI/Palettes/NightElf.lua
+UI/Palettes/BloodElf.lua
+UI/Palettes/Dwarf.lua
+UI/Palettes/Draenei.lua
 
 UI/Schema/SpellActionSchemas.lua
 
@@ -161,6 +168,8 @@ UI/Prefabs/ShopItem.lua
 UI/Prefabs/InteractionOptions.lua
 UI/Prefabs/TraitEntry.lua
 UI/Prefabs/LanguageEntry.lua
+UI/Prefabs/LootEditorEntry.lua
+UI/Prefabs/LootEntry.lua
 
 ## Widgets
 UI/Windows/Clipboard.lua
@@ -204,6 +213,7 @@ UI/Sheets/LFRPBrowseSheet.lua
 
 ## Windows
 ## UI/Windows/IntroWindow.lua
+UI/Windows/PaletteWindow.lua
 UI/Windows/IconFinderWindow.lua
 UI/Windows/ModelFinderWindow.lua
 UI/Windows/DatasetWindow.lua
@@ -217,3 +227,5 @@ UI/Windows/ChanterReceiverWindow.lua
 UI/Windows/TrainerWindow.lua
 UI/Windows/ShopWindow.lua
 UI/Windows/SetupWindow.lua
+UI/Windows/LootEditorWindow.lua
+UI/Windows/LootWindow.lua

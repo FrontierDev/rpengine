@@ -5,6 +5,9 @@ RPE.Core = RPE.Core or {}
 local Executor = {}
 RPE.Core.InteractionExecutor = Executor
 
+-- Track NPCs that have been looted (guid -> true)
+local lootedNPCs = {}
+
 -- Registered handlers by action type
 local handlers = {}
 
@@ -24,6 +27,21 @@ function Executor.Run(opt, target)
     local fn = handlers[opt.action:upper()]
     if fn then
         fn(opt, target)
+    end
+end
+
+--- Check if an NPC has already been looted
+---@param guid string
+---@return boolean
+function Executor.HasBeenLooted(guid)
+    return lootedNPCs[guid] or false
+end
+
+--- Mark an NPC as looted
+---@param guid string
+function Executor.MarkAsLooted(guid)
+    if guid then
+        lootedNPCs[guid] = true
     end
 end
 
@@ -104,12 +122,80 @@ end)
 
 Executor.RegisterHandler("SKIN", function(opt, target)
     RPE.Debug:Internal("Attempting to skin " .. (target or "?"))
-    -- TODO: logic for item rolling
+    
+    if not opt.output or #opt.output == 0 then return end
+    
+    local profile = RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+    if not profile then return end
+    
+    local guid = UnitGUID("target")
+    
+    local Common = RPE.Common
+    local Formula = RPE.Core.Formula
+    
+    for _, outputSpec in ipairs(opt.output) do
+        -- Check if roll succeeds based on chance
+        if not outputSpec.chance or math.random() <= outputSpec.chance then
+            -- Roll quantity using Formula:Roll() for dice notation
+            local qty = 1
+            if outputSpec.qty then
+                if type(outputSpec.qty) == "string" then
+                    qty = Formula:Roll(outputSpec.qty, profile)
+                else
+                    qty = tonumber(outputSpec.qty) or 1
+                end
+            end
+            
+            qty = math.floor(math.max(0, qty))
+            if qty > 0 then
+                profile:AddItem(outputSpec.itemId, qty)
+            end
+        end
+    end
+    
+    -- Mark this NPC as looted
+    if guid then
+        Executor.MarkAsLooted(guid)
+    end
 end)
 
 Executor.RegisterHandler("SALVAGE_CLOTH", function(opt, target)
     RPE.Debug:Internal("Attempting to salvage cloth from " .. (target or "?"))
-    -- TODO: logic for item rolling
+    
+    if not opt.output or #opt.output == 0 then return end
+    
+    local profile = RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+    if not profile then return end
+    
+    local guid = UnitGUID("target")
+    
+    local Common = RPE.Common
+    local Formula = RPE.Core.Formula
+    
+    for _, outputSpec in ipairs(opt.output) do
+        -- Check if roll succeeds based on chance
+        if not outputSpec.chance or math.random() <= outputSpec.chance then
+            -- Roll quantity using Formula:Roll() for dice notation
+            local qty = 1
+            if outputSpec.qty then
+                if type(outputSpec.qty) == "string" then
+                    qty = Formula:Roll(outputSpec.qty, profile)
+                else
+                    qty = tonumber(outputSpec.qty) or 1
+                end
+            end
+            
+            qty = math.floor(math.max(0, qty))
+            if qty > 0 then
+                profile:AddItem(outputSpec.itemId, qty)
+            end
+        end
+    end
+    
+    -- Mark this NPC as looted
+    if guid then
+        Executor.MarkAsLooted(guid)
+    end
 end)
 
 Executor.RegisterHandler("RAISE", function(opt, target)

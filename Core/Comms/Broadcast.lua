@@ -1893,3 +1893,114 @@ function Broadcast:SendLFRPBroadcast(mapID, x, y, settings)
     
     Comms:Send("LFRP_BROADCAST", flat, "CHANNEL", channelNumber)
 end
+
+--- Send loot choices to supergroup leader
+---@param choices table Array of {lootId=..., bid=... or choice=...}
+---@param distrType string Distribution type ("BID" or "NEED BEFORE GREED")
+function Broadcast:SendLootChoice(choices, distrType)
+    local flat = { tostring(distrType or "BID") }
+    
+    for _, choice in ipairs(choices) do
+        flat[#flat + 1] = tostring(choice.lootId or "")
+        if distrType == "BID" then
+            flat[#flat + 1] = tostring(choice.bid or 0)
+        else
+            flat[#flat + 1] = tostring(choice.choice or "pass")
+        end
+    end
+    
+    _sendAll("LOOT_CHOICE", flat)
+end
+
+--- Broadcast loot distribution to all players
+---@param entries table Array of loot entries from LootEditorWindow
+---@param distrType string Distribution type ("BID" or "NEED BEFORE GREED")
+---@param timeout number Distribution timeout in seconds
+function Broadcast:DistributeLoot(entries, distrType, timeout)
+    if not entries or #entries == 0 then return end
+    
+    local flat = {}
+    -- Header: distrType ; timeout ; entryCount
+    table.insert(flat, tostring(distrType or "BID"))
+    table.insert(flat, tostring(timeout or 60))
+    table.insert(flat, tostring(#entries))
+    
+    -- Each entry: category ; lootId ; name ; icon ; quantity ; rarity ; marker ; allReceive ; restrictedPlayers ; spellRank ; profession
+    for _, entry in ipairs(entries) do
+        local category = entry.currentCategory or ""
+        local lootData = entry.currentLootData or {}
+        local name = lootData.name or ""
+        -- For copper (and other currencies without an id), use the lowercase name as the lootId
+        local lootId = lootData.id or (category == "currency" and name ~= "" and name:lower()) or ""
+        local icon = lootData.icon or ""
+        local quantity = tostring(entry.currentQuantity or 1)
+        local rarity = lootData.rarity or "COMMON"
+        local marker = tostring(entry.currentMarker or 0)
+        local allReceive = entry.allReceive and "1" or "0"
+        
+        -- Encode restricted players as comma-separated list
+        local restrictedList = {}
+        if entry.restrictedPlayers then
+            for playerKey, _ in pairs(entry.restrictedPlayers) do
+                table.insert(restrictedList, playerKey)
+            end
+        end
+        local restrictedStr = table.concat(restrictedList, ",")
+        
+        -- Extra data for spells and recipes
+        local spellRank = tostring(entry.spellRank or 1)
+        local profession = entry.profession or ""
+        
+        table.insert(flat, category)
+        table.insert(flat, lootId)
+        table.insert(flat, name)
+        table.insert(flat, icon)
+        table.insert(flat, quantity)
+        table.insert(flat, rarity)
+        table.insert(flat, marker)
+        table.insert(flat, allReceive)
+        table.insert(flat, restrictedStr)
+        table.insert(flat, spellRank)
+        table.insert(flat, profession)
+    end
+    
+    _sendAll("DISTRIBUTE_LOOT", flat)
+end
+
+--- Send loot to winner via broadcast
+---@param winnerKey string Winner player key (Name-Realm lowercase)
+---@param lootId string The loot ID
+---@param lootName string Display name of the loot
+---@param category string Loot category (items, currency, spell, recipe)
+---@param quantity number Quantity of loot
+---@param extraData string|nil Extra data (e.g., spell rank, profession name)
+---@param allReceive string|nil "1" if everyone receives this loot, "0" or nil otherwise
+function Broadcast:SendLoot(winnerKey, lootId, lootName, category, quantity, extraData, allReceive)
+    local flat = { winnerKey, tostring(lootId), tostring(lootName), category, tostring(quantity) }
+    if extraData then
+        flat[#flat+1] = tostring(extraData)
+    end
+    if allReceive then
+        flat[#flat+1] = tostring(allReceive)
+    end
+    _sendAll("SEND_LOOT", flat)
+end
+
+--- Send an item or currency to a player via trade
+--- Removes the item from the giver's inventory or spends the currency
+---@param recipientKey string Recipient player key (Name-Realm lowercase)
+---@param itemId string The item/currency ID
+---@param quantity number Quantity to send
+function Broadcast:SendItemToPlayer(recipientKey, itemId, quantity)
+    local flat = { recipientKey, tostring(itemId), tostring(quantity) }
+    _sendAll("TRADE_ITEM", flat)
+end
+
+--- Send currency to another player
+---@param recipientKey string Recipient player key (Name-Realm lowercase)
+---@param currencyKey string Currency key (e.g. "copper", "honor")
+---@param amount number Amount to send
+function Broadcast:SendCurrency(recipientKey, currencyKey, amount)
+    local flat = { recipientKey, tostring(currencyKey), tostring(amount) }
+    _sendAll("TRADE_CURRENCY", flat)
+end

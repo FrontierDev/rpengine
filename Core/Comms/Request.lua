@@ -179,7 +179,7 @@ function Request:CheckReady(callback, onTimeout, timeoutSec)
         if IsOnlineGroupMember(key) then
             expected[key] = true
         else
-            RPE.Debug:Print("Skipping offline/non-group member: " .. key)
+            RPE.Debug:Internal("Skipping offline/non-group member: " .. key)
         end
     end
 

@@ -199,6 +199,7 @@ function InteractionWidget:ShowInteractions(interactions, npcName, npcTitle)
                 if Executor and Executor.Run then
                     Executor.Run(opt, "target")
                 end
+                self:Hide()
             end,
         })
 

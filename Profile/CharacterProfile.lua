@@ -652,6 +652,7 @@ function CharacterProfile:RemoveItem(itemId, qty)
         touch(self)
         RPE.Profile.DB.SaveProfile(self)
         RPE.Core.Windows.ProfessionSheet:Refresh()
+        RPE.Core.Windows.InventorySheet:Refresh()
     end
 
     return removed
@@ -694,6 +695,7 @@ end
 ---@param amount number
 function CharacterProfile:AddCurrency(currencyId, amount)
     if type(currencyId) ~= "string" or currencyId == "" then return end
+    currencyId = currencyId:lower()  -- Normalize to lowercase for consistent storage
     local amt = math.max(0, math.floor(tonumber(amount) or 0))
     if amt <= 0 then return end
 

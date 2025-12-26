@@ -875,8 +875,13 @@ function Item:ShowTooltip(instanceGuid)
     -- ==== Description ====
     if self.description and self.description ~= "" then
         local descColor = self.category == "MODIFICATION" and { r = 0, g = 1, b = 0 } or { r = 1, g = 1, b = 0 }
-        table.insert(lines, { text = self.description, r = descColor.r, g = descColor.g, b = descColor.b, wrap = true })
-        table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
+        local formattedDescription = self.description
+        if self.category ~= "MODIFICATION" then
+            table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
+            formattedDescription = string.format("*%s*", formattedDescription)
+        end
+
+        table.insert(lines, { text = formattedDescription, r = descColor.r, g = descColor.g, b = descColor.b, wrap = true })
     end
 
     -- ==== Economy ====

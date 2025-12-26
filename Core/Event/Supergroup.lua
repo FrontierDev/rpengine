@@ -209,7 +209,6 @@ function Supergroup:CheckForOfflineMembers()
     for memberKey in pairs(currentMembers) do
         if not (self._trackedMembers and self._trackedMembers[memberKey]) then
             -- This member just came online
-            RPE.Debug:Print(string.format("%s has come online.", memberKey))
             if RPE and RPE.Core and RPE.Core.ActiveEvent then
                 local ev = RPE.Core.ActiveEvent
                 if ev.turn and ev.turn > 0 then

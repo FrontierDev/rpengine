@@ -52,16 +52,8 @@ end
 
 --- Called when player enters world
 function Core:OnPlayerLogin()
-    -- Initialize Comms FIRST to join channel and set up handlers
-    -- Do NOT start periodic broadcast yet - user must enable LFRP first
-    local CommsModule = RPE.Core.LFRP.Comms
-    if CommsModule then
-        CommsModule:InitializeChannelOnly()
-    else
-        RPE.Debug:Error("[LFRP.Core] Comms module not found!")
-    end
-    
     -- LFRP starts disabled - user must press Enable button to activate
+    -- Channel joining is deferred until Enable button is pressed in LFRPWindow
     RPE.Core.LFRP.IsInitialized = false
 end
 

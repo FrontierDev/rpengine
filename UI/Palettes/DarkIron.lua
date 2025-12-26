@@ -4,7 +4,7 @@
 local C = RPE_UI and RPE_UI.Colors
 if not C then return end
 
-C.RegisterPalette("darkiron", {
+C.RegisterPalette("DarkIron", {
     -- Dark Iron Dwarf = iron + lava
     background = { 0.12, 0.10, 0.13, 0.97 }, -- volcanic iron
     divider    = { 0.85, 0.35, 0.10, 0.85 }, -- lava edge lines

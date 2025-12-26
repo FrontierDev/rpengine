@@ -4506,6 +4506,7 @@ RPE.Data.DefaultClassic.SPELLS_DEATH_KNIGHT = {
         canCrit = false,
         targeter = { default = "CASTER" },
         requirements = {
+            [1] = "nosummoned",
         },
         tags = {
             [1] = "death_knight",
@@ -4548,7 +4549,7 @@ RPE.Data.DefaultClassic.SPELLS_DEATH_KNIGHT = {
                     [1] = {
                         key = "SUMMON",
                         args = {
-                            npcId = "NPC-04c32e80",
+                            npcId = "NPC-dkpet",
                             targets = { targeter = "CASTER" }
                         }
                     }
@@ -6011,6 +6012,7 @@ RPE.Data.DefaultClassic.SPELLS_HUNTER = {
         canCrit = false,
         targeter = { default = "CASTER" },
         requirements = {
+            [1] = "nosummoned",
         },
         tags = {
             [1] = "hunter",
@@ -10894,6 +10896,7 @@ RPE.Data.DefaultClassic.SPELLS_WARLOCK = {
         canCrit = false,
         targeter = { default = "CASTER" },
         requirements = {
+            [1] = "nosummoned",
         },
         tags = {
             [1] = "warlock",
@@ -10936,7 +10939,7 @@ RPE.Data.DefaultClassic.SPELLS_WARLOCK = {
                     [1] = {
                         key = "SUMMON",
                         args = {
-                            npcId = "NPC-summonedpet",
+                            npcId = "NPC-wlImp",
                             targets = { targeter = "CASTER" }
                         }
                     }
@@ -11093,6 +11096,7 @@ RPE.Data.DefaultClassic.SPELLS_WARLOCK = {
         canCrit = false,
         targeter = { default = "CASTER" },
         requirements = {
+            [1] = "nosummoned",
         },
         tags = {
             [1] = "warlock",
@@ -11135,7 +11139,7 @@ RPE.Data.DefaultClassic.SPELLS_WARLOCK = {
                     [1] = {
                         key = "SUMMON",
                         args = {
-                            npcId = "NPC-summonedpet",
+                            npcId = "NPC-wlVw",
                             targets = { targeter = "CASTER" }
                         }
                     }

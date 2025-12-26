@@ -15,6 +15,18 @@ RPE_DB.minimap = RPE_DB.minimap or { angle = 45, hide = false }
 -- Create the dropdown menu frame once at module load
 local minimapMenuFrame = CreateFrame("Frame", "RPE_MinimapMenuDropdown", UIParent, "UIDropDownMenuTemplate")
 
+local function GetOrCreatePaletteWindow()
+    local PaletteWindowClass = RPE_UI and RPE_UI.Windows and RPE_UI.Windows.PaletteWindow
+    if not PaletteWindowClass then
+        return nil
+    end
+    
+    if not PaletteWindowClass.instance then
+        PaletteWindowClass.instance = PaletteWindowClass:New()
+    end
+    return PaletteWindowClass.instance
+end
+
 local function InitializeMinimapMenu(self, level)
     if level == 1 then
         local info = UIDropDownMenu_CreateInfo()
@@ -112,6 +124,38 @@ local function InitializeMinimapMenu(self, level)
             if not isNewWindow then
                 RPE_UI.Common:Toggle(win)
             end
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+        
+        -- Palette
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Palette"
+        info.func = function()
+            local PaletteWindowClass = RPE_UI and RPE_UI.Windows and RPE_UI.Windows.PaletteWindow
+            if not PaletteWindowClass then
+                RPE.Debug:Error("PaletteWindow not found.")
+                CloseDropDownMenus()
+                return
+            end
+            
+            local isNewWindow = false
+            if not PaletteWindowClass.instance then
+                PaletteWindowClass.instance = PaletteWindowClass:New()
+                isNewWindow = true
+            end
+            
+            local paletteWin = PaletteWindowClass.instance
+            if isNewWindow then
+                paletteWin.root.frame:Show()
+            else
+                if paletteWin.root.frame:IsVisible() then
+                    paletteWin.root.frame:Hide()
+                else
+                    paletteWin.root.frame:Show()
+                end
+            end
+            paletteWin.root.frame:Raise()
             CloseDropDownMenus()
         end
         UIDropDownMenu_AddButton(info, level)

@@ -28,6 +28,7 @@ local function EnsureDB()
     db._schema = db._schema or DB_SCHEMA_VERSION
     db.currentByChar = db.currentByChar or {}   -- [ "Name-Realm" ] = "ProfileName"
     db.profiles = db.profiles or {}             -- [ "ProfileName" ] = serialized CharacterProfile
+    db.lastLFRPChannel = db.lastLFRPChannel or {}  -- [ "Name-Realm" ] = "ChannelName"
     return db
 end
 
@@ -240,6 +241,29 @@ function ProfileDB.ListNames()
     return out
 end
 
+--- Save the last LFRP channel name for the current character.
+---@param channelName string
+function ProfileDB.SetLastLFRPChannel(channelName)
+    local db = EnsureDB()
+    local key = GetCharacterKey()
+    db.lastLFRPChannel[key] = channelName
+    RPE.Debug:Internal(string.format("[LFRP] Saved channel '%s' for key '%s'", tostring(channelName), tostring(key)))
+end
+
+--- Get the last LFRP channel name for the current character.
+---@return string|nil
+function ProfileDB.GetLastLFRPChannel()
+    local db = EnsureDB()
+    local key = GetCharacterKey()
+    local channel = db.lastLFRPChannel[key]
+    RPE.Debug:Internal(string.format("[LFRP] Retrieved channel for key '%s': %s", tostring(key), tostring(channel or "nil")))
+    -- Ensure we return a string or nil, never a table
+    if type(channel) == "string" then
+        return channel
+    end
+    return nil
+end
+
 --- Initialize the UI after profile is loaded. Called by PLAYER_LOGIN.
 function ProfileDB.InitializeUI()
     local profile = ProfileDB.GetOrCreateActive()
@@ -352,6 +376,14 @@ f:SetScript("OnEvent", function(_, event)
             RPE.Profile.DB.SaveProfile(profile)
         end
     elseif event == "PLAYER_LOGIN" then
+        -- Leave the last LFRP channel we were in before leaving this realm
+        local lastChannel = ProfileDB.GetLastLFRPChannel()
+        RPE.Debug:Internal(string.format("[LFRP] Last channel for this character: %s", tostring(lastChannel or "none")))
+        if lastChannel and lastChannel ~= "" then
+            ChatFrame1EditBox:SetText("/leave " .. lastChannel)
+            ChatEdit_SendText(ChatFrame1EditBox, 0)
+        end
+        
         ProfileDB.InitializeUI()
     end
 end)

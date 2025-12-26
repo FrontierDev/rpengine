@@ -607,7 +607,31 @@ function SpellEditorSheet:BuildUI(opts)
                                 end
                                 UIDropDownMenu_AddButton(copyId, level)
 
-                                -- Delete
+                                -- Export Spell (compact, wrapped with key)
+                                local exportSpell = UIDropDownMenu_CreateInfo()
+                                exportSpell.notCheckable = true
+                                exportSpell.text = "Export Spell"
+                                if not entry then
+                                    exportSpell.disabled = true
+                                else
+                                    exportSpell.func = function()
+                                        local ds = self:GetEditingDataset()
+                                        if ds and ds.spells and entry.id and ds.spells[entry.id] then
+                                            local Export = _G.RPE and _G.RPE.Data and _G.RPE.Data.Export
+                                            if Export and Export.ToClipboard then
+                                                Export.ToClipboard(ds.spells[entry.id], { format = "compact", key = entry.id })
+                                                if RPE and RPE.Debug and RPE.Debug.Internal then
+                                                    RPE.Debug:Internal("Spell exported to clipboard (compact, wrapped): " .. entry.id)
+                                                end
+                                            else
+                                                print("Export utility not available.")
+                                            end
+                                        end
+                                    end
+                                end
+                                UIDropDownMenu_AddButton(exportSpell, level)
+
+                                -- Delete (moved to bottom)
                                 local del = UIDropDownMenu_CreateInfo()
                                 del.notCheckable = true
                                 del.text = "|cffff4040Delete Entry|r"
@@ -635,32 +659,6 @@ function SpellEditorSheet:BuildUI(opts)
                                     end
                                 end
                                 UIDropDownMenu_AddButton(del, level)
-
-                                -- Export Spell (compact, wrapped with key)
-                                local exportSpell = UIDropDownMenu_CreateInfo()
-                                exportSpell.notCheckable = true
-                                exportSpell.text = "Export Spell"
-                                if not entry then
-                                    exportSpell.disabled = true
-                                else
-                                    exportSpell.func = function()
-                                        local ds = self:GetEditingDataset()
-                                        if ds and ds.spells and entry.id and ds.spells[entry.id] then
-                                            local Export = _G.RPE and _G.RPE.Data and _G.RPE.Data.Export
-                                            if Export and Export.ToClipboard then
-                                                Export.ToClipboard(ds.spells[entry.id], { format = "compact", key = entry.id })
-                                                if RPE and RPE.Debug and RPE.Debug.Internal then
-                                                    RPE.Debug:Internal("Spell exported to clipboard (compact, wrapped): " .. entry.id)
-                                                end
-                                            else
-                                                print("Export utility not available.")
-                                            end
-                                        end
-                                    end
-                                end
-                                UIDropDownMenu_AddButton(exportSpell, level)
-
-                            elseif level == 2 and menuList == "COPY_FROM_DATASET" then
                                 -- Submenu: "Copy from..." dataset selection
                                 local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
                                 if not DatasetDB then return end
@@ -876,6 +874,26 @@ function SpellEditorSheet:BuildUI(opts)
                                             text = ("Slot %d"):format(i),
                                             notCheckable = true,
                                             func = function()
+                                                -- Check if event is running
+                                                local Event = RPE.Core and RPE.Core.Event
+                                                if Event and Event.IsRunning and Event:IsRunning() then
+                                                    if RPE and RPE.Debug and RPE.Debug.Warning then
+                                                        RPE.Debug:Warning("Cannot bind spells during an event.")
+                                                    end
+                                                    return
+                                                end
+                                                
+                                                -- Check if current player is the dataset author
+                                                local ds = self:GetEditingDataset()
+                                                local currentPlayer = UnitName("player")
+                                                local dsAuthor = ds and ds.author
+                                                if dsAuthor and currentPlayer ~= dsAuthor then
+                                                    if RPE and RPE.Debug and RPE.Debug.Warning then
+                                                        RPE.Debug:Warning("Only the dataset author (" .. tostring(dsAuthor) .. ") can bind spells to the action bar.")
+                                                    end
+                                                    return
+                                                end
+                                                
                                                 local bar = _ensureActionBar(); if not bar then return end
                                                 local name, icon = _spellDisplay(entry.id, entry.name, entry.icon)
                                                 local action = { spellId = entry.id, icon = icon, name = name, isEnabled = true }
