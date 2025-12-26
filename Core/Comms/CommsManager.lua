@@ -61,7 +61,7 @@ function Comms:Send(msgType, payload, channel, target)
         local packet = string.format("%s:%s:%d:%d:%s",
             msgType, msgId, i, totalParts, chunk)
 
-        RPE.Debug:Internal(packet)
+        RPE.Debug:Internal("Packet " .. packet)
 
         table.insert(self.sendQueue, {
             msg     = packet,
@@ -84,7 +84,7 @@ function Comms:ProcessSendQueue()
 
     if result == 0 then
         -- ✅ Success: move to next message
-        RPE.Debug:Internal(string.format("[Comms] Message sent successfully"))
+        RPE.Debug:Internal(string.format("[Comms] Message sent successfully on channel %s", nextMsg.channel))
         self._sending = false
         self:ProcessSendQueue()  -- Process next immediately
     elseif result == 3 or result == 8 then

@@ -790,6 +790,35 @@ RPE.Data.DefaultClassic.STATS = {
         itemLevelWeight = 0,
     },
 
+    ["DEX"] = {
+        id = "DEX",
+        name = "Dexterity",
+        category = "PRIMARY",
+        base = 10,
+        min = 0,
+        max = { ruleKey = "max_skill", default = 20 },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\agi.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Dexterity",
+        itemTooltipColor = {1, 1, 1},
+        itemTooltipPriority = 99,
+        itemLevelWeight = 1.0,
+    },
+
     ["DEX_MOD"] = {
         id = "DEX_MOD",
         name = "Dexterity",

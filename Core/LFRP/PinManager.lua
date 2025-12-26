@@ -123,15 +123,15 @@ local function _distance(x1, y1, x2, y2)
     return math.sqrt(dx * dx + dy * dy)
 end
 
---- Build clusters from visible locationData
-local function _buildClusters()
+--- Build clusters from visible locationData (filtered by current map)
+local function _buildClusters(currentMapID)
     local clusters = {}
     local assigned = {}  -- Track which indices have been assigned to a cluster
     
-    -- Get all visible pois
+    -- Get all visible pois on the current map
     local visiblePois = {}
     for i, poi in ipairs(locationData) do
-        if poi.broadcastLocation then
+        if poi.broadcastLocation and poi.mapID == currentMapID then
             table.insert(visiblePois, { index = i, poi = poi })
         end
     end
@@ -207,8 +207,14 @@ function PinManager:RefreshAllData(map)
         return
     end
     
-    -- Build clusters
-    local clusters = _buildClusters()
+    -- Get the current map ID from the world map
+    local currentMapID = map:GetMapID()
+    if not currentMapID then
+        return
+    end
+    
+    -- Build clusters filtered by current map
+    local clusters = _buildClusters(currentMapID)
     
     for clusterIdx, cluster in ipairs(clusters) do
         -- Calculate center of mass
