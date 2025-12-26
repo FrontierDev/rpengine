@@ -1,0 +1,15 @@
+package-as: RPEngine
+
+externals:
+
+manual-changelog: README.md
+
+ignore:
+  - .docs
+  - .vscode
+  - Test
+  - .git
+  - .gitignore
+  - "*.bat"
+  - "*.py"
+  - "*.ps1"
