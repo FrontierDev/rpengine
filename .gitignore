@@ -1,6 +1,4 @@
-.docs
 .vscode
-.readthedocs.yaml
 Test
 *.bat
 *.py
