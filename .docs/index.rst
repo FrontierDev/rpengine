@@ -28,6 +28,21 @@ Welcome to RPEngine's documentation. This guide covers installation, usage, and 
    guides/datasets
    guides/event-setup
    guides/event-run
+   guides/looting
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Dataset Editors
+
+   guides/metadata
+   guides/setupwizard
+   guides/statseditor
+   guides/itemedtor
+   guides/spelleditor
+   guides/auraeditor
+   guides/npceditor
+   guides/interactionedtior
+   guides/recipeeditor
 
 Indices and tables
 ==================
