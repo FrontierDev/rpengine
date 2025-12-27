@@ -917,7 +917,7 @@ function SpellEditorSheet:BuildUI(opts)
                                 -- If rankInterval is 0, spell doesn't rank up (only 1 rank)
                                 local maxR = 1
                                 if rankInterval > 0 then
-                                    local maxPlayerLevels = tonumber(RPE.ActiveRules:Get("max_player_levels") or 20)
+                                    local maxPlayerLevels = tonumber(RPE.ActiveRules:Get("max_player_level") or 20)
                                     maxR = math.floor((maxPlayerLevels - unlockLevel) / rankInterval) + 1
                                 end
 
