@@ -76,10 +76,12 @@ Each spell can have multiple action groups, and each action group can have multi
 Below are the available spell action types and their variables.
 
 ``APPLY_AURA`` and ``REMOVE_AURA``
+
 - **Aura ID**: The aura ID to apply or remove. This can be obtained from the Aura editor by right right-clicking an aura and selecting "Copy Aura ID".
 - **Per Rank**: This can be left at 0.
 
 ``DAMAGE`` and ``HEAL``
+
 - **Amount**: The base damage amount. This can be a fixed number, an expression or a dice roll (e.g., "2d6+3").
 The special placeholder ``$wep.[slot]$`` can be used to reference the weapon damage of the specified slot (e.g., ``$wep.mainhand$``).
 - **Per Rank**: The additional damage amount per rank. This can be a fixed number, an expression or a dice roll.
@@ -92,39 +94,49 @@ The special placeholder ``$wep.[slot]$`` can be used to reference the weapon dam
 - **Threat**: How much the damage is multiplied by to calculate threat generation. For example, a value of 1 means that threat is equal to damage dealt, whilst a value of 0.5 means that threat is half the damage dealt. It can also refer to a stat using the same placeholder.
 
 ``GAIN_RESOURCE``
+
 - **Resource ID**: The stat key of the resource to gain.
 - **Amount**: The base amount of the resource to gain.
 
 ``HIDE``
+
 - No special variables. This action will hide the caster.
 
 ``INTERRUPT``
+
 - No special variables. This action will interrupt the target's casting.
 
 ``REDUCE_COOLDOWN``
+
 - **Spell ID**: The spell ID of the spell to reduce the cooldown of. 
 This can also be a shared cooldown group identifier. Typing "all" here will reduce the cooldown of all spells.
 - **Amount**: The number of turns to reduce the cooldown by.
 
 ``SHIELD``
+
 - **Amount**: The base amount of damage the shield can absorb.
 - **Per Rank**: The additional amount of damage the shield can absorb per rank.
 - **Duration**: How long the shield lasts (in turns).
 
 ``SUMMON``
+
 - **NPC ID**: The NPC ID of the creature to summon. This can be obtained from the NPC editor by right right-clicking an NPC and selecting "Copy NPC ID".
 
 All spell action groups have a **targeter** field. This defines how the spell action selects its target(s). The available targeter types are:
+
 - **PRECAST**: This prompts the caster to select a target when the spell is first cast.
 - **CASTER**: The caster themselves is the target.
-- **TARGET**: This should be used in conjunction with a PRECAST targeter. 
+- **TARGET**: This should be used in conjunction with a PRECAST targeter.
+
 The target(s) selected by the prompt are used as the target for this action. 
 If there are no spell actions with the PRECAST targeter, the spell will default back to the default targeter specified on page 3.
+
 - **ALL_ALLIES**: All allies of the caster are targeted.
 - **ALL_ENEMIES**: All enemies of the caster are targeted.
 - **ALL_UNITS**: All units (allies and enemies) are targeted.
 
 The targeter fields has the following additional options:
+
 - **Max Targets**: The maximum number of targets that can be selected. Only applies to PRECAST, ALL_ALLIES, ALL_ENEMIES and ALL_UNITS targeters.
 A non-zero value here will randomly select targets up to the specified maximum when the targeter is ALL_ALLIES, ALL_ENEMIES or ALL_UNITS.
 - **Flags**: If left blank, all units can be targeted by the spell. Only enemies will be targetted if the flag field is ``E``. Only allies will be targetted if the flag field is ``A``.
