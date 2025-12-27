@@ -1,58 +1,41 @@
 Datasets
 ===========
 
-The Item Editor allows DMs to author and manage items used by the ruleset and NPCs.
+Datasets are collections of data that define various aspects of your RPEngine experience, such as NPCs, items, locations, and events.
+Datasets can be categorized into three types based on their expected lifespan and usage:
+- **Short-term Data**: Datasets that are likely to be synced before every event, such as NPCs and event scripts.
+- **Mid-term Data**: Datasets that are expected to be synced occasionally, such as item rewards and crafting recipes.
+- **Long-term Data**: Datasets that are expected to be synced once and remain for a long time, such as custom spells, auras, and interactions.
 
-Fields
-------
+When selecting a dataset for your campaign, it's important to consider the type of data it contains and how frequently it will need to be updated.
+While there is no limit to the size of your datasets, syncing large datasets can take quite a long time. 
+**Therefore, it is not just good pracitce but highly recommended to separate your datasets based on their expected lifespan and usage.**
 
-- `id` - unique key
-- `name` - display name
-- `icon` - texture file ID or path
-- `stats` - stat modifications
-- `use` - action or effect when used
+Creating a Dataset
+--------------------
 
-Editing
--------
-Use the in-game Dataset editor (found in the DM tools) to create and test items. Items are persisted under `Data/` in dataset files.
+To create a new dataset, follow these steps:
 
-Interactions Editor
--------
-**1. Basic**
+1. Open the RPEngine dataset manager by typing ``/rpe data`` in the chat or right-clicking the minimap button and selecting **Datasets**.
+2. Click the **Create Dataset** button.
+3. Enter a name for your dataset. It should be unique!
 
-- ``Target`` – either the exact ID of an NPC, the tag underneath their name, or their creature type:
-    - **Exact ID**: *e.g.* ``541739``. This can be obtained using the command ``/rpe npcinfo`` while targeting the NPC.
-    - **Tag**: *e.g.* ``Blacksmithing Supplies``. This is the tag shown under the NPC's name in the game UI. It will apply the interaction to all NPCs with this tag.
-    - **Creature type**: *e.g.* ``type:humanoid``. This will apply the interaction to all NPCs of this type.
+Consider changing the **metadata** to protect your dataset from modification.
+Click on the **Metadata** tab and see the Metadata Editor guide for more information.
 
-**2. Options**
+Required Datasets
+--------------------
 
-Each interaction can have one or more *options*. Each option defines a button or action the player can take when interacting with the target.
+You can force your group members to always use the same datasets as you by adding them to the **required datasets** list in your active ruleset.
+This ensures that everyone has the same data available during events, preventing potential issues caused by missing or outdated data.
 
-- ``label``: The text shown on the button (e.g. "Shop", "Salvage").
-- ``action``: The type of action to perform. Supported actions include:
-    - ``DIALOGUE``: Opens a dialogue window (customizable by addon authors).
-    - ``SHOP``: Opens a shop window for the player to buy/sell items.
-    - ``TRAIN``: Opens a trainer window for skills, spells, or professions.
-    - ``AUCTION``: Opens an auction house interface.
-    - ``SKIN``: Attempts to skin the target (usually a beast).
-    - ``SALVAGE``: Attempts to salvage materials from the target (usually a dead humanoid).
-    - ``RAISE``: Attempts to raise the target from the dead.
-- ``requiresDead``: If set (e.g. ``1``), the target must be dead for this option to appear.
-- ``args``: A table of extra arguments for the action. Common keys:
-    - ``mapID``: Restrict the option to specific map IDs (list or single value).
-    - ``type``, ``flags``, ``tags``, ``maxLevel``, ``maxStock``, ``maxRarity``, etc.: Used for filtering, gating, or customizing the action.
-    - ``output``: For actions like ``SALVAGE`` or ``SKIN``, defines the items and quantities produced. Example:
+The format of the ``required_rulesets`` key is a Lua table, e.g., ``{ MyDataset1\, MyDataset2 }``.
 
-      ::
+Additionally, you can make sure that your players ONLY use the required datasets by setting the ``dataset_exclusive`` rule key to ``1``.
+This prevents players from loading any datasets that are not on the required list.
 
-        output = [
-          { itemId = "iron_ingot", qty = "1d3", chance = 1.0 },
-          { itemId = "cloth_scrap", qty = "1d2", chance = 0.25 },
-        ]
+Editting Data
+--------------------
 
-      - ``itemId``: The item to give (must match an item in the dataset).
-      - ``qty``: Quantity, can be a number or dice string (e.g. ``"1d3"``).
-      - ``chance``: Probability (1.0 = always, 0.25 = 25% chance).
-
-
+Please refer to the individual data editor guides for information on how to create and edit specific types of data within your datasets, such as NPCs, items, spells, and interactions.
+Always remember to click the **Save** button after making changes to ensure that your edits are stored in the dataset.

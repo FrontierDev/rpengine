@@ -8,17 +8,18 @@ Welcome to RPEngine's documentation. This guide covers installation, usage, and 
    :caption: About RPEngine
 
    guides/introduction
-   guides/customisation
-   guides/secondary_features
+   guides/glossary
 
 .. toctree::
    :maxdepth: 2
    :caption: User Guide
 
    guides/character_setup
+   guides/customisation
    guides/combat
    guides/crafting
    guides/economy
+   guides/lfrp
 
 .. toctree::
    :maxdepth: 2

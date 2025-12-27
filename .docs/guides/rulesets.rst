@@ -1,8 +1,22 @@
 Rulesets
 ========
 
-Overview
---------
+A ruleset is a collection of configuration settings that dictate how RPEngine operates. 
+It provides a way to customize various aspects of the addon, such as combat mechanics, character progression, and event rules.
+Essentially, it can be thought of as the "settings" file.
+It should be considered as **long-term data**, meaning that once a ruleset is chosen for a campaign, it should not be changed frequently.
+
+**IMPORTANT** - RPEngine events require a **ruleset** and a **dataset** to function correctly.
+All members of your group must have the same ruleset active.
+
+When you reload your UI, RPEngine will tell you which ruleset is currently active.
+To change your active ruleset, open the **ruleset window** with ``/rpe ruleset`` or by clicking the minimap button and selecting **Rulesets**.
+
+Each ruleset is made up of a set of **rule keys** that define specific settings.
+Please refer to the rule keys reference section below for a list of all available rule keys and their descriptions.
+Note that the format of the rule's value is very specific. 
+For instance, typing ``mainhand, offhand, ranged`` into the value box for ``equipment_slots_bottom`` will not work; 
+you must use the Lua table format: ``{ mainhand\, offhand\, ranged }``.
 
 
 Rule Keys Reference

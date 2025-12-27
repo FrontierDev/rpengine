@@ -1,39 +1,40 @@
 Loot Distribution
-=================
+======
 
-The loot distribution system provides fair and transparent methods for distributing loot among party members during events.
+Loot can be distributed to players at any time, even outside of an event.
+To open the loot distribution window, use the command ``/rpe loot`` or click the minimap button and select **Loot**.
 
-Distribution Methods
---------------------
+Adding Loot
+----------------
 
-**Bidding System**
-- Players bid points on items
-- Higher bid wins the item
-- Each player has a limited pool of bid points
+Loot can be added by clicking the **Add Loot** button in the loot distribution window.
+This will add an empty **loot entry** to the list. 
+Right-click on the loot entry to open the context menu, which allows you to select the type of loot to add.
+You can add items, currencies, spells or recipes as loot.
 
-**Free-for-all**
-- Items are freely available to any eligible player
-- First come, first served approach
+Control the quantity of the loot by usin the + and - buttons on the right side of the entry.
+Alternatively, right-click the loot entry and select **Set Quantity...** to enter a specific amount.
 
-**Restricted Distribution**
-- Restrict items to specific classes or professions
-- Ensure items go to those who can use them
+You can choose to restrict each loot item to a set of specific player by right-clicking the loot entry and selecting **Restrict to...**.
+If you want EVERYONE to receive the loot, click the **All Receive Loot** button.
 
-Starting a Loot Distribution
-----------------------------
+Starting a Loot Roll
+----------------
 
-1. As the event leader, open the Loot Editor with ``/rpe loot``
-2. Add items to the loot pool
-3. Configure restrictions and distribution method
-4. Start the distribution timer
-5. Players make their selections/bids
-6. Review and confirm final distribution
+Either press the **Distribute** button at the top of the window or click the dice/bag icon next to a specific loot entry to start a loot roll.
+This will open the loot roll window for all players in your group.
 
-Player Perspective
-------------------
+There are two types of loot rolls:
+- ``NEED BEFORE GREED``: The typical loot roll type where players can choose to roll for need, greed or pass.
+- ``BID``: Players can enter a bid amount for the loot item. Each player gets one point per item of loot that is being rolled for.
+They can choose to bid any amount of points up to the number of points they have available.
 
-When loot is being distributed, a window will appear with available items:
+Once their selections have been made, they must press the **Confirm** button to lock in their choice.
 
-- **Bid Mode**: Click the +/- buttons to bid your points on items
-- **Free-for-all**: Click to claim an item
-- **Confirm**: Submit your choices before the timer expires
+Loot Resolution
+----------------
+
+When all players have confirmed their choices, or the loot roll timer expires, the loot roll will be resolved automatically.
+The player with the highest roll (or highest bid in a BID roll) will be awarded the loot item.
+If there is a tie, a re-roll will be initiated between the tied players.
+If no players rolled for the loot item, it will remain in the loot distribution window for you to distribute later.
