@@ -3,18 +3,11 @@ Aura Editor
 
 The Aura Editor allows you to create and configure auras (buffs, debuffs, and ongoing effects) in your dataset.
 
-Overview
---------
-
-Auras represent temporary or permanent effects that modify character stats and abilities.
-
 Accessing the Editor
 --------------------
 
 1. Open the Dataset Editor
 2. Go to the **Auras** tab
-3. Search or browse existing auras
-4. Click **New Aura** to create
 
 Click on an empty slot to add a new aura, or right-click and copy an existing aura from any dataset. The editor opens with multiple pages of configuration:
 

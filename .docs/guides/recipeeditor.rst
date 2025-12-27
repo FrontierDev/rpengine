@@ -1,78 +1,41 @@
 Recipe Editor
-==============
+===========
 
 The Recipe Editor allows you to create and configure crafting recipes in your dataset.
-
-Overview
---------
-
-Recipes define how players craft items using materials and their professions.
 
 Accessing the Editor
 --------------------
 
 1. Open the Dataset Editor
 2. Go to the **Recipes** tab
-3. Search or browse existing recipes
-4. Click **New Recipe** to create
 
-Creating a Recipe
------------------
+Click the **Add Recipe** button to create a new recipe, or click the *...* button and copy an existing recipe from any dataset. The editor opens with multiple pages of configuration:
 
-1. Click **New Recipe** button
-2. Fill in basic information:
+**Basics**
 
-   - **Name**: Recipe name
-   - **Description**: What is crafted
-   - **Profession**: Which profession can use (e.g., Blacksmithing, Alchemy)
+- **Name (Required)**: The name of the recipe as it appears in the UI.
+- **Profession**: The profession that the recipe belongs to (e.g., Blacksmithing, Alchemy, etc.).
+- **Category**: The category of the recipe within the profession (e.g., Weapons, Potions, etc.). This ditcates the folder structure in the profession trainer UI.
+- **Skill Req**: The minimum profession skill level required to learn the recipe.
+- **Quality**: The quality of the recipe (e.g., Common, Uncommon, Rare, Epic, Legendary).
 
-3. Configure requirements:
+**Output**
 
-   - **Profession Level**: Minimum skill required
-   - **Intelligence/Wisdom**: Ability score requirements
-   - **Tools**: Required crafting tools
+- **Output Item Id** - The item ID of the item that is created when the recipe is crafted. This can be found by right-clicking an item in the Item Editor and selecting 'Copy Item ID'.
+- **Output Quantity** - The number of items created when the recipe is crafted.
 
-4. Define inputs (materials):
+**Reagents**
 
-   - **Add Material**: Click to add required materials
-   - **Quantity**: How many of each item needed
-   - **Optional**: Mark if not always required
+This section defines the reagents required to craft the recipe. Each reagent has two fields: an item ID and a quantity. 
+The item ID can be found by right-clicking an item in the Item Editor and selecting 'Copy Item ID'.
 
-5. Define outputs (results):
+**Optional Reagents** - *This will be removed in a future update.*
 
-   - **Add Result**: Item crafted
-   - **Quantity**: How many produced
-   - **Quality Tiers**: Different quality levels possible
+**Tools** - Not yet implemented.
 
-6. Set crafting parameters:
+**Costs**
 
-   - **Time**: How long crafting takes
-   - **DC (Difficulty Check)**: Skill check to craft successfully
-   - **Success Rate**: Chance of success if check fails
+This section defines any additional costs required to LEARN the recipe, such as gold or special currencies.
+It takes either a built-in currency ID (``copper``, ``justice``, ``honor``, ``conquest`` or ``valor``) or the item ID of an item that is of the ``CURRENCY`` type.
+Recipe costs can be bypassed using the ``no_recipe_cost`` rule in the active ruleset.
 
-7. Save the recipe
-
-Recipe Categories
------------------
-
-**Crafting Professions**
-- Blacksmithing
-- Leatherworking
-- Tailoring
-- Woodworking
-- Alchemy
-- Cooking
-
-**Custom Recipes**
-- Unique crafting systems
-- Game-specific recipes
-- Homebrewing recipes
-
-Tips
-----
-
-- Balance material cost with result value
-- Set reasonable difficulty checks
-- Provide alternative recipes for similar items
-- Document special crafting requirements
-- Test recipes for balance and usability

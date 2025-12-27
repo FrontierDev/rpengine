@@ -104,6 +104,37 @@ end
 -- ============================================================================
 local function _buildInteractionSchema(id, def, isEdit)
     def = def or {}
+    
+    -- Parse option-level parameters into args table for editing
+    local options = type(def.options) == "table" and def.options or {}
+    if isEdit and #options > 0 then
+        options = CopyTable(options)  -- Don't modify original
+        for _, option in ipairs(options) do
+            if type(option) == "table" then
+                option.args = option.args or {}
+                -- Move option-level parameters into args for editing
+                if option.requiresDead ~= nil then
+                    option.args.requiresDead = option.requiresDead
+                end
+                if option.mapIDs ~= nil then
+                    option.args.mapIDs = option.mapIDs
+                end
+                -- Convert output table to string format for editing
+                if type(option.output) == "table" and #option.output > 0 then
+                    local outputStrs = {}
+                    for _, item in ipairs(option.output) do
+                        if item.itemId and item.qty and item.chance then
+                            table.insert(outputStrs, string.format("%s:%s:%s", item.itemId, item.qty, item.chance))
+                        end
+                    end
+                    if #outputStrs > 0 then
+                        option.args.output = table.concat(outputStrs, ", ")
+                    end
+                end
+            end
+        end
+    end
+    
     return {
         title = (isEdit and ("Edit Interaction: " .. tostring(id))) or "New Interaction",
         pages = {
@@ -118,7 +149,7 @@ local function _buildInteractionSchema(id, def, isEdit)
                 title = "Options",
                 elements = {
                     { id="options", label="Options", type="interaction_options",
-                      default = type(def.options) == "table" and def.options or {} },
+                      default = options },
                 }
             },
         },
@@ -137,6 +168,46 @@ local function _saveInteraction(ds, id, v)
     
     local options = type(v.options) == "table" and v.options or {}
     if #options == 0 then return nil, "At least one option required" end
+
+    -- Parse args table to option-level parameters
+    for _, option in ipairs(options) do
+        if type(option.args) == "table" then
+            -- Extract requiresDead from args
+            if option.args.requiresDead ~= nil then
+                option.requiresDead = option.args.requiresDead
+                option.args.requiresDead = nil
+            end
+            
+            -- Extract mapIDs from args
+            if option.args.mapIDs ~= nil then
+                option.mapIDs = option.args.mapIDs
+                option.args.mapIDs = nil
+            end
+            
+            -- Parse output string back to table format
+            if option.args.output and type(option.args.output) == "string" and option.args.output ~= "" then
+                local outputTable = {}
+                for item in option.args.output:gmatch("([^,]+)") do
+                    item = _trim(item)
+                    local parts = {}
+                    for part in item:gmatch("([^:]+)") do
+                        table.insert(parts, _trim(part))
+                    end
+                    if #parts == 3 then
+                        table.insert(outputTable, {
+                            itemId = parts[1],
+                            qty = parts[2],
+                            chance = tonumber(parts[3]) or 1.0
+                        })
+                    end
+                end
+                if #outputTable > 0 then
+                    option.output = outputTable
+                end
+                option.args.output = nil
+            end
+        end
+    end
 
     ds.extra.interactions[id] = { id = id, target = target, options = options }
     return id

@@ -3,84 +3,43 @@ NPC Editor
 
 The NPC Editor allows you to create and configure non-player characters in your dataset.
 
-Overview
---------
-
-NPCs populate your world and provide interactions, quests, and encounters for players.
-
 Accessing the Editor
 --------------------
 
 1. Open the Dataset Editor
 2. Go to the **NPCs** tab
-3. Search or browse existing NPCs
-4. Click **New NPC** to create
 
-Creating an NPC
----------------
+Click the **Add NPC** button to create a new NPC, or click the *...* button and copy an existing NPC from any dataset. The editor opens with multiple pages of configuration:
 
-1. Click **New NPC** button
-2. Fill in basic information:
+**Basics**
 
-   - **Name**: NPC name
-   - **Title**: Profession or role
-   - **Description**: Physical description and background
+- **Name (Required)**: The name of the NPC as it appears in the UI.
+- **Default Team**: Not used currently, I think.
+- **Unit Type**: The type of NPC (e.g., Humanoid, Beast, Undead, etc.). This is displayed in the unit's tooltip during an event.
+- **Unit Size**: The size of the unit. This is displayed in the unit's tooltip during an event.
+- **Summon Type**: The type of summon (e.g., Guardian, Minion, etc.). This is displayed in the unit's tooltip during an event.
+- **Base HP**: The base health points of the NPC.
+- **HP per Player**: The amount of health points added per player in the event.
 
-3. Configure appearance:
+**Model**
 
-   - **Race**: Species
-   - **Class**: Profession or archetype
-   - **Level**: Power level
-   - **Portrait**: Character art or model
+The unit's model is displayed in its unit portrait during events. Click on 'Choose Model' to select a model from the game's files. The position of the model can be adjusted using the three sliders underneath the preview frames.
 
-4. Set stats and abilities:
+**Stats**
 
-   - **Stats**: Strength, Intelligence, etc.
-   - **Skills**: Proficiencies
-   - **Spells**: Magical abilities
-   - **Equipment**: Weapons and gear
+The stats that the NPC can use. The **stat** column takes a stay key, e.g., ``MELEE_AP``, as defined in the Stats Editor. The **value** column takes a fixed number. If a spell attempts to access a stat that the NPC does not have, it will default to 1.
 
-5. Configure interactions:
+**NPC Spellbook*
 
-   - **Dialogue Trees**: Conversation options
-   - **Quests**: Associated quests
-   - **Trade Options**: What they buy/sell
+The spells that the NPC can use. Left click on a slot to change the spell.
 
-6. Set behavior:
+**NPC Behaviours** and **Bestiary Entries** are not yet implemented.
 
-   - **Combat Role**: Fighter, Mage, etc.
-   - **Tactics**: Combat strategy
-   - **Personality**: Alignment and attitude
 
-7. Save the NPC
+Tips and Best Practices
+-------------
+NPC data is relatively short-lived compared to stats, spells and (to a lesser extent) items. Therefore, it is often best to keep all of your NPCs in a separate dataset from your main items, spells and stats.
+This way, if you need to make changes to your NPCs, you can do so without having to resync all of your items and spells as well.
+You will have to sync your dataset before most events that you run, unless you are reusing NPCs a lot!
 
-NPC Categories
----------------
 
-**Allies**
-- Friendly NPCs
-- Party members
-- Helpers
-
-**Enemies**
-- Combat encounters
-- Boss creatures
-- Minions
-
-**Neutral**
-- Merchants
-- Questgivers
-- Townspeople
-
-**Boss Encounters**
-- Powerful enemies
-- Special mechanics
-- Unique loot
-
-Tips
-----
-
-- Give NPCs distinct personalities
-- Balance power relative to party level
-- Document special abilities clearly
-- Create memorable dialogue options

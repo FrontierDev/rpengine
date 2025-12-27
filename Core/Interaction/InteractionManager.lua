@@ -88,7 +88,7 @@ local function FilterInteractionsByMapAndType(matches, info)
                     local validDead = true
                     
                     -- Skip SKIN and SALVAGE_CLOTH if already looted
-                    if hasBeenLooted and (opt.action == "SKIN" or opt.action == "SALVAGE_CLOTH") then
+                    if hasBeenLooted and (opt.action == "SKIN" or opt.action == "SALVAGE") then
                         validMap = false
                     end
 
@@ -127,7 +127,7 @@ local function FilterInteractionsByMapAndType(matches, info)
                 local validDead = true
                 
                 -- Skip SKIN and SALVAGE_CLOTH if already looted
-                if hasBeenLooted and (opt.action == "SKIN" or opt.action == "SALVAGE_CLOTH") then
+                if hasBeenLooted and (opt.action == "SKIN" or opt.action == "SALVAGE") then
                     validMap = false
                 end
 
