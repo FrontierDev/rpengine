@@ -124,16 +124,16 @@ This can also be a shared cooldown group identifier. Typing "all" here will redu
 
 All spell action groups have a **targeter** field. This defines how the spell action selects its target(s). The available targeter types are:
 
-- **PRECAST**: This prompts the caster to select a target when the spell is first cast.
-- **CASTER**: The caster themselves is the target.
-- **TARGET**: This should be used in conjunction with a PRECAST targeter.
+- ``PRECAST``: This prompts the caster to select a target when the spell is first cast.
+- ``CASTER``: The caster themselves is the target.
+- ``TARGET``: This should be used in conjunction with a PRECAST targeter.
 
 The target(s) selected by the prompt are used as the target for this action. 
 If there are no spell actions with the PRECAST targeter, the spell will default back to the default targeter specified on page 3.
 
-- **ALL_ALLIES**: All allies of the caster are targeted.
-- **ALL_ENEMIES**: All enemies of the caster are targeted.
-- **ALL_UNITS**: All units (allies and enemies) are targeted.
+- ``ALL_ALLIES``: All allies of the caster are targeted.
+- ``ALL_ENEMIES``: All enemies of the caster are targeted.
+- ``ALL_UNITS``: All units (allies and enemies) are targeted.
 
 The targeter fields has the following additional options:
 
@@ -149,8 +149,14 @@ The 'phase' and 'logic' fields should usually be left at their default values.
 Spell tags are used throughout the system for filtering and categorization.
 For instance, warrior trainers will only offer spells that have the tag ``warrior``.
 
+Racial spells will need to have a tag in the format: ``race:[key]``, where ``[key]`` is the race ID. 
+For custom races, this will be defined in the setup wizard editor. For default races, the race ID can be found here: https://wowpedia.fandom.com/wiki/RaceId
+Race IDs should always be lower-case, e.g., ``race:orc``, ``race:dwarf``. Also include the ``Racial`` tag for all racial spells.
+
+
 Best Practices
 ---------------
 - If in doubt, copy a spell from the sample dataset to see how it is configured.
-- 
+- If you are making a spell set from scratch, decide on how much damage or healing different types of spells will use early on.
+
 

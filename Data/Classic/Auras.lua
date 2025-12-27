@@ -11357,7 +11357,7 @@ RPE.Data.DefaultClassic.AURAS_DRUID = {
 
 RPE.Data.DefaultClassic.AURAS_WARLOCK = {
     ------ Warlock Traits ------
-    -- Soul Link (ON_DAMAGE_TAKEN heal for $stat.INT_MOD$. Deal equivalent damage to SUMMONED)
+    -- Soul Link (ON_HIT_TAKEN heal for $stat.INT_MOD$. Deal equivalent damage to SUMMONED)
     ["aura-oCSWaTrait001"] = {
         id = "aura-oCSWaTrait001",
         name = "Soul Link",
