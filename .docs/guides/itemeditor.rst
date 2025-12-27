@@ -3,72 +3,79 @@ Item Editor
 
 The Item Editor allows you to create and configure items in your dataset.
 
-Overview
---------
-
-Items represent equipment, consumables, crafting materials, and other objects in your game.
-
 Accessing the Editor
 --------------------
 
-1. Open the Dataset Editor
-2. Go to the **Items** tab
-3. Search or browse existing items
-4. Click **New Item** to create
+1. Open the Dataset Editor (``/rpe data``).
+2. Click the **Items** tab.
 
 Creating an Item
 ----------------
 
-1. Click **New Item** button
-2. Fill in basic information:
+Click on an empty slot to add a new item, or right-click and copy an existing item from any dataset. The editor opens with multiple pages of configuration:
 
-   - **Name**: Item name
-   - **Description**: What the item does
-   - **Category**: Equipment, Consumable, Material, etc.
-   - **Weight**: Item weight
-   - **Value**: Gold/currency value
+**Basics**
 
-3. Configure item-specific properties:
+- **Name (Required)**: The name of the item as it appears in the UI. 
+- **Category**: The category of the item, which defines its general type and behavior (e.g., Weapon, Armor, Consumable, Quest Item).
+- **Rarity**: The rarity of the item (e.g., Common, Uncommon, Rare, Epic, Legendary).
+- **Icon**: The icon texture representing the item.
+- **Description**: A description of the item, also known as "flavor text".
+- **Tags**: Comma-separated tags associated with the item. These are used throughout the system for filtering and categorization.
 
-   - **Rarity**: Common, Uncommon, Rare, Legendary, etc.
-   - **Requires**: Proficiency, class, level requirement
-   - **Effects**: Special abilities or bonuses
+**Stacking**
 
-4. For equipment:
+- **Stackable**: Can the item be stacked?
+- **Max Stack**: What is the maximum stack size of the item?
+- **Base Price (u)**: The base price of the item in economy units (u). 4 *u* is 1 copper. 
+- **Buy @ Vendors**: Can this item be purchased from vendors?
+- **Price Override (c)**: Explicitly define the market price of the item in copper (c). If left blank, the price is calculated based on the base price and item rarity.
 
-   - **Armor Class**: If protective gear
-   - **Damage**: If weapon
-   - **Slot**: Where item equips (hands, head, etc.)
+**Data**
 
-5. Save the item
+Most of the item's functionality is defined here. The data keys need to be added manually.
 
-Item Categories
-----------------
+**Equipment**-type items have several fields that should be included: 
 
-**Equipment**
-- Weapons and armor
-- Jewelry and accessories
-- Magical items
+- ``slot`` - the ID of the slot that the item can be equipped in (e.g., ``head``).
+- ``armorType`` - the display name of the slot as it appears in the item tooltip (e.g., ``Head``, ``Helmet``, etc.).
+- ``armorMaterial`` - the material type of the armor (e.g., ``Cloth``, ``Leather``, ``Mail``, ``Plate``).
+- ``accessoryType`` - the type of accessory (e.g., ``Ring``, ``Trinket``, etc.).
+- ``weaponType`` - the type of weapon (e.g., ``Sword``, ``Axe``, ``Bow``, etc.).
+- ``hand`` - the hand that the weapon goes in (e.g., ``Main Hand``, ``Off Hand``, ``Two Hand``).
+- ``damageSchool`` - the damage school that the weapon deals when it is used to deal damage (e.g., ``Physical``, ``Fire``, ``Frost``, etc.).
+- ``damageMin`` - the minimum damage the weapon deals.
+- ``damageMax`` - the maximum damage the weapon deals.
 
-**Consumables**
-- Potions
-- Scrolls
-- Food and drink
+Weapons, armour and accessories each require a set of keys to display properly:
 
-**Materials**
-- Crafting ingredients
-- Raw resources
-- Quest items
+- **Weapons** require ``slot``, ``weaponType``, ``hand``, ``damageSchool``, ``damageMin``, and ``damageMax``.
+- **Armour** requires ``slot``, ``armorType``, and ``armorMaterial``.
+- **Accessories** require ``slot`` and ``accessoryType``.
 
-**Special**
-- Unique items
-- Cursed items
-- Trade goods
+Both **equipment** and **modification** items can have stat bonuses. 
+These are defined using the key format ``stat_[STAT_KEY]``, where ``[STAT_KEY]`` is the Stat Key defined in the Stats Editor. For example, to add a bonus to Strength, you would use the key ``stat_STR`` with a value of the amount to increase Strength by.
 
-Tips
-----
+**Material**-type items used in crafting recipes should include:
+- ``tier`` - the numerical tier of the crafting matierial. For reference, tier 1 includes materials such as copper and linen, while tier 5 includes materials such as arcanite and felcloth.
 
-- Use consistent naming
-- Set appropriate rarity levels
-- Document special abilities clearly
-- Test items in-game before publishing
+**Consumable**
+
+Consumables work by casting a spell when used. To configure this, set the following fields on the 4th page of the editor:
+
+- **Spell ID**: The spell ID to be cast when the item is used.
+- **Spell Rank**: The rank at which to cast the spell.
+
+Harvestable Reagents
+---------------
+Reagents can be made harvestable by including a tag in the format: ``node:[profession]:[node name]:[min.amount]-[max.amount]``.
+For example, ``node:herbalism:peacebloom:1-3`` would make the item "Peacebloom" harvestable from in-game Peacebloom nodes, yielding between 1 and 3 units when harvested.
+The tag can have spaces, but must be entirely in lower-case.
+
+Notes and Best Practices
+---------------
+- Refer to the item economy table to set appropriate base prices for items. The final price of an item is influenced by its rarity and item level.
+- Item level is automatically calculated when you save an item in the editor, and is shown if you have the ``show_item_level`` rule set in your active ruleset.
+
+
+

@@ -37,11 +37,11 @@ Welcome to RPEngine's documentation. This guide covers installation, usage, and 
    guides/metadata
    guides/setupwizard
    guides/statseditor
-   guides/itemedtor
+   guides/itemeditor
    guides/spelleditor
    guides/auraeditor
    guides/npceditor
-   guides/interactionedtior
+   guides/interactioneditor
    guides/recipeeditor
 
 Indices and tables

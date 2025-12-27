@@ -38,20 +38,28 @@ Click **New Stat** to add a stat. The editor opens with multiple pages of config
 - **Percentage**: Indicates if the stat is displayed as a percentage.
 
 **Recovery**
+
 This section is for stats which recover automatically at the start of each turn (e.g., Health, Mana, Stamina, etc.).
+
 - **Rule Key**: The rule in the active ruleset which contains the formula for recovering this stat at the start of each turn. Generally used for resources like Health (e.g., ``health_regen``) or Mana (e.g., ``mana_regen``).
 - **Default Value**: The default value if the recovery formula cannot be computed.
 
 **Mitigation**
+
 This section is for stats which can be used when the player is defending. It does not need to be completed for stats which are not used for defence.
+
 - **Defence Name**: The name of the stat as it appears when the player is defending against an attack. For example, your stat might be called "Fire Resistance" in the character sheet, but when defending it appears as "Resist Fire".
 - **Combat Text**: The floating combat text that appears when this stat is used to mitigate damage. e.g., the parry stat might display floating combat text that says "Parried!".
 - **Mitigation**: How much damage is mitigated when a defence roll succeeds using this stat as a modifier.
 - **Crit. Mitigation**: How much damage is mitigated on a critical defence roll using this stat as a modifier.
 - **Fail Mitigation**: How much damage is mitigated on a failed defence roll using this stat as a modifier.
 
+The three mitigation fields all take the parameter ``$value$`` which represents the actual damage taken. For example, ``$value$ - $stat.FEL_RESIST$`` means that the damage taken is reduced by the value of the ``FEL_RESIST`` stat.
+
 **Item Bonuses**
+
 This section configures how stats appear on items and does not need to be completed for stats that are not granted by items.
+
 - **Tooltip Format**: The format of the line on the item tooltip when this stat is granted by an item. Use ``$value$`` as a placeholder for the stat's value. For example, a stat that increases health might have the format "{value} Health". The "+" or "-" sign is added automatically based on whether the stat value is positive or negative.
 - **Priority**: The priority of this stat when displayed on an item tooltip. Higher numbers appear first.
 - **Color (R, G, B)**: The colour of the stat line on the item tooltip, defined as RGB values from 0 to 1.
@@ -62,3 +70,5 @@ Save the stat when done.
 Best Practices
 ---------------
 - Resources (e.g., Health, Mana) should have both a current value stat (e.g., ``MANA``) and a maximum value stat (e.g., ``MAX_MANA``). This allows the system to track both the current and maximum amounts correctly.
+- If a stat's max value relies on another stat (e.g., the max value of ``CHI`` depends on the value of ``MAX_CHI``), the max value should read ``$stat.MAX_CHI``. The tailing "$" ensures that the system treats it as a reference to another stat rather than a literal value.
+- Resources that can be spent (e.g., Mana, Energy) should have their minimum value set to 0 to prevent negative values.
