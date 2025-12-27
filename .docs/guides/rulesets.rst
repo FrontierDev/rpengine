@@ -20,7 +20,7 @@ All available rule keys that can be used in the ``rules`` table:
    * - ``max_tick_units``
      - ``4``
      - How many units can act per turn in combat.
-    * - ``setup_wizard``
+   * - ``setup_wizard``
      - e.g. ``Custom Dataset``
      - The name of the dataset to use for the setup wizard.
    * - ``use_level_system``
