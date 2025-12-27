@@ -80,7 +80,7 @@ function LFRPSettingsSheet.New(opts)
         autoSize   = true,
     })
 
-    -- === TRP Info Section ===
+    -- === TRP Info Section (with Auto Rejoin button in top right) ===
     local trpHGroup = HGroup:New(_name("RPE_LFRP_TRPHGroup"), {
         parent = self.sheet,
         autoSize = true,
@@ -89,13 +89,6 @@ function LFRPSettingsSheet.New(opts)
         alignV = "CENTER",
     })
     self.sheet:Add(trpHGroup)
-
-    self.trpNameText = Text:New(_name("RPE_LFRP_TRPName"), {
-        parent = trpHGroup,
-        text = "Unknown",
-        fontTemplate = "GameFontNormal",
-    })
-    trpHGroup:Add(self.trpNameText)
 
     local refreshBtn = IconButton:New(_name("RPE_LFRP_RefreshTRPBtn"), {
         parent = trpHGroup,
@@ -110,6 +103,13 @@ function LFRPSettingsSheet.New(opts)
         end,
     })
     trpHGroup:Add(refreshBtn)
+
+    self.trpNameText = Text:New(_name("RPE_LFRP_TRPName"), {
+        parent = trpHGroup,
+        text = "Unknown",
+        fontTemplate = "GameFontNormal",
+    })
+    trpHGroup:Add(self.trpNameText)
 
     -- === "I am ..." section ===
     local iAmRow = HGroup:New(_name("RPE_LFRP_IAmRow"), {
@@ -250,6 +250,22 @@ function LFRPSettingsSheet.New(opts)
     })
     self.sheet:Add(controlHGroup)
 
+    self.autoRejoinBtn = IconButton:New(_name("RPE_LFRP_AutoRejoinBtn"), {
+        parent = controlHGroup,
+        width = 24,
+        height = 24,
+        noBackground = true,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\rejoin.png",
+        tooltip = "Toggle Auto Rejoin\n\nWhen enabled (green), you will automatically rejoin LFRP on login and resume broadcasting with your saved settings.",
+        onClick = function()
+            self:ToggleAutoRejoin()
+        end,
+    })
+    controlHGroup:Add(self.autoRejoinBtn)
+    
+    -- Initialize button color based on current setting
+    self:UpdateAutoRejoinButton()
+
     self.toggleBtn = TextBtn:New(_name("RPE_LFRP_ToggleBtn"), {
         parent = controlHGroup,
         width = 120,
@@ -289,6 +305,7 @@ function LFRPSettingsSheet.New(opts)
     self:UpdateStatusDisplay()
     self:UpdateIAmLabel()
     self:UpdateLookingForLabel()
+    self:LoadLFRPSettingsFromProfile()
 
     return self
 end
@@ -420,6 +437,70 @@ function LFRPSettingsSheet:SerializeSettings()
     }
 end
 
+-- Static helper to serialize LFRP settings from profile (used by auto-rejoin)
+function LFRPSettingsSheet.SerializeSettingsFromProfile(profile)
+    -- Get TRP3 name (with fallback to character name)
+    local trpName = ""
+    local getter = RPE and RPE.Common and RPE.Common.GetTRP3NameForUnit
+    if getter then
+        local ok, name = pcall(function()
+            return RPE.Common:GetTRP3NameForUnit("player")
+        end)
+        if ok and name and name ~= "" then
+            trpName = name
+        end
+    end
+    
+    -- Get guild name
+    local guildName = GetGuildInfo("player") or ""
+    
+    -- Get saved LFRP settings from profile
+    local iAmIds = {}
+    local lookingForIds = {}
+    local broadcastLocation = false
+    local recruiting = false
+    local approachable = false
+    
+    if profile and profile.lfrpSettings then
+        iAmIds = profile.lfrpSettings.iAmIds or {}
+        lookingForIds = profile.lfrpSettings.lookingForIds or {}
+        broadcastLocation = profile.lfrpSettings.broadcastLocation or false
+        recruiting = profile.lfrpSettings.recruiting or false
+        approachable = profile.lfrpSettings.approachable or false
+    end
+    
+    -- Pad to exactly 5 items with 0s
+    while #iAmIds < 5 do
+        table.insert(iAmIds, 0)
+    end
+    while #lookingForIds < 5 do
+        table.insert(lookingForIds, 0)
+    end
+    
+    -- Truncate to exactly 5
+    iAmIds = { iAmIds[1], iAmIds[2], iAmIds[3], iAmIds[4], iAmIds[5] }
+    lookingForIds = { lookingForIds[1], lookingForIds[2], lookingForIds[3], lookingForIds[4], lookingForIds[5] }
+    
+    -- Determine recruiting status: 0 = no, 1 = recruiting, 2 = recruitable
+    local recruitingStatus = 0
+    if recruiting then
+        recruitingStatus = IsInGuild() and 1 or 2
+    end
+    
+    -- Determine approachable status: 0 = no, 1 = yes
+    local approachableStatus = approachable and 1 or 0
+    
+    return {
+        trpName = trpName,
+        guildName = guildName,
+        iAm = iAmIds,
+        lookingFor = lookingForIds,
+        recruiting = recruitingStatus,
+        approachable = approachableStatus,
+        broadcastLocation = broadcastLocation,
+    }
+end
+
 function LFRPSettingsSheet:RefreshTRPInfo()
     local getter = RPE and RPE.Common and RPE.Common.GetTRP3NameForUnit
     local displayName = "Unknown"
@@ -509,6 +590,8 @@ function LFRPSettingsSheet:ToggleLFRP()
         RPE.Debug:Print("LFRP disabled.")
     end
 
+    -- Save current LFRP settings to profile regardless of enable/disable state
+    self:SaveLFRPSettingsToProfile()
     self:UpdateStatusDisplay()
 end
 
@@ -525,10 +608,101 @@ function LFRPSettingsSheet:UpdateStatusDisplay()
     end
 end
 
+function LFRPSettingsSheet:ToggleAutoRejoin()
+    local profile = RPE and RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+    if not profile then return end
+    
+    local newState = not profile:GetAutoRejoinLFRP()
+    profile:SetAutoRejoinLFRP(newState)
+    
+    -- Save the profile
+    local ProfileDB = RPE.Profile.DB
+    if ProfileDB and ProfileDB.SaveProfile then
+        ProfileDB.SaveProfile(profile)
+    end
+    
+    -- Update button visual state
+    self:UpdateAutoRejoinButton()
+    
+    -- Also save current LFRP settings to profile
+    self:SaveLFRPSettingsToProfile()
+end
+
+function LFRPSettingsSheet:UpdateAutoRejoinButton()
+    if not self.autoRejoinBtn then return end
+    
+    local profile = RPE and RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+    if not profile then return end
+    
+    local isEnabled = profile:GetAutoRejoinLFRP()
+    
+    -- Visual feedback: change button color based on state
+    if isEnabled then
+        self.autoRejoinBtn:SetColor(0.2, 1, 0.2, 1)  -- Green when enabled
+    else
+        self.autoRejoinBtn:SetColor(1, 1, 1, 1)  -- White when disabled
+    end
+end
+
+function LFRPSettingsSheet:SaveLFRPSettingsToProfile()
+    local profile = RPE and RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+    if not profile then return end
+    
+    -- Store LFRP preferences on the profile
+    profile.lfrpSettings = profile.lfrpSettings or {}
+    profile.lfrpSettings.iAmIds = self.iAmDropdown:GetValue() or {}
+    profile.lfrpSettings.lookingForIds = self.lookingForDropdown:GetValue() or {}
+    profile.lfrpSettings.broadcastLocation = self.broadcastLocationCheckbox and self.broadcastLocationCheckbox.check and self.broadcastLocationCheckbox.check:GetChecked() or false
+    profile.lfrpSettings.recruiting = self.recruitingCheckbox and self.recruitingCheckbox.check and self.recruitingCheckbox.check:GetChecked() or false
+    profile.lfrpSettings.approachable = self.approachableCheckbox and self.approachableCheckbox.check and self.approachableCheckbox.check:GetChecked() or false
+    
+    -- Save to database
+    local ProfileDB = RPE.Profile.DB
+    if ProfileDB and ProfileDB.SaveProfile then
+        ProfileDB.SaveProfile(profile)
+    end
+end
+
+function LFRPSettingsSheet:LoadLFRPSettingsFromProfile()
+    local profile = RPE and RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+    if not profile or not profile.lfrpSettings then return end
+    
+    local settings = profile.lfrpSettings
+    
+    -- Load "I am" selections
+    if settings.iAmIds and #settings.iAmIds > 0 then
+        self.iAmDropdown:SetValue(settings.iAmIds)
+        self:UpdateIAmLabel()
+    end
+    
+    -- Load "Looking for" selections
+    if settings.lookingForIds and #settings.lookingForIds > 0 then
+        self.lookingForDropdown:SetValue(settings.lookingForIds)
+        self:UpdateLookingForLabel()
+    end
+    
+    -- Load broadcast location checkbox
+    if self.broadcastLocationCheckbox and self.broadcastLocationCheckbox.check then
+        self.broadcastLocationCheckbox.check:SetChecked(settings.broadcastLocation or false)
+    end
+    
+    -- Load recruiting checkbox
+    if self.recruitingCheckbox and self.recruitingCheckbox.check then
+        self.recruitingCheckbox.check:SetChecked(settings.recruiting or false)
+    end
+    
+    -- Load approachable checkbox
+    if self.approachableCheckbox and self.approachableCheckbox.check then
+        self.approachableCheckbox.check:SetChecked(settings.approachable or false)
+    end
+end
+
 function LFRPSettingsSheet:Show()
     if self.sheet and self.sheet.Show then
         self.sheet:Show()
     end
+    -- Update button color when showing in case settings changed
+    self:UpdateAutoRejoinButton()
 end
 
 function LFRPSettingsSheet:Hide()

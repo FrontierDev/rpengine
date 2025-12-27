@@ -147,6 +147,9 @@ function CharacterProfile:New(name, opts)
         actionBar   = opts.actionBar or {},
         resourceDisplaySettings = opts.resourceDisplaySettings or {},
         windowPositions = opts.windowPositions or {},  -- window name -> {point, relativePoint, x, y}
+        dev         = opts.dev or false,  -- whether this profile belongs to an RPE developer
+        autoRejoinLFRP = opts.autoRejoinLFRP or false,  -- whether to auto-rejoin the last LFRP channel on login
+        lfrpSettings = opts.lfrpSettings or {},  -- LFRP preferences { iAmIds, lookingForIds, broadcastLocation, recruiting, approachable }
         _initializing = true,  -- Flag to suppress UI callbacks during initialization
     }, self)
     
@@ -266,6 +269,32 @@ function CharacterProfile:_InitializeResourceDisplaySettings()
             self:_NormalizeResourceSettings(key)
         end
     end
+end
+
+--- Update the developer status based on whether the current player is in the developer list
+function CharacterProfile:UpdateDeveloperStatus()
+    local playerName = UnitName("player") or ""
+    local devList = _G.RPE and _G.RPE.Developers or {}
+    
+    -- Check if player name matches any developer name (case-insensitive)
+    self.dev = false
+    for _, devName in ipairs(devList) do
+        if devName and devName:lower() == playerName:lower() then
+            self.dev = true
+            break
+        end
+    end
+end
+
+--- Get auto rejoin LFRP setting
+function CharacterProfile:GetAutoRejoinLFRP()
+    return self.autoRejoinLFRP or false
+end
+
+--- Set auto rejoin LFRP setting
+function CharacterProfile:SetAutoRejoinLFRP(value)
+    self.autoRejoinLFRP = value or false
+    touch(self)
 end
 
 ---Initialize faction-specific languages if empty
@@ -1517,6 +1546,9 @@ function CharacterProfile:ToTable()
         actionBar = self.actionBar or {},
         resourceDisplaySettings = self.resourceDisplaySettings or {},
         windowPositions = self.windowPositions or {},
+        dev = self.dev or false,
+        autoRejoinLFRP = self.autoRejoinLFRP or false,
+        lfrpSettings = self.lfrpSettings or {},
     }
 end
 
@@ -1542,6 +1574,9 @@ function CharacterProfile.FromTable(t)
         actionBar = t.actionBar or {},
         resourceDisplaySettings = type(t.resourceDisplaySettings) == "table" and t.resourceDisplaySettings or {},
         windowPositions = type(t.windowPositions) == "table" and t.windowPositions or {},
+        dev = t.dev or false,
+        autoRejoinLFRP = t.autoRejoinLFRP or false,
+        lfrpSettings = type(t.lfrpSettings) == "table" and t.lfrpSettings or {},
     })
 end
 

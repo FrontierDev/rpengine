@@ -2677,14 +2677,20 @@ Comms:RegisterHandler("CALL_HELP_END", function(data, sender)
 end)
 
 Comms:RegisterHandler("HELLO", function(raw, sender)
-    -- Raw is a semicolon-joined payload; first field is the display name, second is the hash
+    -- Raw is a semicolon-joined payload; first field is the display name, second is the hash, third is addon version
     local args = { strsplit(";", raw) }
     local trpName = args[1] or ""
     local senderHash = args[2] or ""
+    local senderVersion = args[3] or "unknown"
 
     local myName = UnitName("player")
 
     if not trpName or trpName == "" then return end
+    
+    -- Check if sender's addon version is newer and warn the player (fires only once per session)
+    if _G.RPE and _G.RPE.AddonVersionWarning then
+        _G.RPE.AddonVersionWarning(sender, senderVersion)
+    end
 
     -- Generate my own hash for comparison
     local myHash = ""
@@ -2887,6 +2893,11 @@ Comms:RegisterHandler("LFRP_BROADCAST", function(raw, sender)
     local args = { strsplit(";", raw) }
     if #args < 10 then return end
     
+    -- Ensure we have at least 13 args, defaulting missing ones to empty strings
+    for i = #args + 1, 13 do
+        args[i] = ""
+    end
+    
     -- Parse location
     local mapID = tonumber(args[1]) or 0
     local x = tonumber(args[2]) or 0
@@ -2925,8 +2936,18 @@ Comms:RegisterHandler("LFRP_BROADCAST", function(raw, sender)
     local approachable = tonumber(args[9]) or 0
     local broadcastLocation = (args[10] == "1") or false
     
+    -- Parse addon version and dev status (new fields)
+    local addonVersion = args[11] or "unknown"
+    local dev = (args[12] == "1") or false
+    local eventName = (args[13] and args[13] ~= "nil") and args[13] or ""
+    
     -- Extract character name from sender for fallback display
     local characterName = sender:match("^([^-]+)") or sender
+    
+    -- Check if sender's addon version is newer and warn the player (fires only once per session)
+    if _G.RPE and _G.RPE.AddonVersionWarning then
+        _G.RPE.AddonVersionWarning(characterName, addonVersion)
+    end
     
     -- Add or update pin with location
     local PinManager = RPE.Core and RPE.Core.LFRP and RPE.Core.LFRP.PinManager
@@ -2944,6 +2965,9 @@ Comms:RegisterHandler("LFRP_BROADCAST", function(raw, sender)
             recruiting = recruiting,
             approachable = approachable,
             broadcastLocation = broadcastLocation,
+            addonVersion = addonVersion,
+            dev = dev,
+            eventName = eventName,
         })
     end
 end)

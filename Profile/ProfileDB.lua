@@ -154,6 +154,11 @@ function ProfileDB.GetOrCreateActive()
     local profile = ProfileDB.GetOrCreateByName(profName)
     _activeInstance = profile  -- Cache it for session
     
+    -- Update developer status for the profile based on current player
+    if profile and type(profile.UpdateDeveloperStatus) == "function" then
+        profile:UpdateDeveloperStatus()
+    end
+    
     -- Re-apply equipped item mods now that profile is fully set up as active
     if profile and profile._ReapplyEquipMods then
         profile:_ReapplyEquipMods()

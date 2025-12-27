@@ -69,6 +69,10 @@ function Comms:JoinLFRPChannel()
             if chName and chName == channelName then
                 channelNumber = chNum
                 isChannelJoined = true
+                
+                -- Remove the channel from the main chat frame to keep it clean
+                ChatFrame_RemoveChannel(ChatFrame1, channelName)
+                
                 Comms:TrySendHello()
                 return
             end
@@ -117,9 +121,28 @@ function Comms:SendLFRPBroadcast()
     
     local Location = RPE and RPE.Core and RPE.Core.Location
     local Broadcast = RPE and RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
+    local ProfileDB = RPE and RPE.Profile and RPE.Profile.DB
     
     if not Location or not Broadcast then
         return
+    end
+    
+    -- Ensure dev status is included in settings
+    if ProfileDB then
+        local profile = ProfileDB.GetOrCreateActive()
+        if profile then
+            currentSettings.dev = profile.dev or false
+        end
+    end
+    
+    -- Get event name from active event if not already set
+    if not currentSettings.eventName or currentSettings.eventName == "" then
+        local ActiveEvent = RPE and RPE.Core and RPE.Core.ActiveEvent
+        if ActiveEvent and ActiveEvent.name then
+            currentSettings.eventName = tostring(ActiveEvent.name)
+        else
+            currentSettings.eventName = ""
+        end
     end
     
     -- Get location
@@ -133,6 +156,11 @@ end
 -- Get the current channel number
 function Comms:GetChannelNumber()
     return channelNumber
+end
+
+-- Get the current channel name
+function Comms:GetChannelName()
+    return GetChannelName()
 end
 
 -- Check if channel is joined
@@ -178,6 +206,47 @@ function Comms:StartPeriodicBroadcast()
     
     -- Start the timer (delay first broadcast slightly to allow channel join)
     C_Timer.After(5, BroadcastAndCleanup)
+end
+
+-- Rejoin a specific LFRP channel (used for auto-rejoin on login)
+function Comms:RejoinChannel(channelName)
+    if not channelName or channelName == "" then
+        -- If no specific channel, just join the current date-based channel
+        self:JoinLFRPChannel()
+        return
+    end
+    
+    -- Execute /join command with the specified channel name
+    ChatFrame1EditBox:SetText("/join " .. channelName)
+    ChatEdit_SendText(ChatFrame1EditBox, 0)
+    
+    -- Wait for channel to be joined, then look it up
+    C_Timer.After(0.5, function()
+        -- Get list of channels (returns number, name, number, name, ...)
+        local numChannels = select('#', GetChannelList())
+        local i = 1
+        while i <= numChannels do
+            local chNum = select(i, GetChannelList())
+            local chName = select(i + 1, GetChannelList())
+            
+            if chName and chName == channelName then
+                channelNumber = chNum
+                isChannelJoined = true
+                
+                if RPE.Debug then
+                    RPE.Debug:Print("[LFRP] Rejoined channel: " .. channelName)
+                end
+                return
+            end
+            
+            i = i + 2
+        end
+        
+        -- Channel not found, try again in a moment
+        C_Timer.After(0.5, function()
+            Comms:RejoinChannel(channelName)
+        end)
+    end)
 end
 
 -- Leave the LFRP channel

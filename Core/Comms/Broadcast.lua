@@ -1420,8 +1420,11 @@ function Broadcast:Hello(trpName)
     -- Generate hash for current datasets and ruleset
     local hash = self:_generateDatasetRulesetHash()
     
-    RPE.Debug:Internal(string.format("[Broadcast] _sendAll(HELLO) with name: %s, hash: %s", trpName, hash))
-    _sendAll("HELLO", { tostring(trpName), tostring(hash) })
+    -- Get addon version
+    local addonVersion = tostring((_G.RPE and _G.RPE.AddonVersion) or "unknown")
+    
+    RPE.Debug:Internal(string.format("[Broadcast] _sendAll(HELLO) with name: %s, hash: %s, version: %s", trpName, hash, addonVersion))
+    _sendAll("HELLO", { tostring(trpName), tostring(hash), addonVersion })
 end
 
 -- Generate a hash representing the current active datasets and ruleset (same logic as Request.lua)
@@ -1877,7 +1880,12 @@ function Broadcast:SendLFRPBroadcast(mapID, x, y, settings)
     local approachable = tostring(settings.approachable or 0)
     local broadcastLocation = settings.broadcastLocation and "1" or "0"
     
-    -- Format: mapID;x;y;trpName;guildName;iAm;lookingFor;recruiting;approachable;broadcastLocation
+    -- Get addon version and developer status
+    local addonVersion = tostring((_G.RPE and _G.RPE.AddonVersion) or "unknown")
+    local dev = settings.dev and "1" or "0"
+    local eventName = tostring(settings.eventName or "")
+    
+    -- Format: mapID;x;y;trpName;guildName;iAm;lookingFor;recruiting;approachable;broadcastLocation;addonVersion;dev;eventName
     local flat = {
         tostring(mapID),
         tostring(x),
@@ -1889,6 +1897,9 @@ function Broadcast:SendLFRPBroadcast(mapID, x, y, settings)
         recruiting,
         approachable,
         broadcastLocation,
+        addonVersion,
+        dev,
+        eventName,
     }
     
     Comms:Send("LFRP_BROADCAST", flat, "CHANNEL", channelNumber)

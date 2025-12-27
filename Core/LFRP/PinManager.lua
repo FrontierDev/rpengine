@@ -77,6 +77,9 @@ function PinManager:AddPin(mapID, x, y, icon, name, sender, broadcastLocation)
         lastUpdate = GetTime(),
         broadcastLocation = broadcastLocation,
         lastBroadcastLocationTrue = GetTime(),  -- Track creation time
+        addonVersion = "unknown",
+        dev = false,
+        eventName = "",
     }
     table.insert(locationData, poiInfo)
     self:RefreshAllData(WorldMapFrame)
@@ -94,6 +97,9 @@ function PinManager:UpdatePlayerSettings(senderName, settings)
             poi.recruiting = settings.recruiting or 0
             poi.approachable = settings.approachable or 0
             poi.broadcastLocation = settings.broadcastLocation ~= false  -- default true
+            poi.addonVersion = settings.addonVersion or "unknown"
+            poi.dev = settings.dev or false
+            poi.eventName = (settings.eventName and settings.eventName ~= "") and settings.eventName or ""
             -- Track the last time we received broadcastLocation=true
             if poi.broadcastLocation then
                 poi.lastBroadcastLocationTrue = GetTime()
@@ -232,6 +238,8 @@ function PinManager:RefreshAllData(map)
         if pin and pin.frame then
             -- Parent to the scroll container's child frame
             pin.frame:SetParent(child)
+            pin.frame:SetFrameStrata("MEDIUM")
+            pin.frame:SetFrameLevel(100)
             
             -- Position using normalized coordinates relative to child
             local offsetX = nx * child:GetWidth()
@@ -239,6 +247,9 @@ function PinManager:RefreshAllData(map)
             
             pin.frame:SetPoint("CENTER", child, "TOPLEFT", offsetX, -offsetY)
             pin.frame:Show()
+            if pin.icon then
+                pin.icon:Show()
+            end
             table.insert(pinInstances, pin)
         end
     end

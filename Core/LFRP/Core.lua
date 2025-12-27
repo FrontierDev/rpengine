@@ -52,6 +52,41 @@ end
 
 --- Called when player enters world
 function Core:OnPlayerLogin()
+    -- Check if player has auto-rejoin enabled
+    local ProfileDB = RPE and RPE.Profile and RPE.Profile.DB
+    if ProfileDB then
+        local profile = ProfileDB.GetOrCreateActive()
+        if profile and profile:GetAutoRejoinLFRP() then
+            -- Player has auto-rejoin enabled, so initialize LFRP system and join the current date-based channel
+            RPE.Core.LFRP.IsInitialized = true
+            
+            -- Join the LFRP channel (uses current date to determine channel name)
+            local Comms = RPE.Core.LFRP.Comms
+            if Comms and Comms.JoinLFRPChannel then
+                Comms:JoinLFRPChannel()
+                
+                -- Start broadcasting with saved settings
+                C_Timer.After(1, function()
+                    if Comms and Comms.StartBroadcasting then
+                        -- Use the helper function from LFRPSettingsSheet to serialize profile settings
+                        Comms:StartBroadcasting(function()
+                            local LFRPSettingsSheet = RPE_UI and RPE_UI.Windows and RPE_UI.Windows.LFRPSettingsSheet
+                            if LFRPSettingsSheet and LFRPSettingsSheet.SerializeSettingsFromProfile then
+                                return LFRPSettingsSheet.SerializeSettingsFromProfile(profile)
+                            end
+                            return {}
+                        end)
+                    end
+                end)
+            end
+            
+            if RPE.Debug then
+                RPE.Debug:Print("[LFRP] Auto-rejoin enabled. Initializing LFRP system.")
+            end
+            return
+        end
+    end
+    
     -- LFRP starts disabled - user must press Enable button to activate
     -- Channel joining is deferred until Enable button is pressed in LFRPWindow
     RPE.Core.LFRP.IsInitialized = false

@@ -174,6 +174,21 @@ function PinLFRP:ShowTooltip()
         })
     end
     
+    -- Add event name if available
+    if poi.eventName and poi.eventName ~= "" then
+        table.insert(spec.lines, {
+            text = " ",
+        })
+        table.insert(spec.lines, {
+            left = "In Event:",
+            right = poi.eventName,
+            r = 0, g = 1, b = 0,
+        })
+        table.insert(spec.lines, {
+            text = " ",
+        })
+    end
+    
     -- Add iAm selections one per line
     if poi.iAm and #poi.iAm > 0 then
         local hasLabel = false
@@ -246,7 +261,7 @@ function PinLFRP:ShowTooltip()
     -- Add cluster indicator at the bottom if in a cluster
     if self.cluster and #self.cluster.members > 1 then
         table.insert(spec.lines, {
-            text = "",
+            text = " ",
         })
         table.insert(spec.lines, {
             text = string.format("Player %d of %d", self.currentPlayerIndex, #self.cluster.members),
@@ -257,6 +272,26 @@ function PinLFRP:ShowTooltip()
             r = 0.6, g = 0.6, b = 0.6,
         })
     end
+
+        -- Add RPE version or developer status at the bottom
+    if poi.dev then
+        table.insert(spec.lines, {
+            text = " ",
+        })
+        table.insert(spec.lines, {
+            text = "RPE Developer",
+            r = 1.0, g = 0.84, b = 0.0,
+        })
+    else
+        table.insert(spec.lines, {
+            text = " ",
+        })
+        table.insert(spec.lines, {
+            text = "RPE v" .. (poi.addonVersion or "unknown"),
+            r = 0.6, g = 0.6, b = 0.6,
+        })
+    end
+    
     
     Common:ShowTooltip(self.frame, spec)
 end

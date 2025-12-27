@@ -55,6 +55,22 @@ function LFRPBrowseSheet.New(opts)
         titleText.fs:SetJustifyH("CENTER")
     end
     self.sheet:Add(titleText)
+    
+    -- Get the current LFRP channel name and display it in textMuted
+    local Comms = RPE and RPE.Core and RPE.Core.LFRP and RPE.Core.LFRP.Comms
+    local channelName = Comms and Comms:GetChannelName() or "unknown"
+    local channelText = Text:New(_name("RPE_LFRP_BrowseChannel"), {
+        parent = self.sheet,
+        text = "Today's Channel: " .. channelName,
+        fontTemplate = "GameFontNormal",
+    })
+    if channelText.frame then
+        channelText.frame:SetWidth(900)
+        channelText.fs:SetJustifyH("CENTER")
+        local r, g, b, a = C.Get("textMuted")
+        channelText.fs:SetTextColor(r, g, b, a)
+    end
+    self.sheet:Add(channelText)
 
     -- === Table ===
     self.table = Table:New(_name("RPE_LFRP_BrowseTable"), {
@@ -70,6 +86,46 @@ function LFRPBrowseSheet.New(opts)
         { key = "lookingForStr", title = "Looking for", width = 180 },
         { key = "recruitingStr", title = "Status", width = 100 },
     })
+    
+    -- Set up row click handler for context menu
+    self.table:SetRowOnClick(function(rowFrame, rowData, button)
+        if button ~= "RightButton" then return end
+        
+        RPE_UI.Common:ContextMenu(rowFrame, function(level, _)
+            if level == 1 then
+                local senderName = rowData.senderName
+                if not senderName or senderName == "" then return end
+                
+                -- Extract character name from full name (Name-Realm format)
+                local characterName = senderName:match("^([^-]+)")
+                if not characterName then return end
+                
+                -- Whisper option
+                local whisperInfo = UIDropDownMenu_CreateInfo()
+                whisperInfo.text = "Whisper"
+                whisperInfo.func = function()
+                    ChatFrame1EditBox:SetText("/w " .. characterName .. " ")
+                    ChatFrame1EditBox:Show()
+                    ChatFrame1EditBox:SetFocus()
+                end
+                UIDropDownMenu_AddButton(whisperInfo, level)
+                
+                -- Invite option
+                local inviteInfo = UIDropDownMenu_CreateInfo()
+                inviteInfo.text = "Invite to Group"
+                inviteInfo.func = function()
+                    -- Use C_PartyInfo if available (Shadowlands+), fallback to InviteUnit
+                    if C_PartyInfo and C_PartyInfo.InviteUnit then
+                        C_PartyInfo.InviteUnit(characterName)
+                    else
+                        InviteUnit(characterName)
+                    end
+                end
+                UIDropDownMenu_AddButton(inviteInfo, level)
+            end
+        end)
+    end)
+    
     self.sheet:Add(self.table)
 
     -- === Pagination Controls ===
@@ -274,6 +330,7 @@ function LFRPBrowseSheet:RefreshData()
             iAmStr = iAmStr ~= "" and iAmStr or "—",
             lookingForStr = lookingForStr ~= "" and lookingForStr or "—",
             recruitingStr = recruitingStr,
+            senderName = poi.sender,  -- Store the full name for context menu
             rowColor = rowColor,
             isLocalPlayer = isLocalPlayer,
             isHidden = isHidden,
