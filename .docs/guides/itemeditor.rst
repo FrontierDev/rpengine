@@ -59,11 +59,9 @@ These are defined using the key format ``stat_[STAT_KEY]``, where ``[STAT_KEY]``
 **Material**-type items used in crafting recipes should include:
 - ``tier`` - the numerical tier of the crafting matierial. For reference, tier 1 includes materials such as copper and linen, while tier 5 includes materials such as arcanite and felcloth.
 
-**Consumable**
+**Consumable**-type items work by casting a spell when used. To configure this, set the following fields on the 4th page of the editor:
 
-Consumables work by casting a spell when used. To configure this, set the following fields on the 4th page of the editor:
-
-- **Spell ID**: The spell ID to be cast when the item is used.
+- **Spell ID**: The spell ID to be cast when the item is used. The ID can be found by right-clicking the spell in the spell book and selecting "Copy Spell ID".
 - **Spell Rank**: The rank at which to cast the spell.
 
 Harvestable Reagents
