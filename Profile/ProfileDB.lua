@@ -359,7 +359,7 @@ function ProfileDB.InitializeUI()
         numSlots = RPE.ActiveRules:Get("action_bar_slots") or 5,
         slotSize = 32,
         spacing  = 4,
-        point = "BOTTOM", rel = "BOTTOM", y = 60,
+        point = "BOTTOM", rel = "BOTTOM", y = 160,
     })
     ABW:LoadFromProfile(RPE.Profile.DB:GetOrCreateActive())
     ABW:Hide() -- if not needed immediately

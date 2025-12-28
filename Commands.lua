@@ -249,6 +249,16 @@ SlashCmdList["RPE"] = function(msg)
             RPE.Debug:Print(string.format("Target: %s | level=%s | guid=%s | npcId=%s | type=%s | classification=%s | HP=%s/%s",
                 tostring(name), tostring(level), tostring(guid), tostring(npcId or ""), tostring(ctype), tostring(classif), tostring(hp), tostring(hpmax)
             ))
+    elseif arg == "resetui" then
+        -- Clear all stored window positions for the current character
+        local prof = RPE and RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
+        if not prof then
+            RPE.Debug:Error("Could not retrieve active profile.")
+            return
+        end
+        prof:ClearWindowPositions()
+        RPE.Profile.DB.SaveProfile(prof)
+        RPE.Debug:Print("UI positions reset. Windows will return to default positions on next reload.")
     else
     end
 end

@@ -64,8 +64,11 @@ function Actions:FlushCombatMessages(castKey)
             local targetName = (RPE.Common and RPE.Common:FormatUnitName(targetUnit)) or (targetUnit and targetUnit.name) or tostring(targetId)
             local message = nil
             
-            -- Check if this is damage (has schools), healing (has healAmount), or shield (has shieldAmount)
-            if targetData.schools and #targetData.schools > 0 then
+            -- Check if this is damage (has schools), healing (has healAmount), shield (has shieldAmount), or resurrect
+            if targetData.resurrected then
+                -- Resurrection message
+                message = targetData.casterName .. " revived " .. targetName .. "!"
+            elseif targetData.schools and #targetData.schools > 0 then
                 -- Damage message
                 local damageStrings = {}
                 for _, schoolInfo in ipairs(targetData.schools) do
@@ -580,55 +583,59 @@ Actions:Register("HEAL", function(ctx, cast, targets, args)
     -- Per-target build
     local entries = {}
     for _, tgt in ipairs(targets) do
-        local amt = rollAmount()
-        if amt > 0 then
-            local isCrit = false
-            
-            -- Determine if crits are allowed:
-            -- - Direct spell healing: check cast.def.canCrit flag (defaults to true)
-            -- - Aura tick healing: check dot_crits ruleset (defaults to false)
-            local allowCrit = false
-            if cast.def then
-                -- Direct spell healing: canCrit defaults to true
-                allowCrit = (cast.def.canCrit ~= false)
-            else
-                -- Aura tick healing: check dot_crits ruleset
-                allowCrit = (RPE.ActiveRules and RPE.ActiveRules:Get("dot_crits") == 1) or false
-            end
-            
-            if allowCrit then
-                local critMult = 2
-                if args and args.critMult then
-                    critMult = math.max(1, tonumber(args.critMult) or 2)
-                elseif args and args._critMult then
-                    critMult = args._critMult
+        local targetUnit = findUnitById(coerceUnitId(tgt))
+        -- Skip healing units with 0 HP (dead units)
+        if not targetUnit or (targetUnit.hp or 0) > 0 then
+            local amt = rollAmount()
+            if amt > 0 then
+                local isCrit = false
+                
+                -- Determine if crits are allowed:
+                -- - Direct spell healing: check cast.def.canCrit flag (defaults to true)
+                -- - Aura tick healing: check dot_crits ruleset (defaults to false)
+                local allowCrit = false
+                if cast.def then
+                    -- Direct spell healing: canCrit defaults to true
+                    allowCrit = (cast.def.canCrit ~= false)
+                else
+                    -- Aura tick healing: check dot_crits ruleset
+                    allowCrit = (RPE.ActiveRules and RPE.ActiveRules:Get("dot_crits") == 1) or false
                 end
                 
-                if args._critThreshold then
-                    -- Use the roll stored by CheckHit to determine crit
-                    local roll = args._rolls and args._rolls[tgt]
-                    if RPE and RPE.Debug and RPE.Debug.Print then
-                        RPE.Debug:Internal(("  Crit lookup: tgt=%s, roll=%s, threshold=%.1f → %s"):format(
-                            tostring(tgt), tostring(roll), args._critThreshold,
-                            (roll and roll >= args._critThreshold) and "CRIT" or "normal"
-                        ))
+                if allowCrit then
+                    local critMult = 2
+                    if args and args.critMult then
+                        critMult = math.max(1, tonumber(args.critMult) or 2)
+                    elseif args and args._critMult then
+                        critMult = args._critMult
                     end
-                    if roll and roll >= args._critThreshold then
-                        isCrit = true
-                        local origAmt = amt
-                        amt = math.floor(amt * critMult)
+                    
+                    if args._critThreshold then
+                        -- Use the roll stored by CheckHit to determine crit
+                        local roll = args._rolls and args._rolls[tgt]
                         if RPE and RPE.Debug and RPE.Debug.Print then
-                            RPE.Debug:Internal(("  Crit multiplier applied: %d × %.1f = %d"):format(origAmt, critMult, amt))
+                            RPE.Debug:Internal(("  Crit lookup: tgt=%s, roll=%s, threshold=%.1f → %s"):format(
+                                tostring(tgt), tostring(roll), args._critThreshold,
+                                (roll and roll >= args._critThreshold) and "CRIT" or "normal"
+                            ))
+                        end
+                        if roll and roll >= args._critThreshold then
+                            isCrit = true
+                            local origAmt = amt
+                            amt = math.floor(amt * critMult)
+                            if RPE and RPE.Debug and RPE.Debug.Print then
+                                RPE.Debug:Internal(("  Crit multiplier applied: %d × %.1f = %d"):format(origAmt, critMult, amt))
+                            end
                         end
                     end
                 end
-            end
 
-            entries[#entries+1] = {
-                target = coerceUnitId(tgt),   -- coerced by Broadcast:Heal
-                amount = amt,
-                crit   = isCrit,
-            }
+                entries[#entries+1] = {
+                    target = coerceUnitId(tgt),   -- coerced by Broadcast:Heal
+                    amount = amt,
+                    crit   = isCrit,
+                }
+            end
         end
     end
 
@@ -673,6 +680,56 @@ Actions:Register("HEAL", function(ctx, cast, targets, args)
                 
                 _pendingCombatMessages[castKey][e.target].healAmount = 
                     _pendingCombatMessages[castKey][e.target].healAmount + e.amount
+            end
+        end
+    end
+end)
+
+
+-- RESURRECT: revive a dead unit to 10% of its max HP (bypasses healing restriction on 0 HP units).
+Actions:Register("RESURRECT", function(ctx, cast, targets, args)
+    local ev = ctx and ctx.event
+    if not (ev and targets and #targets > 0) then return end
+
+    -- Per-target build (only resurrect dead units)
+    local entries = {}
+    for _, tgt in ipairs(targets) do
+        local targetUnit = findUnitById(coerceUnitId(tgt))
+        -- Only resurrect units with 0 HP (dead units)
+        if targetUnit and (targetUnit.hp or 0) <= 0 and targetUnit.hpMax and targetUnit.hpMax > 0 then
+            -- Restore to 10% of max HP
+            local resurrectionAmount = math.ceil(targetUnit.hpMax * 0.1)
+            entries[#entries+1] = {
+                target = coerceUnitId(tgt),
+                amount = resurrectionAmount,
+                crit = false,
+            }
+        end
+    end
+
+    if Broadcast and Broadcast.Resurrect and #entries > 0 then
+        Broadcast:Resurrect(cast and cast.caster, entries)
+        
+        -- Accumulate resurrection into pending combat messages
+        if #entries > 0 then
+            local casterUnit = findUnitById(cast and cast.caster)
+            local casterName = (RPE.Common and RPE.Common:FormatUnitName(casterUnit)) or (casterUnit and casterUnit.name) or tostring(cast and cast.caster or "")
+            local castKey = tostring(cast and cast.def and cast.def.id or cast and cast.caster or "unknown")
+            
+            if not _pendingCombatMessages[castKey] then
+                _pendingCombatMessages[castKey] = {}
+            end
+            
+            -- Accumulate resurrection for each target
+            for _, e in ipairs(entries) do
+                if not _pendingCombatMessages[castKey][e.target] then
+                    _pendingCombatMessages[castKey][e.target] = {
+                        casterId = cast and cast.caster,
+                        casterName = casterName,
+                    }
+                end
+                
+                _pendingCombatMessages[castKey][e.target].resurrected = true
             end
         end
     end

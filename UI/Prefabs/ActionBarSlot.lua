@@ -266,6 +266,23 @@ function ActionBarSlot:New(name, opts)
             return
         end
 
+        -- Check if the caster is dead (HP <= 0)
+        local casterUnit = nil
+        if o._ownerWidget and o._ownerWidget._controlledUnitId then
+            -- Casting as controlled NPC
+            casterUnit = RPE.Common:FindUnitById(o._ownerWidget._controlledUnitId)
+        else
+            -- Casting as local player
+            if event.localPlayerKey and event.units and event.units[event.localPlayerKey] then
+                casterUnit = event.units[event.localPlayerKey]
+            end
+        end
+        
+        if casterUnit and (casterUnit.hp or 0) <= 0 then
+            UIErrorsFrame:AddMessage("Cannot cast while dead.", 1, 0.2, 0.2)
+            return
+        end
+
         -- Only apply player turn logic for the local player, not for NPCs or controlled units
         local skipTurnCheck = false
         if o._ownerWidget and o._ownerWidget._controlledUnitId then

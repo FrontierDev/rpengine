@@ -108,8 +108,19 @@ function AuraTriggers:RegisterFromAura(aura)
             local targetId = aura.targetId
 
             local handle = self:On(eventName, function(ctx, eventSourceId, eventTargetId, extra)
-                -- Check if this event is for the right source unit
-                if tonumber(eventSourceId) ~= tonumber(sourceId) then return end
+                -- Check if this event is for the right unit based on event type
+                -- For ON_HIT_TAKEN / *_TAKEN events: aura triggers when ITS TARGET unit is the one taking damage
+                -- For other events: aura triggers when the event source matches the aura's source
+                local shouldExecute = false
+                if eventName:find("TAKEN") then
+                    -- This aura triggers when targetId (unit the aura is on) takes damage
+                    shouldExecute = (tonumber(eventTargetId) == tonumber(targetId))
+                else
+                    -- This aura triggers when its source deals damage/does something
+                    shouldExecute = (tonumber(eventSourceId) == tonumber(sourceId))
+                end
+                
+                if not shouldExecute then return end
                 
                 -- For ON_HIT and similar, verify the aura is still active
                 if RPE.Core.ActiveEvent and RPE.Core.ActiveEvent._auraManager then
@@ -124,11 +135,12 @@ function AuraTriggers:RegisterFromAura(aura)
                 end
 
                 local targets = {}
-                if targetSpec == "SOURCE" or targetSpec == "self" then
-                    targets = { eventSourceId }
-                elseif targetSpec == "TARGET" or targetSpec == "target" then
+                local specUpper = (targetSpec or "TARGET"):upper()
+                if specUpper == "SOURCE" or specUpper == "SELF" then
                     targets = { eventTargetId }
-                elseif targetSpec == "both" then
+                elseif specUpper == "TARGET" then
+                    targets = { eventSourceId }
+                elseif specUpper == "BOTH" then
                     targets = { eventSourceId, eventTargetId }
                 else
                     return
@@ -165,6 +177,26 @@ function AuraTriggers:RegisterFromAura(aura)
                                 Resources:Set(resourceId, newValue)
                                 if RPE.Debug and RPE.Debug.Internal then
                                     RPE.Debug:Internal(("[AuraTriggers] Gained %d %s (now %d/%d)"):format(amount, resourceId, newValue, max))
+                                end
+                            end
+                        end
+                    elseif action.key == "DAMAGE" then
+                        -- Handle DAMAGE action from aura trigger
+                        local Broadcast = RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
+                        if Broadcast then
+                            local amount = 0
+                            if type(runtimeArgs.amount) == "string" and RPE.Core.Formula then
+                                amount = tonumber(RPE.Core.Formula:Roll(runtimeArgs.amount, casterProfile)) or 0
+                            else
+                                amount = tonumber(runtimeArgs.amount or 0)
+                            end
+                            amount = math.max(0, math.floor(amount))
+                            if amount > 0 then
+                                local school = runtimeArgs.school or "Physical"
+                                for _, targetId in ipairs(targets) do
+                                    Broadcast:Damage(eventSourceId, {
+                                        { target = targetId, amount = amount, school = school }
+                                    }, nil, { isFromAuraTrigger = true })
                                 end
                             end
                         end

@@ -315,9 +315,11 @@ end
 function SetupWindow:ResizeWindow(statCount)
     -- Calculate height needed based on number of stats
     -- Format: header (variable) + body (rows) + footer (fixed)
+    -- Use higher per-stat height to account for spacing and padding between rows
     local headerHeight = HEADER_MIN_HEIGHT
-    local statRowsHeight = (statCount or 0) * STAT_ROW_HEIGHT
-    local newHeight = headerHeight + statRowsHeight + FOOTER_HEIGHT + 20  -- +20 for spacing/padding
+    local perStatHeight = 32  -- Height per stat row including spacing
+    local statRowsHeight = (statCount or 0) * perStatHeight
+    local newHeight = headerHeight + statRowsHeight + FOOTER_HEIGHT + 40  -- +40 for additional spacing/padding
     
     -- Clamp to min/max
     newHeight = math.max(MIN_WIN_H, math.min(newHeight, MAX_WIN_H))
@@ -3334,7 +3336,10 @@ function SetupWindow:RenderSimpleAssign(parent, statusRow, statIds, StatRegistry
         local baseTotal = 0
         for _, statId in ipairs(statIds) do
             local statDef = StatRegistry and StatRegistry:Get(statId)
-            local baseVal = statDef and (statDef.base or 10) or 10
+            local baseVal = 10  -- default
+            if statDef and statDef.base then
+                baseVal = (type(statDef.base) == "table" and statDef.base.default) or statDef.base or 10
+            end
             baseTotal = baseTotal + baseVal
             total = total + (self.statValues[statId] or baseVal)
         end
@@ -3345,7 +3350,10 @@ function SetupWindow:RenderSimpleAssign(parent, statusRow, statIds, StatRegistry
     for _, statId in ipairs(statIds) do
         local statDef = StatRegistry and StatRegistry:Get(statId)
         if statDef then
-            local baseVal = statDef.base or 10
+            local baseVal = 10
+            if statDef.base then
+                baseVal = (type(statDef.base) == "table" and statDef.base.default) or statDef.base or 10
+            end
             
             -- Initialize stat value if not already set
             if not self.statValues[statId] then
@@ -3512,20 +3520,10 @@ function SetupWindow:Finish()
     if self.statValues and next(self.statValues) then
         if DBG then DBG:Internal("SetupWindow: Saving stats") end
         
-        local dataset = self.selectedDataset or "_setup"
-        for statId, value in pairs(self.statValues) do
-            -- Use profile API to get or create stat under the selected dataset
-            local statObj = (profile and profile.GetStat) and profile:GetStat(statId, "PRIMARY", dataset) or nil
-            if statObj then
-                -- Calculate setupBonus as the difference between what user chose and the definition base
-                local defBase = statObj.base or 10
-                local setupBonus = value - defBase
-                if self.statType ~= "STANDARD_ARRAY" then
-                    local statIncrementBy = self.statIncrementBy[statId] or 1
-                    setupBonus = setupBonus * statIncrementBy
-                end
-                statObj.setupBonus = setupBonus
-            end
+        for statId, assignedValue in pairs(self.statValues) do
+            -- Set the base value of the stat in the profile
+            profile:SetStatBase(statId, assignedValue)
+            if DBG then DBG:Internal("SetupWindow: Set stat " .. statId .. " base = " .. assignedValue) end
         end
     end
     

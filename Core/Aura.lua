@@ -23,6 +23,7 @@ end
 ---@field nextTick integer|nil
 ---@field stacks integer
 ---@field charges integer|nil
+---@field deferRemoval boolean|nil -- if set, don't remove aura immediately on damage, wait for next game tick
 ---@field rank integer       -- rank of the aura (default 1)
 ---@field snapshot table|nil -- author-defined values frozen at apply
 ---@field rngSeed integer|nil
@@ -48,6 +49,7 @@ end
 ---@param opts table|nil
 function Aura.New(def, sourceId, targetId, nowTurn, opts)
     opts = opts or {}
+    
     local o = {
         id         = def.id,
         def        = def,
@@ -61,6 +63,7 @@ function Aura.New(def, sourceId, targetId, nowTurn, opts)
         stacks     = math.max(1, tonumber(opts.stacks) or 1),
         rank       = math.max(1, tonumber(opts.rank) or 1),
         charges    = opts.charges,            -- optional
+        deferRemoval = def.removeOnDamageTaken and def.triggers and #def.triggers > 0,  -- defer removal if aura has triggers
         rngSeed    = opts.rngSeed,
         snapshot   = opts.snapshot,           -- optional
         removeOnDamageTaken = def.removeOnDamageTaken,  -- Copy from definition
@@ -145,6 +148,7 @@ function Aura:ToState()
         stacks = self.stacks,
         rank = self.rank,
         charges = self.charges,
+        deferRemoval = self.deferRemoval,
         rngSeed = self.rngSeed,
         snapshot = self.snapshot,
         isTrait = self.isTrait,
@@ -269,12 +273,19 @@ function Aura:RenderDescription(vars, tmpl)
 
     local result = template:gsub("%$%[(%d+)%]%.([%w_%.]+)%$", repl)
     
-    -- Also resolve direct snapshot variables like $amount$
-    if self.snapshot then
-        for key, value in pairs(self.snapshot) do
-            result = result:gsub("%$" .. key .. "%$", tostring(value))
+    -- Also resolve direct bare variables like $amount$, $school$, etc. from first action's args
+    local function repl_bare(key)
+        if self.snapshot and self.snapshot[key] ~= nil then
+            return tostring(self.snapshot[key])
         end
+        -- Try to resolve from first trigger's action args
+        local flat = self:_flattenTriggers()
+        if flat[1] then
+            return self:_resolveActionProperty(flat[1], key, vars) or ("$"..key.."$")
+        end
+        return "$"..key.."$"
     end
+    result = result:gsub("%$([%w_]+)%$", repl_bare)
     
     return result
 end

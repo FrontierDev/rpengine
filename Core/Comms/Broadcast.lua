@@ -1091,6 +1091,27 @@ function Broadcast:UpdateUnitHealth(unitId, hp, hpMax, absorbAmount)
     _sendAll("UNIT_HEALTH", flat)
 end
 
+--- Broadcast resurrection to one or many targets (restores 10% HP and bypasses healing restrictions).
+---@param source integer Caster unit ID
+---@param targets table Array of {target, amount} entries for resurrection
+function Broadcast:Resurrect(source, targets)
+    if not (source and targets and #targets > 0) then return end
+    
+    local flat = {}
+    flat[#flat+1] = tostring(source or 0)
+    
+    for _, entry in ipairs(targets) do
+        local tId = _toUnitId(entry.target or entry[1]) or 0
+        local amount = math.max(0, math.floor(tonumber(entry.amount or entry[2]) or 0))
+        if tId > 0 and amount > 0 then
+            flat[#flat+1] = tostring(tId)
+            flat[#flat+1] = tostring(amount)
+        end
+    end
+    
+    _sendAll("RESURRECT", flat)
+end
+
 
 --- Broadcast an NPC attack/spell cast at a player target.
 --- Includes spell info, hit parameters, and predicted damage so player can respond.

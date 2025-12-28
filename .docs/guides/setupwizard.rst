@@ -93,4 +93,4 @@ Tips
 -----------------------------
 - You can add multiple pages of the same type if needed. For example, you could have two ``SELECT_ITEMS`` pages: one for weapons and armor, and another for consumables. They can have different allowances and are the total value of items is tracked separately.
 - The order of pages matters. For example, if you want to restrict spell selection based on the player's chosen class, ensure that the ``SELECT_CLASS`` page comes before the ``SELECT_SPELLS`` page.
-- Only Auras that are part of your players' active datasets will be available for selection as racial or class traits. Remember to sync all of your data and consider using the ``require_dataset`` rule in the active ruleset to ensure that your players see all of the trais that you want to make available to them.
+- Only Auras that are part of your players' active datasets will be available for selection as racial or class traits. Remember to sync all of your data and consider using the ``dataset_require`` rule in the active ruleset to ensure that your players see all of the trais that you want to make available to them.

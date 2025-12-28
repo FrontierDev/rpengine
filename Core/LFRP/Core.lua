@@ -57,26 +57,37 @@ function Core:OnPlayerLogin()
     if ProfileDB then
         local profile = ProfileDB.GetOrCreateActive()
         if profile and profile:GetAutoRejoinLFRP() then
-            -- Player has auto-rejoin enabled, so initialize LFRP system and join the current date-based channel
+            -- Player has auto-rejoin enabled
             RPE.Core.LFRP.IsInitialized = true
             
-            -- Join the LFRP channel (uses current date to determine channel name)
             local Comms = RPE.Core.LFRP.Comms
-            if Comms and Comms.JoinLFRPChannel then
-                Comms:JoinLFRPChannel()
+            if Comms then
+                -- Step 1: Leave the last channel if one was saved (player auto-rejoined it on login)
+                local lastChannel = ProfileDB.GetLastLFRPChannel()
+                if lastChannel and lastChannel ~= "" then
+                    ChatFrame1EditBox:SetText("/leave " .. lastChannel)
+                    ChatEdit_SendText(ChatFrame1EditBox, 0)
+                    
+                    -- Step 2: Clear the saved channel
+                    ProfileDB.SetLastLFRPChannel(nil)
+                end
                 
-                -- Start broadcasting with saved settings
+                -- Step 3: After a delay, initialize system (which joins current date-based channel)
                 C_Timer.After(1, function()
-                    if Comms and Comms.StartBroadcasting then
-                        -- Use the helper function from LFRPSettingsSheet to serialize profile settings
-                        Comms:StartBroadcasting(function()
-                            local LFRPSettingsSheet = RPE_UI and RPE_UI.Windows and RPE_UI.Windows.LFRPSettingsSheet
-                            if LFRPSettingsSheet and LFRPSettingsSheet.SerializeSettingsFromProfile then
-                                return LFRPSettingsSheet.SerializeSettingsFromProfile(profile)
-                            end
-                            return {}
-                        end)
-                    end
+                    Comms:JoinLFRPChannel()
+                    
+                    -- Start broadcasting with saved settings
+                    C_Timer.After(1.5, function()
+                        if Comms and Comms.StartBroadcasting then
+                            Comms:StartBroadcasting(function()
+                                local LFRPSettingsSheet = RPE_UI and RPE_UI.Windows and RPE_UI.Windows.LFRPSettingsSheet
+                                if LFRPSettingsSheet and LFRPSettingsSheet.SerializeSettingsFromProfile then
+                                    return LFRPSettingsSheet.SerializeSettingsFromProfile(profile)
+                                end
+                                return {}
+                            end)
+                        end
+                    end)
                 end)
             end
             

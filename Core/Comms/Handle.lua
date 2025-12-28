@@ -1462,7 +1462,8 @@ Comms:RegisterHandler("HEAL", function(data, sender)
 
         if tId > 0 and amount > 0 then
             local target = findUnitById(tId)
-            if target then
+            -- Skip healing units with 0 HP (dead units)
+            if target and (target.hp or 0) > 0 then
                 target:Heal(amount, isCrit)
                 if sId ~= 0 then target:AddThreat(sId, -tDelta) end -- heals often reduce threat vs damage
                 
@@ -1528,6 +1529,68 @@ Comms:RegisterHandler("HEAL", function(data, sender)
 end)
 
 -- SHIELD: apply absorption shield to targets (sId ; tId ; amount ; duration ; tId ; amount ; duration ; ...)
+Comms:RegisterHandler("RESURRECT", function(data, sender)
+    RPE.Debug:Internal(string.format("[Handle] RESURRECT FULL DATA:\n%s", data))
+    -- Do NOT early-return on self: SpellActions no longer applies locally.
+    local args = { strsplit(";", data) }
+    local i    = 1
+    local sId  = tonumber(args[i]) or 0; i = i + 1
+
+    local ev = RPE.Core.ActiveEvent
+    if not (ev and ev.units) then return end
+
+    -- helper to find a unit quickly
+    local function findUnitById(tid)
+        for _, u in pairs(ev.units) do
+            if tonumber(u.id) == tid then return u end
+        end
+    end
+
+    while i <= #args do
+        local tId    = tonumber(args[i]) or 0; i = i + 1
+        local amount = math.max(0, math.floor(tonumber(args[i]) or 0)); i = i + 1
+
+        if tId > 0 and amount > 0 then
+            local target = findUnitById(tId)
+            if target then
+                -- Resurrect: restore health and mark as alive
+                target:Heal(amount, false)  -- Resurrect healing without crit bonus
+                if sId ~= 0 then target:AddThreat(sId, -amount) end
+                
+                -- Track stats for the event
+                if ev and ev.TrackHealing then
+                    ev:TrackHealing(sId, amount)
+                end
+
+                local AuraTriggers = RPE.Core and RPE.Core.AuraTriggers
+                
+                -- Emit ON_RESURRECT trigger for healer
+                if AuraTriggers and AuraTriggers.Emit and sId ~= 0 then
+                    AuraTriggers:Emit("ON_RESURRECT", ev or {}, sId, tId, { 
+                        healAmount = amount,
+                        targetId = tId,
+                    })
+                end
+                
+                -- Emit ON_RESURRECT_TAKEN trigger for the target
+                if AuraTriggers and AuraTriggers.Emit then
+                    AuraTriggers:Emit("ON_RESURRECT_TAKEN", ev or {}, tId, tId, { 
+                        healAmount = amount,
+                        sourceId = sId,
+                    })
+                end
+
+                local getMyId = RPE.Core.GetLocalPlayerUnitId
+                local myId    = getMyId and getMyId() or nil
+
+                if myId and tId == myId then
+                    RPE.Core.Windows.PlayerUnitWidget:Refresh()
+                end
+            end
+        end
+    end
+end)
+
 Comms:RegisterHandler("SHIELD", function(data, sender)
     local args = { strsplit(";", data) }
     local i    = 1

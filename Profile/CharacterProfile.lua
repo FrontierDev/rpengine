@@ -1552,6 +1552,12 @@ function CharacterProfile:ToTable()
     }
 end
 
+--- Clear all stored window positions (for UI reset).
+function CharacterProfile:ClearWindowPositions()
+    self.windowPositions = {}
+    touch(self)
+end
+
 function CharacterProfile.FromTable(t)
     assert(type(t) == "table", "FromTable: table required")
     return CharacterProfile:New(t.name or "", {

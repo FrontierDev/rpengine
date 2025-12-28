@@ -288,8 +288,8 @@ function StatisticSheet:DrawStats(statBlock, filter, columns)
 
     local function makeEntry(parent, stat)
         local val =
-            (RPE and RPE.Stats and RPE.Stats.GetValue and RPE.Stats:GetValue(stat.id))
-            or (self.profile and self.profile.GetStatValue and self.profile:GetStatValue(stat.id))
+            (self.profile and self.profile.GetStatValue and self.profile:GetStatValue(stat.id))
+            or (RPE and RPE.Stats and RPE.Stats.GetValue and RPE.Stats:GetValue(stat.id))
             or 0
 
         local text = (stat.IsPercentage and stat:IsPercentage())
@@ -388,10 +388,10 @@ function StatisticSheet:RefreshStat(statId)
 
     -- ✅ Get effective value (runtime first, fallback to profile)
     local val = 0
-    if RPE and RPE.Stats and RPE.Stats.GetValue then
-        val = RPE.Stats:GetValue(statId)
-    elseif self.profile and self.profile.GetStatValue then
+    if self.profile and self.profile.GetStatValue then
         val = self.profile:GetStatValue(statId)
+    elseif RPE and RPE.Stats and RPE.Stats.GetValue then
+        val = RPE.Stats:GetValue(statId)
     end
 
     -- ✅ Need stat meta for percentage and base reference

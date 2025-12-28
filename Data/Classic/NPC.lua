@@ -33,13 +33,8 @@ RPE.Data.DefaultClassic.NPC_LIST = {
             SPELL_HIT = 2
         },
         spells = {
-            [1] = "spell-oCSMaFir001",
-            [2] = "spell-oCSPaHol001",
-            [3] = "spell-oCSC0001",
-            [4] = "spell-oCSMaArc002",
-            [5] = "spell-oCSWaArm004",
-            [6] = "spell-oCSWaAff003",
-            [7] = "spell-oCSWaFur001b",
+            [1] = "spell-oCSC0001",
+            [2] = "spell-oCSPrHol002a",
         },
     },
 

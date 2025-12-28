@@ -250,7 +250,7 @@ function PinLFRP:ShowTooltip()
     end
     
     if poi.approachable then
-        local approachableText = poi.approachable == 1 and "Yes" or "No"
+        local approachableText = poi.approachable == 1 and "Yes" or "/w first"
         table.insert(spec.lines, {
             left = "Approachable:",
             right = approachableText,

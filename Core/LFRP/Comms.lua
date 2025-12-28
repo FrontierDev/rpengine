@@ -20,6 +20,9 @@ local channelNumber = nil
 local isChannelJoined = false
 local isBroadcasting = false
 local getSettingsCallback = nil
+local joinRetryCount = 0
+local rejoinRetryCount = 0
+local maxJoinRetries = 5
 
 -- Initialize channel and handlers (called on login)
 function Comms:InitializeChannelOnly()
@@ -45,45 +48,42 @@ end
 
 -- Join the LFRP channel (name based on current date in hex format)
 function Comms:JoinLFRPChannel()
-    local channelName = GetChannelName()
+    local targetChannelName = GetChannelName()
+    
     -- Execute /join command with dynamic channel name
-    ChatFrame1EditBox:SetText("/join " .. channelName)
+    ChatFrame1EditBox:SetText("/join " .. targetChannelName)
     ChatEdit_SendText(ChatFrame1EditBox, 0)
     
-    -- Save the channel name to profile DB
-    local ProfileDB = RPE and RPE.Profile and RPE.Profile.DB
-    if ProfileDB then
-        ProfileDB.SetLastLFRPChannel(channelName)
-    end
-    
     -- Wait a moment for the channel to be joined, then look it up
-    C_Timer.After(0.5, function()
-        local channelName = GetChannelName()
+    C_Timer.After(1.5, function()
         -- Get list of channels (returns number, name, number, name, ...)
-        local numChannels = select('#', GetChannelList())
-        local i = 1
-        while i <= numChannels do
-            local chNum = select(i, GetChannelList())
-            local chName = select(i + 1, GetChannelList())
+        local channels = {GetChannelList()}
+        
+        local found = false
+        
+        -- Look for any LFRP channel (lfrpe*)
+        for i = 1, #channels, 2 do
+            local chNum = channels[i]
+            local chName = channels[i + 1]
             
-            if chName and chName == channelName then
+            if chName and type(chName) == "string" and chName:match("^lfrpe") then
                 channelNumber = chNum
                 isChannelJoined = true
+                found = true
+                
+                -- Save which channel was actually joined
+                local ProfileDB = RPE and RPE.Profile and RPE.Profile.DB
+                if ProfileDB then
+                    ProfileDB.SetLastLFRPChannel(chName)
+                end
                 
                 -- Remove the channel from the main chat frame to keep it clean
-                ChatFrame_RemoveChannel(ChatFrame1, channelName)
+                ChatFrame_RemoveChannel(ChatFrame1, chName)
                 
                 Comms:TrySendHello()
-                return
+                break
             end
-            
-            i = i + 2
         end
-        
-        -- Channel not found, try again in a moment
-        C_Timer.After(0.5, function()
-            Comms:JoinLFRPChannel()
-        end)
     end)
 end
 
@@ -211,8 +211,6 @@ end
 -- Rejoin a specific LFRP channel (used for auto-rejoin on login)
 function Comms:RejoinChannel(channelName)
     if not channelName or channelName == "" then
-        -- If no specific channel, just join the current date-based channel
-        self:JoinLFRPChannel()
         return
     end
     
@@ -221,31 +219,20 @@ function Comms:RejoinChannel(channelName)
     ChatEdit_SendText(ChatFrame1EditBox, 0)
     
     -- Wait for channel to be joined, then look it up
-    C_Timer.After(0.5, function()
-        -- Get list of channels (returns number, name, number, name, ...)
-        local numChannels = select('#', GetChannelList())
-        local i = 1
-        while i <= numChannels do
-            local chNum = select(i, GetChannelList())
-            local chName = select(i + 1, GetChannelList())
+    C_Timer.After(1.5, function()
+        local channels = {GetChannelList()}
+        
+        for i = 1, #channels, 2 do
+            local chNum = channels[i]
+            local chName = channels[i + 1]
             
             if chName and chName == channelName then
                 channelNumber = chNum
                 isChannelJoined = true
-                
-                if RPE.Debug then
-                    RPE.Debug:Print("[LFRP] Rejoined channel: " .. channelName)
-                end
+                ChatFrame_RemoveChannel(ChatFrame1, channelName)
                 return
             end
-            
-            i = i + 2
         end
-        
-        -- Channel not found, try again in a moment
-        C_Timer.After(0.5, function()
-            Comms:RejoinChannel(channelName)
-        end)
     end)
 end
 

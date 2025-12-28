@@ -71,13 +71,21 @@ local function countSel(t) local c=0; for _ in pairs(t) do c=c+1 end; return c e
 
 local function unitMatchesFlags(unit, flags, referenceTeam)
     -- Check if unit matches the provided flags (A=ally, E=enemy, etc.)
+    -- Flags can include "0" suffix (e.g., "A0", "E0") to allow dead targets
     if not flags or not next(flags) then return true end
     
     local isAlly = unit.team == referenceTeam
-    if flags["A"] and isAlly then return true end
-    if flags["E"] and not isAlly then return true end
-    if flags["AM"] and isAlly then return true end  -- Ally but not self
-    if flags["EM"] and not isAlly then return true end
+    
+    -- Check each flag, stripping "0" suffix if present
+    for flag in pairs(flags) do
+        -- Strip "0" suffix to get base flag (e.g., "A0" -> "A", "AM0" -> "AM")
+        local baseFlag = flag:gsub("0$", "")
+        
+        if baseFlag == "A" and isAlly then return true end
+        if baseFlag == "E" and not isAlly then return true end
+        if baseFlag == "AM" and isAlly then return true end  -- Ally but not self
+        if baseFlag == "EM" and not isAlly then return true end
+    end
     return false
 end
 
@@ -359,7 +367,14 @@ function TargetWindow:_RebuildGrid()
     end
 
     local me        = getSelfKey()
-    local allowDead = self._flags["A0"]
+    -- Check if any flag contains "0" (e.g., "A0", "E0") to allow dead targets
+    local allowDead = false
+    for flag in pairs(self._flags) do
+        if type(flag) == "string" and flag:find("0") then
+            allowDead = true
+            break
+        end
+    end
     local noSelf    = self._flags["NS"]
     local onlySelf  = self._flags["SO"]
 

@@ -3798,7 +3798,7 @@ RPE.Data.DefaultClassic.AURAS_PALADIN = {
             {
                 event = "ON_HIT",
                 action = {
-                    targets = { ref = "target" },
+                    targets = { ref = "source" },
                     key = "DAMAGE",
                     args = { amount = "5d2", school = "Holy" }
                 }

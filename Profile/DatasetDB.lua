@@ -626,12 +626,15 @@ if f then
                         if stat then
                             synced = synced + 1
                             
+                            -- Preserve the profile's existing base value (from setup wizard) if it exists
+                            local existingBase = stat.base
+                            
                             -- Use SetData to properly apply all fields with validation/normalization
                             stat:SetData({
                                 id              = statId,
                                 name            = statDef.name,
                                 category        = statDef.category,
-                                base            = statDef.base,
+                                base            = existingBase ~= nil and existingBase or statDef.base,
                                 min             = statDef.min,
                                 max             = statDef.max,
                                 icon            = statDef.icon,

@@ -659,7 +659,9 @@ function SpellEditorSheet:BuildUI(opts)
                                     end
                                 end
                                 UIDropDownMenu_AddButton(del, level)
-                                -- Submenu: "Copy from..." dataset selection
+
+                            elseif level == 2 and menuList == "COPY_FROM_DATASET" then
+                                -- Submenu level 2: "Copy from..." dataset selection
                                 local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
                                 if not DatasetDB then return end
                                 

@@ -492,10 +492,11 @@ function AuraManager.New(event)
     if AuraTriggers then
         AuraTriggers:On("ON_HIT_TAKEN", function(ctx, sourceId, targetId, extra)
             -- When a unit takes damage, remove auras with removeOnDamageTaken flag
+            -- UNLESS the aura has triggers that need to execute first
             local aurasOnTarget = manager:All(targetId)
             for i = #aurasOnTarget, 1, -1 do
                 local aura = aurasOnTarget[i]
-                if aura.removeOnDamageTaken then
+                if aura.removeOnDamageTaken and not aura.deferRemoval then
                     manager:_onRemoved(aura, "DAMAGE_TAKEN")
                 end
             end
@@ -1750,102 +1751,33 @@ function AuraManager:TriggerEvent(eventName, ctx, sourceId, targetId, extra)
     end
 
     local eventTargetId = targetId -- prevent shadowing
+    local aurasWithDeferredRemoval = {}  -- Track auras that had triggers fire
 
+    -- Track which auras have triggers for this event, for deferred removal purposes
     for ownerId, auraList in pairs(self.aurasByUnit) do
-        for _, aura in ipairs(auraList) do
+        for auraIdx, aura in ipairs(auraList) do
             local def = AuraRegistry:Get(aura.id)
             if def and def.triggers then
                 for _, trig in ipairs(def.triggers) do
                     if trig.event == eventName then
-                        local act = trig.action
-                        local ref = (act.targets and act.targets.ref or "target"):lower()
-
-                        local recipients = {}
-                        if ref == "source" then
-                            table.insert(recipients, sourceId)
-                        elseif ref == "target" then
-                            table.insert(recipients, eventTargetId)
-                        elseif ref == "both" then
-                            table.insert(recipients, sourceId)
-                            table.insert(recipients, eventTargetId)
-                        end
-
-                        if RPE.Debug and RPE.Debug.Internal then
-                            RPE.Debug:Internal(("[AuraManager:TriggerEvent] Aura '%s' responding to '%s' with '%s' (ref=%s, targets=%s)")
-                                :format(tostring(aura.id), tostring(eventName), tostring(act.key), ref, table.concat(recipients, ", ")))
-                        end
-
-                        local snapshot = aura.snapshot or {}
-                        local profile  = snapshot.profile
-                        local args     = act.args or {}
-
-                        for _, unitId in ipairs(recipients) do
-                            if act.key == "DAMAGE" then
-                                local amount = 0
-                                if type(args.amount) == "string" and RPE.Core.Formula then
-                                    amount = tonumber(RPE.Core.Formula:Roll(args.amount, profile)) or 0
-                                else
-                                    amount = tonumber(args.amount or 0)
+                        -- Track that this aura had a trigger event fire (regardless of whether it actually executed)
+                        -- This is used to defer removal of auras that have removeOnDamageTaken
+                        if aura.deferRemoval and eventName == "ON_HIT_TAKEN" then
+                            if tonumber(ownerId) == tonumber(eventTargetId) then
+                                if not aurasWithDeferredRemoval[aura.instanceId] then
+                                    aurasWithDeferredRemoval[aura.instanceId] = aura
                                 end
-
-                                -- Apply fudge factor from ruleset (default: 0)
-                                local fudge = 0
-                                if RPE.ActiveRules then
-                                    local fudgeVal = RPE.ActiveRules:Get("fudge", 0)
-                                    if type(fudgeVal) == "string" then
-                                        fudge = tonumber(RPE.Core.Formula:Roll(fudgeVal, profile)) or 0
-                                    else
-                                        fudge = tonumber(fudgeVal) or 0
-                                    end
-                                end
-                                amount = amount + fudge
-                                amount = math.max(0, math.floor(amount))
-
-                                if amount > 0 and Broadcast and Broadcast.Damage then
-                                    Broadcast:Damage(sourceId, {
-                                        { target = unitId, amount = amount, school = args.school or "Physical" }
-                                    }, nil, { isFromAuraTrigger = true })
-                                end
-
-                            elseif act.key == "HEAL" then
-                                local amount = 0
-                                if type(args.amount) == "string" and RPE.Core.Formula then
-                                    amount = tonumber(RPE.Core.Formula:Roll(args.amount, profile)) or 0
-                                else
-                                    amount = tonumber(args.amount or 0)
-                                end
-
-                                -- Apply fudge factor from ruleset (default: 0)
-                                local fudge = 0
-                                if RPE.ActiveRules then
-                                    local fudgeVal = RPE.ActiveRules:Get("fudge", 0)
-                                    if type(fudgeVal) == "string" then
-                                        fudge = tonumber(RPE.Core.Formula:Roll(fudgeVal, profile)) or 0
-                                    else
-                                        fudge = tonumber(fudgeVal) or 0
-                                    end
-                                end
-                                amount = amount + fudge
-                                amount = math.max(0, math.floor(amount))
-
-                                if amount > 0 and Broadcast and Broadcast.Heal then
-                                    Broadcast:Heal(sourceId, {
-                                        { target = unitId, amount = amount }
-                                    }, nil, { isFromAuraTrigger = true })
-                                end
-
-                            elseif act.key == "APPLY_AURA" and args.auraId then
-                                self:Apply(sourceId, unitId, args.auraId)
                             end
-                        end
-
-                        if RPE.Debug and RPE.Debug.Internal then
-                            RPE.Debug:Internal("[AuraManager:TriggerEvent] Trigger action executed.")
                         end
                     end
                 end
             end
         end
+    end
+
+    -- After ALL triggers have been processed, remove auras with deferred removal
+    for _, aura in pairs(aurasWithDeferredRemoval) do
+        self:_onRemoved(aura, "TRIGGER_FIRED")
     end
 end
 

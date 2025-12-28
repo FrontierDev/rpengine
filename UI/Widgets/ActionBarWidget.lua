@@ -340,6 +340,37 @@ function ActionBarWidget:RefreshRequirements()
     local AB = RPE.Core.Windows.ActionBarWidget
     if not (SR and Requirements) then return end
     
+    -- Check if caster is dead
+    local casterIsDead = false
+    local event = RPE.Core.ActiveEvent
+    
+    if AB._controlledUnitId then
+        -- Controlling an NPC - check NPC's HP
+        local npcUnit = RPE.Common:FindUnitById(AB._controlledUnitId)
+        if npcUnit and (npcUnit.hp or 0) <= 0 then
+            casterIsDead = true
+        end
+    else
+        -- Playing as local player - check player's HP if in event
+        if event and event.localPlayerKey and event.units and event.units[event.localPlayerKey] then
+            local playerUnit = event.units[event.localPlayerKey]
+            if playerUnit and (playerUnit.hp or 0) <= 0 then
+                casterIsDead = true
+            end
+        end
+    end
+    
+    -- If caster is dead, disable all slots
+    if casterIsDead then
+        for i = 1, AB.numSlots do
+            local slot = AB.slots[i]
+            if slot then
+                slot:SetEnabled(false)
+            end
+        end
+        return
+    end
+    
     -- Skip requirement checks if controlling an NPC
     if RPE.Core.Windows.ActionBarWidget._controlledUnitId then
         return
@@ -473,7 +504,7 @@ function ActionBarWidget:BuildUI(opts)
         point  = savedPos and savedPos.point or (opts.point or "BOTTOM"),
         pointRelative = savedPos and savedPos.relativePoint or (opts.rel or "BOTTOM"),
         x = savedPos and savedPos.x or (opts.x or 0),
-        y = savedPos and savedPos.y or (opts.y or 120),
+        y = savedPos and savedPos.y or (opts.y or 220),
     })
     
     -- Make the action bar movable
@@ -1154,6 +1185,9 @@ function ActionBarWidget:RestoreActions()
 
     -- Ensure requirements are checked and slots are enabled/disabled correctly
     RPE.Core.Windows.ActionBarWidget.RefreshRequirements()
+    
+    -- Update button states now that we're back to player mode
+    self:_UpdateNavigationButtonStates()
 end
 
 -- ============ Boilerplate ============
@@ -1512,6 +1546,38 @@ function ActionBarWidget:_UpdateNavigationButtonStates()
             self.nextUnitBtn._hoverB = 0
         end
     end
+    
+    -- Update End Turn button state based on whether controlled unit is in current tick and alive
+    if self.endTurnBtn and self._controlledUnitId then
+        local controlledUnit = RPE.Common:FindUnitById(self._controlledUnitId)
+        local isInCurrentTick = false
+        
+        if event.ticks and event.tickIndex and event.ticks[event.tickIndex] then
+            for _, u in ipairs(event.ticks[event.tickIndex]) do
+                if tonumber(u.id) == self._controlledUnitId then
+                    isInCurrentTick = true
+                    break
+                end
+            end
+        end
+        
+        -- Can end turn if: unit is in current tick AND unit is alive
+        local canEndTurn = isInCurrentTick and controlledUnit and (controlledUnit.hp or 0) > 0
+        
+        if canEndTurn then
+            self.endTurnBtn:Unlock()
+            self.endTurnBtn:SetColor(1, 1, 1, 1)  -- white
+            self.endTurnBtn._hoverR = 0.8
+            self.endTurnBtn._hoverG = 0.8
+            self.endTurnBtn._hoverB = 0.8
+        else
+            self.endTurnBtn:Lock()
+            self.endTurnBtn:SetColor(0, 0, 0, 0.4)  -- Translucent black
+            self.endTurnBtn._hoverR = 0
+            self.endTurnBtn._hoverG = 0
+            self.endTurnBtn._hoverB = 0
+        end
+    end
 end
 
 --- Toggle a unit flag (active, hidden, flying)
@@ -1556,10 +1622,9 @@ function ActionBarWidget:_EndTurn()
         return
     end
     
-    -- Darken the button immediately to show it was clicked
+    -- Give immediate visual feedback by darkening the button
     if self.endTurnBtn then
         self.endTurnBtn:SetColor(0.3, 0.3, 0.3, 0.6)
-        self.endTurnBtn:Lock()
     end
     
     -- If in temporary mode, end the controlled unit's turn

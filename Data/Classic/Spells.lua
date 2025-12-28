@@ -11793,6 +11793,71 @@ RPE.Data.DefaultClassic.SPELLS_PRIEST = {
             }
         }
     },
+
+    -- Resurrect ("RESURRECT" spell action)
+    ["spell-oCSPrHol002a"] = {
+        id = "spell-oCSPrHol002a",
+        name = "Resurrection",
+        description = "Resurrects a fallen ally, bringing them back to life with 10% health.",
+        icon = 135955,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 2,
+        rankInterval = 0,
+        canCrit = false,
+        targeter = { default = "PRECAST" },
+        requirements = {
+        },
+        tags = {
+            [1] = "priest",
+            [2] = "holy",
+            [3] = "resurrect"
+        },
+        costs = {
+            [1] = {
+                resource = "ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            },
+            [2] = {
+                resource = "MANA",
+                amount = "25",
+                when = "onStart",
+                perRank = "5",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "CAST_TURNS",
+            turns = 1,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 5,
+            starts = "onResolve",
+            sharedGroup = ""
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "RESURRECT",
+                        args = {
+                            targets = { targeter = "PRECAST", maxTargets = 1, flags = "A0" }
+                        },
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
     -- Level 1: Smite (copy from Fireball)
     ["spell-oCSPrHol002"] = {
         id = "spell-oCSPrHol002",
