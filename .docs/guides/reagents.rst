@@ -3,6 +3,8 @@ Reagents
 
 This page provides a comprehensive list of all reagents available in RPEngine, organized by material type.
 
+These reagents should be used where possible to maximised compatibility with existing crafting systems and recipes.
+
 Ingots
 ------
 
@@ -14,14 +16,16 @@ These materials have the tag ``ingot``.
 
    Bronze Bar, item-r2841, 1
    Copper Bar, item-r2840, 0
+   Dark Iron Bar, item-r11371, 4
    Enchanted Thorium Bar, item-r12655, 4
    Gold Bar, item-r3577, 2
    Iron Bar, item-r3575, 1
    Mithril Bar, item-r3860, 3
-   Silver Bar, item-r2842, 0
-   Thorium Bar, item-r3859, 4
+   Silver Bar, item-r2842, 1
+   Steel Bar, item-r3859, 2
+   Thorium Bar, item-r12359, 4
    Tin Bar, item-r3576, 0
-   Truesilver Bar, item-r12359, 3
+   Truesilver Bar, item-r6037, 3
 
 Ores
 ----
@@ -33,12 +37,14 @@ These materials have the tag ``ore``.
    :escape: \
 
    Copper Ore, item-r2770, 0
-   Gold Ore, item-r2776, 1
+   Dark Iron Ore, item-r11370, 4
+   Gold Ore, item-r2776, 2
    Iron Ore, item-r2772, 1
    Mithril Ore, item-r3858, 3
-   Silver Ore, item-r2775, 0
+   Silver Ore, item-r2775, 1
+   Thorium Ore, item-r10620, 4
    Tin Ore, item-r2771, 0
-   Truesilver Ore, item-r10620, 3
+   Truesilver Ore, item-r7911, 3
 
 Herbs
 -----
@@ -381,8 +387,3 @@ These materials have the tags ``parchment`` or ``ink``.
    Umbral Ink, item-r52034, 5
    Viridescent Ink, item-r52035, 5
    Warbinder's Ink, item-r52036, 5
-
-About Reagents
---------------
-
-Reagents are material items organized by their crafting type. Each reagent has a unique ID and tier level that reflects its rarity and crafting progression.

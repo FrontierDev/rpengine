@@ -639,7 +639,7 @@ function ItemEditorSheet:BuildUI(opts)
                                         info.notCheckable = true
                                         info.text = (item.def and item.def.name) or item.id
                                         info.func = function()
-                                            -- Copy the item
+                                            -- Copy the item and immediately edit it
                                             local targetDs = self:GetEditingDataset()
                                             if not targetDs then return end
                                             
@@ -671,29 +671,60 @@ function ItemEditorSheet:BuildUI(opts)
                                             
                                             targetDs.items[newId] = itemCopy
                                             
-                                            -- Persist the dataset
-                                            local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
-                                            if DB and DB.Save then pcall(DB.Save, targetDs) end
-                                            
-                                            -- Rebuild runtime registry
-                                            local reg = _G.RPE and _G.RPE.Core and _G.RPE.Core.ItemRegistry
-                                            if reg and reg.RefreshFromActiveDatasets then
-                                                reg:RefreshFromActiveDatasets()
-                                            elseif reg and reg.RefreshFromActiveDataset then
-                                                reg:RefreshFromActiveDataset()
-                                            end
-                                            
-                                            -- Refresh grid + resize
-                                            self:Refresh()
+                                            -- Open the wizard for editing the newly copied item
                                             local DW = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.DatasetWindow
-                                            if DW and DW._recalcSizeForContent then
-                                                DW:_recalcSizeForContent(self.sheet)
-                                                if DW._resizeSoon then DW:_resizeSoon(self.sheet) end
-                                            end
-                                            
-                                            if RPE and RPE.Debug and RPE.Debug.Internal then
-                                                RPE.Debug:Internal(string.format("Copied item '%s' from dataset '%s' (new ID: %s)", 
-                                                    (item.def and item.def.name) or item.id, datasetName, newId))
+                                            if DW and DW.ShowWizard then
+                                                local schema = _buildItemSchema(newId, itemCopy, true)
+                                                DW:ShowWizard({
+                                                    schema = schema,
+                                                    isEdit = true,
+                                                    onSave = function(values)
+                                                        if type(values.data) ~= "table" then values.data = {} end
+                                                        
+                                                        local savedId, err = _saveItemValues(targetDs, newId, values, true, newId)
+                                                        if not savedId then
+                                                            return
+                                                        end
+                                                        
+                                                        -- Persist the dataset
+                                                        local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                                                        if DB and DB.Save then pcall(DB.Save, targetDs) end
+                                                        
+                                                        -- Rebuild runtime registry
+                                                        local reg = _G.RPE and _G.RPE.Core and _G.RPE.Core.ItemRegistry
+                                                        if reg and reg.RefreshFromActiveDatasets then
+                                                            reg:RefreshFromActiveDatasets()
+                                                        elseif reg and reg.RefreshFromActiveDataset then
+                                                            reg:RefreshFromActiveDataset()
+                                                        end
+                                                        
+                                                        -- Refresh grid
+                                                        self:Refresh()
+                                                        local DW2 = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.DatasetWindow
+                                                        if DW2 and DW2._recalcSizeForContent then
+                                                            DW2:_recalcSizeForContent(self.sheet)
+                                                            if DW2._resizeSoon then DW2:_resizeSoon(self.sheet) end
+                                                        end
+                                                        
+                                                        if RPE and RPE.Debug and RPE.Debug.Internal then
+                                                            RPE.Debug:Internal(string.format("Copied and edited item '%s' from dataset '%s' (new ID: %s)", 
+                                                                (item.def and item.def.name) or item.id, datasetName, newId))
+                                                        end
+                                                    end,
+                                                })
+                                            else
+                                                -- Fallback: save without editing if wizard not available
+                                                local DB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+                                                if DB and DB.Save then pcall(DB.Save, targetDs) end
+                                                
+                                                local reg = _G.RPE and _G.RPE.Core and _G.RPE.Core.ItemRegistry
+                                                if reg and reg.RefreshFromActiveDatasets then
+                                                    reg:RefreshFromActiveDatasets()
+                                                elseif reg and reg.RefreshFromActiveDataset then
+                                                    reg:RefreshFromActiveDataset()
+                                                end
+                                                
+                                                self:Refresh()
                                             end
                                         end
                                         UIDropDownMenu_AddButton(info, level)
