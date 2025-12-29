@@ -12,6 +12,7 @@ RPE.Core.ItemModification = ItemModification
 
 local ItemRegistry = _G.RPE and _G.RPE.Core and _G.RPE.Core.ItemRegistry
 local StatModifiers = _G.RPE and _G.RPE.Core and _G.RPE.Core.StatModifiers
+local ActiveRules = _G.RPE and _G.RPE.ActiveRules
 
 -- === Utility Functions ===
 
@@ -216,6 +217,68 @@ local function isModificationCompatible(modItem, targetItem, profile, instanceGu
         return false, string.format("Item must be equipped in slot '%s'", modSlot)
     end
     
+    -- Check weaponType compatibility
+    local modWeaponType = modItem.data.weaponType
+    local targetWeaponType = targetItem.data.weaponType
+    
+    if modWeaponType and targetWeaponType then
+        if normalizeProp(modWeaponType) ~= normalizeProp(targetWeaponType) then
+            return false, string.format(
+                "Modification requires weaponType '%s' but item is '%s'",
+                modWeaponType, targetWeaponType
+            )
+        end
+    elseif modWeaponType and not targetWeaponType then
+        return false, string.format("Item must be weaponType '%s'", modWeaponType)
+    end
+    
+    -- Check armorType compatibility
+    local modArmorType = modItem.data.armorType
+    local targetArmorType = targetItem.data.armorType
+    
+    if modArmorType and targetArmorType then
+        if normalizeProp(modArmorType) ~= normalizeProp(targetArmorType) then
+            return false, string.format(
+                "Modification requires armorType '%s' but item is '%s'",
+                modArmorType, targetArmorType
+            )
+        end
+    elseif modArmorType and not targetArmorType then
+        return false, string.format("Item must be armorType '%s'", modArmorType)
+    end
+    
+    -- Check accessoryType compatibility
+    local modAccessoryType = modItem.data.accessoryType
+    local targetAccessoryType = targetItem.data.accessoryType
+    
+    if modAccessoryType and targetAccessoryType then
+        if normalizeProp(modAccessoryType) ~= normalizeProp(targetAccessoryType) then
+            return false, string.format(
+                "Modification requires accessoryType '%s' but item is '%s'",
+                modAccessoryType, targetAccessoryType
+            )
+        end
+    elseif modAccessoryType and not targetAccessoryType then
+        return false, string.format("Item must be accessoryType '%s'", modAccessoryType)
+    end
+    
+    -- Check armorMaterial compatibility
+    local modArmorMaterial = modItem.data.armorMaterial
+    local targetArmorMaterial = targetItem.data.armorMaterial
+    
+    if modArmorMaterial and targetArmorMaterial then
+        local normalizedMod = normalizeProp(modArmorMaterial)
+        local normalizedTarget = normalizeProp(targetArmorMaterial)
+        if normalizedMod ~= "any" and normalizedMod ~= normalizedTarget then
+            return false, string.format(
+                "Modification requires armorMaterial '%s' but item is '%s'",
+                modArmorMaterial, targetArmorMaterial
+            )
+        end
+    elseif modArmorMaterial and not targetArmorMaterial then
+        return false, string.format("Item must be armorMaterial '%s'", modArmorMaterial)
+    end
+    
     -- Check hand compatibility (for weapons)
     local modHand = modItem.data.hand
     local targetHand = targetItem.data.hand
@@ -269,9 +332,19 @@ local function isModificationCompatible(modItem, targetItem, profile, instanceGu
                 return false, "No available sockets for this gem"
             end
         else
-            -- Non-gem: check max_[tag] limit (default 1)
+            -- Non-gem: check max_[tag] limit
+            -- Priority: item data > active rules > default (999)
             local maxKey = "max_" .. primaryTag
-            local maxCount = tonumber(targetItem.data[maxKey]) or 1
+            local maxCount = tonumber(targetItem.data[maxKey])
+            
+            if not maxCount then
+                -- Check ActiveRules if item didn't specify
+                maxCount = tonumber(RPE.ActiveRules:Get(maxKey, 1))
+            end
+            
+            -- Default to unlimited if neither item nor rules specify
+            maxCount = maxCount or 1
+            
             local currentCount = countModsByTag(profile, instanceGuid, primaryTag)
             
             if currentCount >= maxCount then
@@ -293,8 +366,9 @@ end
 ---@param profile CharacterProfile
 ---@param instanceGuid string -- instance GUID of the EQUIPMENT item (must be in inventory)
 ---@param modificationItemId string -- ID of the MODIFICATION item to apply
+---@param modificationInstanceGuid string|nil -- instance GUID of the specific modification to consume (optional, for handling duplicates)
 ---@return boolean success
-function ItemModification:ApplyModification(profile, instanceGuid, modificationItemId)
+function ItemModification:ApplyModification(profile, instanceGuid, modificationItemId, modificationInstanceGuid)
     if not profile or not instanceGuid or not modificationItemId then
         RPE.Debug:Error("ItemModification:ApplyModification - missing parameters")
         return false
@@ -369,7 +443,22 @@ function ItemModification:ApplyModification(profile, instanceGuid, modificationI
     }
     
     -- Consume one of the modification items from inventory
-    profile:RemoveItem(modificationItemId, 1)
+    -- If modificationInstanceGuid is provided, remove that specific instance
+    if modificationInstanceGuid then
+        for idx, slot in ipairs(profile.items or {}) do
+            if slot.instanceGuid == modificationInstanceGuid then
+                -- Decrement qty or remove the slot
+                slot.qty = math.max(0, (slot.qty or 1) - 1)
+                if slot.qty == 0 then
+                    table.remove(profile.items, idx)
+                end
+                break
+            end
+        end
+    else
+        -- Fallback: remove by item ID (first one found)
+        profile:RemoveItem(modificationItemId, 1)
+    end
     
     -- Persist changes
     if RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.SaveProfile then

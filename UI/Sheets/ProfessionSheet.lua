@@ -268,6 +268,19 @@ function ProfessionSheet:OnSelectRecipe(recipe)
     self:_syncColumnHeights()
 end
 
+-- Check if a recipe is learned by the current profession
+function ProfessionSheet:_isRecipeLearned(recipe)
+    if not recipe or not self._currentProfession then return false end
+    
+    local knownList = self._currentProfession.recipes or {}
+    for _, id in ipairs(knownList) do
+        if id == recipe.id then
+            return true
+        end
+    end
+    return false
+end
+
 -- Check if player can craft the recipe with given quantity
 function ProfessionSheet:_canCraftRecipe(recipe, qty)
     if not recipe or not self.profile then return false end
@@ -773,8 +786,8 @@ function ProfessionSheet:BuildCraftPanel(recipe)
         end
     }); actionRow:Add(craftBtn)
     
-    -- Disable craft button if not enough materials
-    if not self:_canCraftRecipe(r, self._craftQty or 1) then
+    -- Disable craft button if recipe is unlearned or not enough materials
+    if not self:_isRecipeLearned(r) or not self:_canCraftRecipe(r, self._craftQty or 1) then
         craftBtn:Lock()
     end
 
@@ -786,8 +799,8 @@ function ProfessionSheet:BuildCraftPanel(recipe)
         end
     }); actionRow:Add(craftAllBtn)
     
-    -- Disable "All" button if can't craft at all
-    if not self:_canCraftRecipe(r, 1) then
+    -- Disable "All" button if recipe is unlearned or can't craft at all
+    if not self:_isRecipeLearned(r) or not self:_canCraftRecipe(r, 1) then
         craftAllBtn:Lock()
     end
 

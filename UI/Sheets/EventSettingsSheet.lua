@@ -151,6 +151,7 @@ function EventSettingsSheet:BuildUI(opts)
         difficulty    = "NORMAL",
         turnOrderType = "INITIATIVE",
         teamNames     = { "", "", "", "" },
+        teamResourceIds = { "", "", "", "" },
     }
 
     self.sheet = VGroup:New("RPE_ES_Sheet", {
@@ -195,17 +196,49 @@ function EventSettingsSheet:BuildUI(opts)
             alignH   = "LEFT",
             autoSize = true,
         })
-        local lbl = _label(row, ("Team %d:"):format(i), { variant = "text" }) -- normal color
-        local field = EditField:New(_name("RPE_ES_TeamField"), {
+        
+        -- Team label
+        local lbl = _label(row, ("Team %d:"):format(i), { variant = "text" })
+        row:Add(lbl)
+        
+        -- Name label + field
+        local nameLbl = Text:New(_name("RPE_ES_NameLabel"), {
+            parent       = row,
+            text         = "Name:",
+            fontTemplate = "GameFontNormal",
+            justifyH     = "RIGHT",
+        })
+        C.ApplyText(nameLbl.fs, "text")
+        row:Add(nameLbl)
+        
+        local nameField = EditField:New(_name("RPE_ES_TeamNameField"), {
             parent = row,
-            width  = FIELD_WIDTH,
+            width  = 120,
             text   = self.settings.teamNames[i],
             onCommit = function(_, val) self.settings.teamNames[i] = val end,
         })
-        if field.frame and field.frame.SetWidth then field.frame:SetWidth(FIELD_WIDTH) end
-
-        row:Add(lbl)
-        row:Add(field)
+        if nameField.frame and nameField.frame.SetWidth then nameField.frame:SetWidth(120) end
+        row:Add(nameField)
+        
+        -- Resource ID label + field
+        local resLbl = Text:New(_name("RPE_ES_ResLabel"), {
+            parent       = row,
+            text         = "Res:",
+            fontTemplate = "GameFontNormal",
+            justifyH     = "RIGHT",
+        })
+        C.ApplyText(resLbl.fs, "text")
+        row:Add(resLbl)
+        
+        local resourceField = EditField:New(_name("RPE_ES_TeamResourceField"), {
+            parent = row,
+            width  = 120,
+            text   = self.settings.teamResourceIds[i],
+            onCommit = function(_, val) self.settings.teamResourceIds[i] = val end,
+        })
+        if resourceField.frame and resourceField.frame.SetWidth then resourceField.frame:SetWidth(120) end
+        row:Add(resourceField)
+        
         self.sheet:Add(row)
     end
 end

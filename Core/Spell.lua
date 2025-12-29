@@ -714,7 +714,7 @@ function Spell:GetTooltip(rank, casterUnit)
     end
 
     -- Costs (first cost left) | Cooldown (right)
-    -- Always show ACTION, BONUS_ACTION, REACTION costs; filter others by usedResources
+    -- Always show ACTION, BONUS_ACTION, REACTION, TEAM_RESOURCE costs; filter others by usedResources
     local function formatResourceName(res)
         -- Format resource name: "BONUS_ACTION" -> "Bonus Action", "MANA" -> "Mana", "holy_power" -> "Holy Power"
         local formatted = tostring(res):upper():gsub("_", " ")
@@ -729,16 +729,33 @@ function Spell:GetTooltip(rank, casterUnit)
     if self.costs and #self.costs > 0 then
         local Resources = RPE.Core and RPE.Core.Resources
         local usedResources = Resources and Resources:GetUsedResources(profile) or {}
-        local alwaysShow = { HEALTH = true, ACTION = true, BONUS_ACTION = true, REACTION = true }
+        local alwaysShow = { HEALTH = true, ACTION = true, BONUS_ACTION = true, REACTION = true, TEAM_RESOURCE = true }
         local actionOnly = { ACTION = true, BONUS_ACTION = true, REACTION = true }
         
         for i, c in ipairs(self.costs) do
             local resId = string.upper(c.resource or "")
-            -- Show if it's an always-show resource (ACTION/BONUS_ACTION/REACTION/HEALTH) or in the 'use' list
+            -- Show if it's an always-show resource (ACTION/BONUS_ACTION/REACTION/HEALTH/TEAM_RESOURCE) or in the 'use' list
             if alwaysShow[resId] or usedResources[resId] then
                 local amt = _evaluateCost(self, c, profile)
                 local res = c.resource or ""
                 local formatted = formatResourceName(res)
+                
+                -- Special handling for TEAM_RESOURCE: get the actual team resource name
+                if resId == "TEAM_RESOURCE" then
+                    local ev = RPE.Core and RPE.Core.ActiveEvent
+                    if ev and ev.localPlayerKey and ev.units and ev.units[ev.localPlayerKey] then
+                        local playerUnit = ev.units[ev.localPlayerKey]
+                        local teamId = playerUnit.team
+                        if teamId and ev.teamResourceIds and ev.teamResourceIds[teamId] then
+                            formatted = ev.teamResourceIds[teamId] or "Team Resource"
+                        else
+                            formatted = "Team Resource"
+                        end
+                    else
+                        formatted = "Team Resource"
+                    end
+                end
+                
                 -- For action economy resources, omit the amount; for others, include it
                 local text
                 if actionOnly[resId] then

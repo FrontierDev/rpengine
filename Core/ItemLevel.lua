@@ -114,7 +114,9 @@ function ItemLevel:FromItem(item, includeNegative)
                     -- Clamp negatives to avoid complex results with fractional powers
                     local amt = math.max(0, amount)
 
-                    local def = RPE.Stats:Get(statId)
+                    -- Use StatRegistry directly (stats are stored in dataset.extra.stats and applied to StatRegistry)
+                    local def = RPE.Core and RPE.Core.StatRegistry and RPE.Core.StatRegistry:Get(statId)
+                    
                     if def and type(def.itemLevelWeight) == "number" and statEnabled(statId, def) then
                         local mod  = def.itemLevelWeight
                         local term = (math.abs(amt * mod)) ^ 1.5
@@ -129,7 +131,7 @@ function ItemLevel:FromItem(item, includeNegative)
     end
 
     -- Base ItemValue (no slot mod)
-    local itemValue = (totalPow > 0) and ((totalPow) ^ (2/3) / 100) or 0
+    local itemValue = (totalPow > 0) and ((totalPow) ^ (2/3)) or 0
 
     -- Determine quality from your dropdown strings (common/uncommon/rare/epic/legendary)
     local qual = _extractQuality()

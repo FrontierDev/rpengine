@@ -522,6 +522,7 @@ function AuraEditorSheet:BuildUI(opts)
                                     end
                                 end
                                 UIDropDownMenu_AddButton(del, level)
+                            elseif level == 2 and menuList == "COPY_FROM_DATASET" then
                                 local info = UIDropDownMenu_CreateInfo()
                                 info.isTitle = true; info.notCheckable = true
                                 info.text = "Select Dataset"

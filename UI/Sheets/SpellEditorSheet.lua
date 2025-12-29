@@ -105,10 +105,11 @@ local function _getAvailableResources()
         ACTION = true,
         BONUS_ACTION = true,
         REACTION = true,
+        TEAM_RESOURCE = true,
     }
     
     -- Add always-included resources first
-    for _, resId in ipairs({"HEALTH", "ACTION", "BONUS_ACTION", "REACTION"}) do
+    for _, resId in ipairs({"HEALTH", "ACTION", "BONUS_ACTION", "REACTION", "TEAM_RESOURCE"}) do
         table.insert(resources, resId)
     end
     
@@ -878,11 +879,15 @@ function SpellEditorSheet:BuildUI(opts)
                                             func = function()
                                                 -- Check if event is running
                                                 local Event = RPE.Core and RPE.Core.Event
+                                                local isDeveloper = RPE and RPE.IsCurrentPlayerDeveloper and RPE:IsCurrentPlayerDeveloper() or false
+                                                
                                                 if Event and Event.IsRunning and Event:IsRunning() then
-                                                    if RPE and RPE.Debug and RPE.Debug.Warning then
-                                                        RPE.Debug:Warning("Cannot bind spells during an event.")
+                                                    if not isDeveloper then
+                                                        if RPE and RPE.Debug and RPE.Debug.Warning then
+                                                            RPE.Debug:Warning("Cannot bind spells during an event.")
+                                                        end
+                                                        return
                                                     end
-                                                    return
                                                 end
                                                 
                                                 -- Check if current player is the dataset author

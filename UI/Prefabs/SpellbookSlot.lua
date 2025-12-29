@@ -239,11 +239,15 @@ function SpellbookSlot:ShowSpellContextMenu(anchorCandidate, spellDef, slotObj)
                     notCheckable = true,
                     func = function()
                         local Event = RPE.Core and RPE.Core.Event
+                        local isDeveloper = RPE and RPE.IsCurrentPlayerDeveloper and RPE:IsCurrentPlayerDeveloper() or false
+                        
                         if Event and Event.IsRunning and Event:IsRunning() then
-                            if RPE and RPE.Debug and RPE.Debug.Warning then
-                                RPE.Debug:Warning("Cannot bind spells during an event.")
+                            if not isDeveloper then
+                                if RPE and RPE.Debug and RPE.Debug.Warning then
+                                    RPE.Debug:Warning("Cannot bind spells during an event.")
+                                end
+                                return
                             end
-                            return
                         end
                         local bar = _ensureActionBar(); if not bar then return end
                         local name, icon = _spellDisplay(slotObj.spellId, slotObj._dispName, slotObj.icon and slotObj.icon:GetTexture())

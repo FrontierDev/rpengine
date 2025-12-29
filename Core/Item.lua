@@ -483,7 +483,6 @@ function Item:ShowTooltip(instanceGuid)
                     end
                     
                     table.insert(lines, { text = spellText, r = 0.2, g = 1, b = 0.2, wrap = true })
-                    table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
                 end
             end
         end
@@ -501,7 +500,7 @@ function Item:ShowTooltip(instanceGuid)
         local baseItemLevel = self.itemLevel
         local effectiveItemLevel = baseItemLevel
         
-        -- Calculate effective item level based on total stats (base + mods)
+        -- Calculate bonus from modifications only
         local ItemMod = RPE.Core and RPE.Core.ItemModification
         local ItemLevelCalc = RPE.Core and RPE.Core.ItemLevel
         local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
@@ -517,25 +516,21 @@ function Item:ShowTooltip(instanceGuid)
             end
             
             if hasModBonuses then
-                -- Build a combined stat table for item level calculation
-                local combinedStats = {}
-                
-                -- Add base stats
-                for k, v in pairs(self.data or {}) do
-                    if type(k) == "string" and k:match("^stat_") then
-                        combinedStats[k] = (combinedStats[k] or 0) + (tonumber(v) or 0)
+                -- Build stat table with ONLY the mod bonuses (not base stats)
+                local modStats = {}
+                for statId, bonus in pairs(modBonuses) do
+                    if bonus ~= 0 then
+                        modStats["stat_" .. statId] = bonus
                     end
                 end
                 
-                -- Add mod bonuses
-                for statId, bonus in pairs(modBonuses) do
-                    local key = "stat_" .. statId
-                    combinedStats[key] = (combinedStats[key] or 0) + (tonumber(bonus) or 0)
-                end
-                
-                -- Calculate effective item level
-                local tempItem = { data = combinedStats, rarity = self.rarity }
-                effectiveItemLevel = ItemLevelCalc:FromItem(tempItem) or baseItemLevel
+                -- Calculate item level from mods alone
+                local tempItem = { 
+                    data = modStats,
+                    rarity = self.rarity 
+                }
+                local modBonus = ItemLevelCalc:FromItem(tempItem) or 0
+                effectiveItemLevel = baseItemLevel + modBonus
             end
         end
         
@@ -765,25 +760,40 @@ function Item:ShowTooltip(instanceGuid)
                 if displayedGemIds[fullMod.name] or displayedGemIds[fullMod.id] then
                     -- Skip this gem, it was already displayed in sockets
                 else
-                    local isGem = false
+                    -- Check if this modification has the "hiddenmod" tag
+                    local isHidden = false
                     if fullMod.tags then
                         for _, tag in ipairs(fullMod.tags) do
-                            if tag == "gem" then
-                                isGem = true
+                            if tag == "hiddenmod" then
+                                isHidden = true
                                 break
                             end
                         end
                     end
                     
-                    if not isGem then
-                        -- Get primary tag (first tag, or "other" if no tags)
-                        local primaryTag = (fullMod.tags and fullMod.tags[1]) or "other"
-                        
-                        if not modsByTag[primaryTag] then
-                            modsByTag[primaryTag] = {}
-                            table.insert(tagOrder, primaryTag)
+                    if isHidden then
+                        -- Skip hidden modifications entirely
+                    else
+                        local isGem = false
+                        if fullMod.tags then
+                            for _, tag in ipairs(fullMod.tags) do
+                                if tag == "gem" then
+                                    isGem = true
+                                    break
+                                end
+                            end
                         end
-                        table.insert(modsByTag[primaryTag], fullMod)
+                        
+                        if not isGem then
+                            -- Get primary tag (first tag, or "other" if no tags)
+                            local primaryTag = (fullMod.tags and fullMod.tags[1]) or "other"
+                            
+                            if not modsByTag[primaryTag] then
+                                modsByTag[primaryTag] = {}
+                                table.insert(tagOrder, primaryTag)
+                            end
+                            table.insert(modsByTag[primaryTag], fullMod)
+                        end
                     end
                 end
             end

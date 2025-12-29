@@ -45,6 +45,12 @@ Welcome to RPEngine's documentation. This guide covers installation, usage, and 
    guides/interactioneditor
    guides/recipeeditor
 
+.. toctree::
+   :maxdepth: 1
+   :caption: Tables
+
+   guides/reagents
+
 Indices and tables
 ==================
 

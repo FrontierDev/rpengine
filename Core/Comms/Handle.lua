@@ -699,6 +699,14 @@ Comms:RegisterHandler("START_EVENT", function(data, sender)
 
     RPE.Debug:Internal(string.format("[Handle] START_EVENT FULL DATA (length %d):\n%s", #data, data))
     local args = { strsplit(";", data) }
+    
+    if RPE and RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(string.format("[Handle] START_EVENT parsed %d args", #args))
+        for i = 1, math.min(10, #args) do
+            RPE.Debug:Internal(string.format("[Handle] args[%d] = '%s'", i, tostring(args[i])))
+        end
+    end
+    
     local id   = args[1]
     local name = args[2]
 
@@ -763,6 +771,32 @@ Comms:RegisterHandler("START_EVENT", function(data, sender)
     for tn in string.gmatch(teamNamesStr, "([^,]+)") do
         teamNames[idx] = tn
         idx = idx + 1
+    end
+    
+    -- Parse team resource IDs (next argument after teamNames)
+    local teamResourceIds = {}
+    if startIdx <= #args then
+        local teamResourceStr = args[startIdx] or ""
+        startIdx = startIdx + 1
+        
+        if RPE and RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(string.format("[Handle] teamResourceStr at args[%d] = '%s'", startIdx - 1, teamResourceStr))
+        end
+        
+        idx = 1
+        for tr in string.gmatch(teamResourceStr, "([^,]+)") do
+            local resId = tr == "nil" and "" or tr
+            teamResourceIds[idx] = resId
+            idx = idx + 1
+        end
+        
+        if RPE and RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(string.format("[Handle] Parsed teamResourceIds: %s", table.concat(teamResourceIds, ", ")))
+        end
+    else
+        if RPE and RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(string.format("[Handle] No teamResourceIds: startIdx=%d, #args=%d", startIdx, #args))
+        end
     end
 
     local units = {}
@@ -848,6 +882,7 @@ Comms:RegisterHandler("START_EVENT", function(data, sender)
         difficulty    = difficulty,
         turnOrderType = turnOrderType,
         teamNames     = teamNames,
+        teamResourceIds = teamResourceIds,
         units     = units,
         turn      = turn,
         tickIndex = tickIndex,
@@ -3380,5 +3415,40 @@ Comms:RegisterHandler("TRADE_CURRENCY", function(data, sender)
         end
         
         profile:SpendCurrency(currencyKey, amount)
+    end
+end)
+
+-- Handle incoming team resource updates
+Comms:RegisterHandler("TEAM_RESOURCE", function(data, sender)
+    local args = { strsplit(";", data) }
+    local teamId = tonumber(args[1]) or 0
+    local amount = tonumber(args[2]) or 0
+    
+    if teamId <= 0 then return end
+    
+    local ev = RPE.Core.ActiveEvent
+    if not ev then return end
+    
+    -- Initialize teamResources if needed
+    if not ev.teamResources then
+        ev.teamResources = {}
+    end
+    if not ev.teamResources[teamId] then
+        ev.teamResources[teamId] = { current = 0, max = 100 }
+    end
+    
+    -- Update current resource value
+    local newValue = ev.teamResources[teamId].current + amount
+    ev.teamResources[teamId].current = math.max(0, newValue)
+    
+    RPE.Debug:Internal(string.format("[Handle:TEAM_RESOURCE] Team %d updated to %d/%d", 
+        teamId, ev.teamResources[teamId].current, ev.teamResources[teamId].max))
+    
+    -- Refresh UI to show updated resources
+    if RPE.Core.Windows and RPE.Core.Windows.UnitFrameWidget then
+        local unitFrameWidget = RPE.Core.Windows.UnitFrameWidget
+        if unitFrameWidget.Refresh then
+            unitFrameWidget:Refresh()
+        end
     end
 end)

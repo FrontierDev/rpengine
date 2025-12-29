@@ -756,13 +756,36 @@ function InventorySlot:ShowItemContextMenu(slot, item)
                     notCheckable = true
                 }, level)
                 
+                -- Group applied mods by item ID and count them
+                local groupedMods = {}
                 for _, appliedMod in ipairs(appliedMods) do
+                    if not groupedMods[appliedMod.itemId] then
+                        groupedMods[appliedMod.itemId] = {
+                            name = appliedMod.name,
+                            itemId = appliedMod.itemId,
+                            modKeys = {},
+                        }
+                    end
+                    table.insert(groupedMods[appliedMod.itemId].modKeys, appliedMod.modKey)
+                end
+                
+                for _, modGroup in pairs(groupedMods) do
+                    local displayText = modGroup.name
+                    local count = #modGroup.modKeys
+                    if count > 1 then
+                        displayText = displayText .. " [" .. count .. "]"
+                    end
+                    
                     UIDropDownMenu_AddButton({
-                        text = appliedMod.name or appliedMod.itemId,
+                        text = displayText,
                         checked = true,
                         func = function()
-                            -- Remove this specific modification (don't return to inventory)
-                            ItemMod:RemoveModificationByKey(profile, slotInstanceGuid, appliedMod.modKey, false)
+                            -- Remove only the first one (one click, one removal)
+                            local firstModKey = modGroup.modKeys[1]
+                            ItemMod:RemoveModificationByKey(profile, slotInstanceGuid, firstModKey, false)
+                            
+                            -- Close and rebuild dropdown
+                            CloseDropDownMenus()
                             
                             -- Refresh UI
                             if RPE.Core.Windows and RPE.Core.Windows.InventorySheet then
@@ -788,7 +811,7 @@ function InventorySlot:ShowItemContextMenu(slot, item)
             
             -- Part 2: Show available modifications from inventory (only compatible ones)
             local modItems = {}
-            local seenModIds = {}
+            local seenModIds = {}  -- Track by item ID to group duplicates
             for _, invSlot in ipairs(profile.items or {}) do
                 local modItem = reg and reg:Get(invSlot.id)
                 if modItem and modItem.category == "MODIFICATION" and not seenModIds[invSlot.id] then
@@ -798,10 +821,18 @@ function InventorySlot:ShowItemContextMenu(slot, item)
                     local canApply, applyReason = ItemMod:CanApplyModification(profile, slotInstanceGuid, invSlot.id)
                     
                     if isCompatible then
+                        -- Count total quantity of this modification across all inventory slots
+                        local totalQty = 0
+                        for _, slot in ipairs(profile.items or {}) do
+                            if slot.id == invSlot.id then
+                                totalQty = totalQty + (slot.qty or 1)
+                            end
+                        end
+                        
                         table.insert(modItems, {
                             id = invSlot.id,
                             name = modItem.name or invSlot.id,
-                            qty = invSlot.qty or 1,
+                            qty = totalQty,
                             canApply = canApply,
                             reason = applyReason or reason
                         })
@@ -830,7 +861,7 @@ function InventorySlot:ShowItemContextMenu(slot, item)
             for _, modItem in ipairs(modItems) do
                 local displayText = modItem.name
                 if modItem.qty > 1 then
-                    displayText = displayText .. " (" .. modItem.qty .. ")"
+                    displayText = displayText .. " [" .. modItem.qty .. "]"
                 end
 
                 UIDropDownMenu_AddButton({
@@ -857,8 +888,11 @@ function InventorySlot:ShowItemContextMenu(slot, item)
                             return
                         end
                         
-                        -- Apply the modification (using instance GUID for unique tracking)
+                        -- Apply the modification (without specifying instance GUID - let it use the first found)
                         ItemMod:ApplyModification(currentProfile, slotInstanceGuid, modItem.id)
+                        
+                        -- Close the dropdown menu so it rebuilds with fresh data
+                        CloseDropDownMenus()
                         
                         -- Refresh UI to reflect changes
                         if RPE.Core.Windows and RPE.Core.Windows.InventorySheet then

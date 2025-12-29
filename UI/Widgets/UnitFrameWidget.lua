@@ -10,6 +10,7 @@ local VGroup   = RPE_UI.Elements.VerticalLayoutGroup
 local Text     = RPE_UI.Elements.Text
 local TextBtn  = RPE_UI.Elements.TextButton
 local Portrait = RPE_UI.Prefabs.UnitPortrait
+local ProgressBar = RPE_UI.Prefabs.ProgressBar
 
 ---@class UnitFrameWidget
 ---@field root Window
@@ -17,6 +18,7 @@ local Portrait = RPE_UI.Prefabs.UnitPortrait
 ---@field header HGroup
 ---@field teamBar HGroup
 ---@field teamLabel Text
+---@field teamResourceBar FrameElement|nil
 ---@field grid VGroup
 ---@field teamButtons table<integer, TextButton>
 ---@field currentTeam integer|nil
@@ -233,6 +235,58 @@ function UnitFrameWidget:_FillGridForTeam(ev, teamId)
         self.teamLabel:SetText(teamName(ev, teamId))
     end
 
+    -- 6) update team resource bar
+    if self.teamResourceBar then
+        local hasResourceId = (ev.teamResourceIds and ev.teamResourceIds[teamId] and ev.teamResourceIds[teamId] ~= "")
+        
+        if RPE and RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(string.format("[UnitFrameWidget] Team %d - teamResourceIds=%s, hasResourceId=%s", 
+                teamId, tostring(ev.teamResourceIds and "exists" or "nil"), tostring(hasResourceId)))
+            if ev.teamResourceIds then
+                RPE.Debug:Internal(string.format("[UnitFrameWidget] teamResourceIds[%d]=%s", teamId, tostring(ev.teamResourceIds[teamId] or "nil")))
+            end
+        end
+        
+        if hasResourceId then
+            local resourceId = ev.teamResourceIds[teamId]
+            
+            -- Get the resource value from the team's resource pool
+            local currentValue = 0
+            local maxValue = 100
+            if ev.teamResources and ev.teamResources[teamId] then
+                local res = ev.teamResources[teamId]
+                currentValue = tonumber(res.current) or 0
+                maxValue = tonumber(res.max) or 100
+            end
+            
+            if RPE and RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal(string.format("[UnitFrameWidget] Showing resource bar: %s = %d/%d", resourceId, currentValue, maxValue))
+            end
+            
+            if self.teamResourceBar.SetStyle then
+                self.teamResourceBar:SetStyle("team" .. teamId)
+            end
+            if self.teamResourceBar.SetValue then
+                self.teamResourceBar:SetValue(currentValue, maxValue)
+            end
+            if self.teamResourceBar.SetText then
+                self.teamResourceBar:SetText(string.format("%d/%d", currentValue, maxValue))
+            end
+            if self.teamResourceBar.frame and self.teamResourceBar.frame.Show then
+                self.teamResourceBar.frame:Show()
+            end
+        else
+            -- Hide the bar if no resource ID
+            if RPE and RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal(string.format("[UnitFrameWidget] Hiding resource bar for team %d", teamId))
+            end
+            
+            if self.teamResourceBar.frame and self.teamResourceBar.frame.Hide then
+                self.teamResourceBar.frame:Hide()
+            end
+        end
+    end
+
     if self.content and self.content.Relayout then self.content:Relayout() end
 end
 
@@ -309,6 +363,30 @@ function UnitFrameWidget:BuildUI(opts)
         alignV = "CENTER",
     })
     self.content:Add(self.teamBar)
+
+    -- Team resource bar container (vertical: bar on top, amount below)
+    local resourceBarContainer = VGroup:New("RPE_UFW_ResourceBarContainer", {
+        parent = self.content,
+        autoSize = true,
+        spacingY = 4,
+        alignV = "CENTER",
+        alignH = "LEFT",
+    })
+    self.content:Add(resourceBarContainer)
+
+    -- Team resource progress bar using ProgressBar prefab
+    if ProgressBar then
+        self.teamResourceBar = ProgressBar:New("RPE_UFW_TeamResourceBar", {
+            parent = resourceBarContainer,
+            width = 200,
+            height = 8,
+            style = "default",
+            showLabel = true,
+        })
+        resourceBarContainer:Add(self.teamResourceBar)
+    else
+        self.teamResourceBar = nil
+    end
 
     -- Grid container
     self.grid = VGroup:New("RPE_UFW_Grid", {

@@ -274,36 +274,23 @@ function PlayerUnitWidget:Refresh()
                     local totalAbsorption = 0
                     
                     if playerUnit then
-                        if RPE and RPE.Debug and RPE.Debug.Internal then
-                            RPE.Debug:Internal(string.format("[PlayerUnitWidget] Player unit found: %s, has absorption: %s", 
-                                playerUnit.name or "unknown", 
-                                playerUnit.absorption and "YES" or "NO"))
-                        end
-                        
                         if playerUnit.absorption then
                             for shieldId, shield in pairs(playerUnit.absorption) do
                                 if shield.amount then
                                     totalAbsorption = totalAbsorption + shield.amount
-                                    if RPE and RPE.Debug and RPE.Debug.Internal then
-                                        RPE.Debug:Internal(string.format("[PlayerUnitWidget] Shield %s: amount=%d", shieldId, shield.amount))
-                                    end
                                 end
                             end
                         end
                     else
                         if RPE and RPE.Debug and RPE.Debug.Internal then
-                            RPE.Debug:Internal("[PlayerUnitWidget] Player unit NOT found")
+                            RPE.Debug:Error("[PlayerUnitWidget] Player unit NOT found")
                         end
-                    end
-                    
-                    if RPE and RPE.Debug and RPE.Debug.Internal then
-                        RPE.Debug:Internal(string.format("[PlayerUnitWidget] Setting HEALTH absorption: %d / max %d", totalAbsorption, max))
                     end
                     
                     bar:SetAbsorption(totalAbsorption, max)
                 else
                     if RPE and RPE.Debug and RPE.Debug.Internal then
-                        RPE.Debug:Internal("[PlayerUnitWidget] No active event or units table")
+                        RPE.Debug:Error("[PlayerUnitWidget] No active event or units table")
                     end
                     bar:SetAbsorption(0, max)
                 end

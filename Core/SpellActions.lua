@@ -846,7 +846,7 @@ Actions:Register("APPLY_AURA", function(ctx, cast, targets, args)
 
     local mgr = ctx.event and ctx.event._auraManager
     if not mgr then
-        RPE.Debug:Error("APPLY_AURA: no AuraManager attached to event")
+        RPE.Debug:Internal("APPLY_AURA: no AuraManager attached to event")
         return
     end
 
@@ -1158,6 +1158,31 @@ Actions:Register("INTERRUPT", function(ctx, cast, targets, args)
                 end
             end
         end
+    end
+end)
+
+-- TEAM_RESOURCE: increase the caster's team's resource pool
+-- args:
+--   amount = number of resource to add (can be negative to subtract)
+Actions:Register("TEAM_RESOURCE", function(ctx, cast, targets, args)
+    if not cast or not cast.caster then return end
+    
+    local amount = tonumber(args and args.amount) or 0
+    if amount == 0 then return end
+    
+    -- Find the caster unit to get their team
+    local casterUnit = findUnitById(cast.caster)
+    if not casterUnit then return end
+    
+    local teamId = tonumber(casterUnit.team) or 1
+    
+    if RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(string.format("[SpellActions:TEAM_RESOURCE] Team %d gaining %d resource", teamId, amount))
+    end
+    
+    -- Broadcast to update team resource
+    if Broadcast and Broadcast.UpdateTeamResource then
+        Broadcast:UpdateTeamResource(teamId, amount)
     end
 end)
 

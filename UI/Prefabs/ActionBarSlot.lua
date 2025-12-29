@@ -543,7 +543,13 @@ function ActionBarSlot:MeetsAllRequirements()
     -- Check spell costs (can player afford to cast this spell?)
     local Resources = RPE.Core and RPE.Core.Resources
     if Resources and spell.costs and #spell.costs > 0 then
-        if not Resources:CanAfford(spell.costs, spell) then
+        local casterUnitId = nil
+        if self._ownerWidget and self._ownerWidget._controlledUnitId then
+            casterUnitId = self._ownerWidget._controlledUnitId
+        elseif event and event.GetLocalPlayerUnitId then
+            casterUnitId = event:GetLocalPlayerUnitId()
+        end
+        if not Resources:CanAfford(spell.costs, spell, nil, casterUnitId) then
             return false  -- insufficient resources
         end
     end

@@ -126,6 +126,22 @@ Schemas.INTERRUPT = {
     },
 }
 
+-- TEAM_RESOURCE -----------------------------------------------------------
+Schemas.TEAM_RESOURCE = {
+    key    = "TEAM_RESOURCE",
+    fields = {
+        { id="amount", label="Amount", type="input", required=true, placeholder="e.g. 5 or 1d6+STAT" },
+    },
+}
+
+-- RESURRECT ---------------------------------------------------------------
+Schemas.RESURRECT = {
+    key    = "RESURRECT",
+    fields = {
+        -- RESURRECT has no arguments; it revives dead targets to 10% HP
+    },
+}
+
 -- ---------------------------------------------------------------------------
 -- API
 -- ---------------------------------------------------------------------------

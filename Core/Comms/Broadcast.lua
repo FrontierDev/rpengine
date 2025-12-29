@@ -603,7 +603,7 @@ function Broadcast:StartEvent(ev)
     flat[#flat+1] = (ev.difficulty or "NORMAL")
     flat[#flat+1] = (ev.turnOrderType or "INITIATIVE")
 
-    -- serialize teamNames
+    -- serialize teamNames and teamResourceIds
     local tnParts = {}
     if ev.teamNames and type(ev.teamNames) == "table" then
         for i = 1, #ev.teamNames do
@@ -611,6 +611,15 @@ function Broadcast:StartEvent(ev)
         end
     end
     flat[#flat+1] = table.concat(tnParts, ",")
+    
+    local trParts = {}
+    if ev.teamResourceIds and type(ev.teamResourceIds) == "table" then
+        for i = 1, #ev.teamResourceIds do
+            local resId = ev.teamResourceIds[i] or ""
+            trParts[#trParts+1] = (resId ~= "") and tostring(resId) or "nil"
+        end
+    end
+    flat[#flat+1] = table.concat(trParts, ",")
 
     for _, u in pairs(ev.units or {}) do
         flat[#flat+1] = tostring(u.id or 0)
@@ -694,12 +703,19 @@ function Broadcast:ResyncPlayer(playerKey)
     flat[#flat+1] = tostring(ev.turn or 1)
     flat[#flat+1] = tostring(ev.tickIndex or 0)
 
-    -- serialize teamNames
+    -- serialize teamNames and teamResourceIds
     local tnParts = {}
     for i = 1, #ev.teamNames do
         tnParts[#tnParts+1] = tostring(ev.teamNames[i] or "")
     end
     flat[#flat+1] = table.concat(tnParts, ",")
+    
+    local trParts = {}
+    for i = 1, #ev.teamResourceIds do
+        local resId = ev.teamResourceIds[i] or ""
+        trParts[#trParts+1] = (resId ~= "") and tostring(resId) or "nil"
+    end
+    flat[#flat+1] = table.concat(trParts, ",")
 
     for _, u in pairs(ev.units or {}) do
         flat[#flat+1] = tostring(u.id or 0)
@@ -768,6 +784,15 @@ function Broadcast:ResyncPlayer(playerKey)
     RPE.Debug:Internal(string.format("[Broadcast] Resynced player %s with event state (turn %d, tick %d)", playerKey, ev.turn or 1, ev.tickIndex or 0))
 end
 
+
+--- Broadcast team resource update
+---@param team integer Team ID
+---@param amount number Amount to add to the team resource (can be negative)
+function Broadcast:UpdateTeamResource(team, amount)
+    if not team or not amount then return end
+    local flat = { tostring(team), tostring(amount) }
+    _sendAll("TEAM_RESOURCE", flat)
+end
 
 --- Tell the other members of the group to execute OnTurn().
 function Broadcast:Advance(payload)

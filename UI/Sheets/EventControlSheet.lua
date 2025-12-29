@@ -59,12 +59,21 @@ local function _getSettings()
         end
     end
 
+    local teamResourceIds = { "", "", "", "" }
+    if type(s.teamResourceIds) == "table" then
+        for i = 1, 4 do
+            local v = s.teamResourceIds[i]
+            teamResourceIds[i] = (type(v) == "string" and v) or ""
+        end
+    end
+
     return {
         title         = title,
         subtext       = subtext,
         difficulty    = diff,
         turnOrderType = turnOrderType,
         teamNames     = teamNames,
+        teamResourceIds = teamResourceIds,
     }
 end
 
@@ -292,11 +301,22 @@ function EventControlSheet:StartEvent()
         difficulty    = s.difficulty,  -- "NORMAL"|"HEROIC"|"MYTHIC"
         turnOrderType = s.turnOrderType, -- "INITIATIVE"|"PHASE"|"BALANCED"
         teamNames     = {},            -- only include non-empty to avoid clutter
+        teamResourceIds = {},
     }
     for i = 1, 4 do
         if s.teamNames[i] and s.teamNames[i] ~= "" then
             payload.teamNames[i] = s.teamNames[i]
         end
+        if s.teamResourceIds[i] and s.teamResourceIds[i] ~= "" then
+            payload.teamResourceIds[i] = s.teamResourceIds[i]
+        end
+    end
+
+    -- Debug: log what we're about to send
+    RPE.Debug:Internal(string.format("[EventControlSheet] Starting event with payload.teamResourceIds: %s", 
+        table.concat(payload.teamResourceIds, ", ") or "empty"))
+    for i, v in ipairs(payload.teamResourceIds) do
+        RPE.Debug:Internal(string.format("[EventControlSheet]   [%d]=%s", i, tostring(v)))
     end
 
     -- Start the event

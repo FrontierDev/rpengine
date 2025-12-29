@@ -20,6 +20,8 @@ local C            = RPE_UI.Colors
 ---@field flash Texture|nil
 ---@field flashAlpha number
 ---@field _animSpeed number
+---@field customColor table|nil
+---@field _explicitStyle string|nil  -- track if a style was explicitly set (not auto-switching)
 local ProgressBar = setmetatable({}, { __index = FrameElement })
 ProgressBar.__index = ProgressBar
 RPE_UI.Prefabs.ProgressBar = ProgressBar
@@ -90,6 +92,7 @@ function ProgressBar:New(name, opts)
     -- State styles
     o.styles = opts.styles or { default = opts.style or "default" }
     o.customColor = nil  -- Track if a custom color has been set
+    o._explicitStyle = nil  -- Track if a style was explicitly set (prevents auto-switching)
     o:SetStyle(o.styles.default)
 
     -- Animation driver
@@ -118,11 +121,6 @@ function ProgressBar:SetAbsorption(absorbAmount, max)
     if max then self.max = max end
     absorbAmount = math.max(0, absorbAmount or 0)
     self.absorbValue = absorbAmount
-    
-    if RPE and RPE.Debug and RPE.Debug.Internal then
-        RPE.Debug:Internal(string.format("[ProgressBar] SetAbsorption called: amount=%d, max=%d, absorbValue=%d", 
-            absorbAmount, self.max or 0, self.absorbValue or 0))
-    end
 end
 
 --- Smooth animation update
@@ -186,7 +184,8 @@ function ProgressBar:UpdateAnimation(elapsed)
             self:SetStyle(self.styles.empty)
         elseif self.value >= self.max and self.styles.full then
             self:SetStyle(self.styles.full)
-        else
+        elseif not self._explicitStyle then
+            -- Only auto-switch to default if no explicit style was set
             self:SetStyle(self.styles.default)
         end
     else
@@ -222,8 +221,32 @@ end
 --- Apply a style key (from RPE_UI.Colors palette, only if no custom color is set)
 function ProgressBar:SetStyle(style)
     if self.customColor then return end  -- Don't override custom colors with styles
+    
+    -- Mark that a style was explicitly set (prevents auto-switching in UpdateAnimation)
+    self._explicitStyle = style
+    
     local key = (style or "default")
+    
+    -- Handle team colors: "team1" -> look up palette "team1"
+    if key:match("^team%d+$") then
+        local r,g,b,a = C.Get(key)
+        if RPE and RPE.Debug and RPE.Debug.Internal then
+            RPE.Debug:Internal(string.format("[ProgressBar:SetStyle] Looking up '%s': r=%s, g=%s, b=%s, a=%s", 
+                key, tostring(r), tostring(g), tostring(b), tostring(a)))
+        end
+        if r ~= nil then
+            self.fill:SetColorTexture(r, g, b, a or 1)
+            return
+        end
+        -- If palette doesn't have the team color, fall back to default
+        key = "default"
+    end
+    
     local r,g,b,a = C.Get(key)
+    if RPE and RPE.Debug and RPE.Debug.Internal then
+        RPE.Debug:Internal(string.format("[ProgressBar:SetStyle] Setting '%s': r=%s, g=%s, b=%s, a=%s", 
+            key, tostring(r), tostring(g), tostring(b), tostring(a)))
+    end
     self.fill:SetColorTexture(r, g, b, a or 1)
 end
 

@@ -14,6 +14,20 @@ RPEngine.Developers = {
     "Angrune",  -- example developer
 }
 
+-- Check if the current player is a developer
+function RPEngine.IsCurrentPlayerDeveloper()
+    local playerName = UnitName("player")
+    
+    if not playerName then return false end
+    
+    for _, devName in ipairs(RPEngine.Developers) do
+        if playerName == devName then
+            return true
+        end
+    end
+    return false
+end
+
 -- Track if we've already warned about a version mismatch
 RPEngine._versionWarningShown = false
 

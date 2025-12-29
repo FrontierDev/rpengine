@@ -194,11 +194,11 @@ function Supergroup:CheckForOfflineMembers()
                     if ev.turn and ev.turn > 0 then
                         -- Event is running: mark inactive
                         ev.units[memberKey].active = false
-                        RPE.Debug:Warning(string.format("%s has been marked as inactive (left the game).", memberKey, unitId))
+                        RPE.Debug:Internal(string.format("%s has been marked as inactive (left the game).", memberKey, unitId))
                     else
                         -- Event not started: remove from list
                         ev.units[memberKey] = nil
-                        RPE.Debug:Warning(string.format("%s has been removed from the event (left the game).", memberKey, unitId))
+                        RPE.Debug:Internal(string.format("%s has been removed from the event (left the game).", memberKey, unitId))
                     end
                 end
             end

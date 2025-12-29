@@ -240,12 +240,6 @@ local function evalCostAmount(spell, cost, profile)
     if cost.perRank and cost.perRank ~= "" and rank > 1 then
         perVal = (Formula:Roll(cost.perRank, profile) or 0) * (rank - 1)
     end
-    
-    if RPE and RPE.Debug and RPE.Debug.Internal then
-        RPE.Debug:Internal(("[evalCostAmount] expr='%s' base=%d perRank='%s' perVal=%d rank=%d result=%d"):format(
-            tostring(cost.amount or ""), base, tostring(cost.perRank or ""), perVal, rank, base + perVal))
-    end
-    
     return base + perVal
 end
 
@@ -357,10 +351,10 @@ function Resources:GetDisplayedResources(profile)
 end
 
 --- Can the player afford these costs (checking against 'used' resources)?
-function Resources:CanAfford(costs, spell, profile)
+function Resources:CanAfford(costs, spell, profile, casterUnitId)
     profile = profile or RPE.Profile.DB.GetOrCreateActive()
     local usedResources = self:GetUsedResources(profile)
-    local alwaysCheck = { HEALTH = true, ACTION = true, BONUS_ACTION = true, REACTION = true }
+    local alwaysCheck = { HEALTH = true, ACTION = true, BONUS_ACTION = true, REACTION = true, TEAM_RESOURCE = true }
     
     for _, c in ipairs(costs or {}) do
         local resId = string.upper(c.resource)
@@ -373,9 +367,39 @@ function Resources:CanAfford(costs, spell, profile)
             else
                 need = tonumber(c.amount) or 0 -- fallback
             end
-            local cur = self.pool[resId] or 0
-            if cur < need then
-                return false
+            
+            -- Special handling for TEAM_RESOURCE: check event team resources, not player pool
+            if resId == "TEAM_RESOURCE" then
+                local ev = RPE.Core.ActiveEvent
+                if not ev then return false end
+                
+                -- Determine the caster's team
+                local teamId = nil
+                if casterUnitId then
+                    local unit = Common:FindUnitById(casterUnitId)
+                    if unit and unit.team then
+                        teamId = unit.team
+                    end
+                else
+                    -- Default to local player's team
+                    if ev.localPlayerKey and ev.units and ev.units[ev.localPlayerKey] then
+                        teamId = ev.units[ev.localPlayerKey].team
+                    end
+                end
+                
+                if not teamId then return false end
+                if not ev.teamResources or not ev.teamResources[teamId] then return false end
+                
+                local teamCur = ev.teamResources[teamId].current or 0
+                if teamCur < need then
+                    return false
+                end
+            else
+                -- Normal resource check from player pool
+                local cur = self.pool[resId] or 0
+                if cur < need then
+                    return false
+                end
             end
         end
     end
@@ -424,6 +448,36 @@ function Resources:Spend(costs, when, spell, profile)
                             local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
                             if B and B.UpdateUnitHealth then
                                 B:UpdateUnitHealth(myId, playerUnit.hp, playerUnit.hpMax)
+                            end
+                        end
+                    end
+                end
+            end
+            
+            -- Special handling for TEAM_RESOURCE: broadcast the reduction to the team
+            if key == "TEAM_RESOURCE" then
+                local ev = RPE.Core.ActiveEvent
+                if ev then
+                    local myId = ev:GetLocalPlayerUnitId()
+                    local playerUnit = nil
+                    if myId then
+                        for _, u in pairs(ev.units) do
+                            if tonumber(u.id) == tonumber(myId) then
+                                playerUnit = u
+                                break
+                            end
+                        end
+                    end
+                    
+                    if playerUnit and playerUnit.team then
+                        local teamId = playerUnit.team
+                        -- Broadcast negative amount (spending reduces the team resource)
+                        local B = RPE.Core.Comms and RPE.Core.Comms.Broadcast
+                        if B and B.UpdateTeamResource then
+                            B:UpdateTeamResource(teamId, -amt)
+                            if RPE and RPE.Debug and RPE.Debug.Internal then
+                                RPE.Debug:Internal(("[Resources:Spend] Broadcast team %d resource reduction: -%d"):format(
+                                    teamId, amt))
                             end
                         end
                     end

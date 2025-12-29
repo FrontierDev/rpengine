@@ -135,14 +135,7 @@ end
 local function _computeInstanceMods(self, inst, targetProfile)
     local def = AuraRegistry:Get(inst.id)
     if not def or not def.modifiers or #def.modifiers == 0 then 
-        if RPE.Debug and RPE.Debug.Internal then
-            RPE.Debug:Internal(("[_computeInstanceMods] Aura '%s' has no modifiers"):format(inst.id))
-        end
         return nil 
-    end
-
-    if RPE.Debug and RPE.Debug.Internal then
-        RPE.Debug:Internal(("[_computeInstanceMods] Processing %d modifiers for aura '%s'"):format(#def.modifiers, inst.id))
     end
 
     -- Only use caster profile if the caster is the local player
@@ -217,12 +210,7 @@ local function _computeInstanceMods(self, inst, targetProfile)
 
                     local acc = sums[statId] or NewBucket()
                     AccumBucket(acc, b)
-                    sums[statId] = acc
-                    
-                    if RPE.Debug and RPE.Debug.Internal then
-                        RPE.Debug:Internal(("[_computeInstanceMods] Applied %s mode=%s value=%d to stat '%s'"):format(
-                            inst.id, mode, amt, statId))
-                    end
+                    sums[statId] = acc                    
                 else
                     if RPE.Debug and RPE.Debug.Internal then
                         RPE.Debug:Internal(("[_computeInstanceMods] Skipped disabled stat '%s'"):format(statId))

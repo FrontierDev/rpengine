@@ -576,6 +576,14 @@ function Event:OnAwake(opts)
         [1] = "Alliance Forces",
         [2] = "Horde Forces"
     }
+    self.teamResourceIds = (opts and opts.teamResourceIds) or {}
+    
+    -- Debug
+    RPE.Debug:Internal(string.format("[Event:OnAwake] Received teamResourceIds: %s", 
+        table.concat(self.teamResourceIds, ", ") or "empty"))
+    for i, v in ipairs(self.teamResourceIds) do
+        RPE.Debug:Internal(string.format("[Event:OnAwake]   [%d]=%s", i, tostring(v)))
+    end
 
     -- seed any known members from Supergroup with REAL IDs
     local sg = RPE.Core.ActiveSupergroup
@@ -766,6 +774,7 @@ function Event:OnPlayersReady()
         difficulty    = self.difficulty,
         turnOrderType = self.turnOrderType,
         teamNames     = self.teamNames,
+        teamResourceIds = self.teamResourceIds,
         units         = self:_serializeUnits(),
     })
 end
@@ -830,6 +839,7 @@ function Event:OnStart(opts)
     self.difficulty = (opts and opts.difficulty) or self.difficulty or "NORMAL"
     self.turnOrderType = (opts and opts.turnOrderType) or self.turnOrderType or "INITIATIVE"
     self.teamNames = (opts and opts.teamNames) or {}
+    self.teamResourceIds = (opts and opts.teamResourceIds) or {}
 
     -- If the leader sent units, hydrate from payload (preserve our id counters)
     self.units = {}
@@ -1185,6 +1195,11 @@ end
 function Event:AdvanceClient(mode, units, subtext)
     if units then
         self:UpdateUnits({ units = units })
+        -- Refresh UI to show updated units
+        if RPE.Core.RefreshUnitFrames then
+            RPE.Debug:Internal("[Event:AdvanceClient] Calling RefreshUnitFrames after unit update")
+            RPE.Core.RefreshUnitFrames()
+        end
     end
 
     -- Changing the subtext doesnt do anything currently. NYI.
@@ -1285,6 +1300,12 @@ function Event:OnTurn()
 
     RPE.Debug:Internal(string.format("Turn %d started with %d ticks", self.turn, #self.ticks))
     self:OnTick()
+    
+    -- Refresh UI to show new turn state
+    if RPE.Core.RefreshUnitFrames then
+        RPE.Debug:Internal("[Event:OnTurn] Calling RefreshUnitFrames")
+        RPE.Core.RefreshUnitFrames()
+    end
 end
 
 function Event:OnTick()
