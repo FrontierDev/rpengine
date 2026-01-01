@@ -509,6 +509,49 @@ function DatasetWindow:BuildUI()
     self.headerName.frame:ClearAllPoints()
     self.headerName.frame:SetPoint("BOTTOMLEFT", self.header.frame, "BOTTOMLEFT", HEADER_PAD_X, 6)
 
+    -- Close button (top-right)
+    self.closeBtn = CreateFrame("Button", "RPE_DataManager_CloseBtn", self.root.frame)
+    self.closeBtn:SetSize(24, 24)
+    self.closeBtn:SetPoint("TOPRIGHT", self.root.frame, "TOPRIGHT", -8, -8)
+    self.closeBtn:SetFrameStrata("DIALOG")
+    self.closeBtn:SetFrameLevel(100)
+    self.closeBtn:SetText("×")
+    self.closeBtn:SetNormalFontObject("GameFontHighlightLarge")
+    self.closeBtn:GetFontString():SetTextColor(0.9, 0.9, 0.95, 1.0)
+    
+    -- Background texture (uses palette color)
+    local closeBg = self.closeBtn:CreateTexture(nil, "BACKGROUND")
+    closeBg:SetAllPoints()
+    self.closeBtn._bgTex = closeBg
+    
+    -- Hover texture
+    local closeHover = self.closeBtn:CreateTexture(nil, "BORDER")
+    closeHover:SetAllPoints()
+    closeHover:SetColorTexture(0.3, 0.3, 0.35, 0)
+    self.closeBtn._hoverTex = closeHover
+    
+    -- Apply initial palette colors
+    if C and C.Get then
+        local bgR, bgG, bgB, bgA = C.Get("background")
+        if bgR then
+            closeBg:SetColorTexture(bgR, bgG, bgB, bgA or 0.9)
+        else
+            closeBg:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+        end
+    else
+        closeBg:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+    end
+    
+    self.closeBtn:SetScript("OnEnter", function(btn)
+        btn._hoverTex:SetColorTexture(0.3, 0.3, 0.35, 0.5)
+    end)
+    self.closeBtn:SetScript("OnLeave", function(btn)
+        btn._hoverTex:SetColorTexture(0.3, 0.3, 0.35, 0)
+    end)
+    self.closeBtn:SetScript("OnClick", function()
+        self:Hide()
+    end)
+
     -- Header: buttons (right) - Edit | Save | New | Sync | Activate | Delete
     local btnWidth = 65
     local pad = 4
@@ -1195,6 +1238,20 @@ function DatasetWindow:ApplyPalette()
     end
     if self.bottomBorder then
         if C and C.ApplyHighlight then C.ApplyHighlight(self.bottomBorder) end
+    end
+    
+    -- Update close button background color from palette
+    if self.closeBtn and self.closeBtn._bgTex then
+        if C and C.Get then
+            local bgR, bgG, bgB, bgA = C.Get("background")
+            if bgR then
+                self.closeBtn._bgTex:SetColorTexture(bgR, bgG, bgB, bgA or 0.9)
+            else
+                self.closeBtn._bgTex:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+            end
+        else
+            self.closeBtn._bgTex:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+        end
     end
     
     -- TextButton elements will auto-update via their own ApplyPalette

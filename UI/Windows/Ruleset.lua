@@ -73,6 +73,50 @@ function Ruleset:BuildUI(opts)
         x = opts.x or 0, y = opts.y or 0,
         autoSize = false,
     })
+    
+    -- Close button (top-right)
+    self.closeBtn = CreateFrame("Button", "RPE_RS_CloseBtn", self.root.frame)
+    self.closeBtn:SetSize(24, 24)
+    self.closeBtn:SetPoint("TOPRIGHT", self.root.frame, "TOPRIGHT", -8, -8)
+    self.closeBtn:SetFrameStrata("DIALOG")
+    self.closeBtn:SetFrameLevel(100)
+    self.closeBtn:SetText("×")
+    self.closeBtn:SetNormalFontObject("GameFontHighlightLarge")
+    self.closeBtn:GetFontString():SetTextColor(0.9, 0.9, 0.95, 1.0)
+    
+    -- Background texture (uses palette color)
+    local closeBg = self.closeBtn:CreateTexture(nil, "BACKGROUND")
+    closeBg:SetAllPoints()
+    self.closeBtn._bgTex = closeBg
+    
+    -- Hover texture
+    local closeHover = self.closeBtn:CreateTexture(nil, "BORDER")
+    closeHover:SetAllPoints()
+    closeHover:SetColorTexture(0.3, 0.3, 0.35, 0)
+    self.closeBtn._hoverTex = closeHover
+    
+    -- Apply initial palette colors
+    local C = _G.RPE_UI.Colors
+    if C and C.Get then
+        local bgR, bgG, bgB, bgA = C.Get("background")
+        if bgR then
+            closeBg:SetColorTexture(bgR, bgG, bgB, bgA or 0.9)
+        else
+            closeBg:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+        end
+    else
+        closeBg:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+    end
+    
+    self.closeBtn:SetScript("OnEnter", function(btn)
+        btn._hoverTex:SetColorTexture(0.3, 0.3, 0.35, 0.5)
+    end)
+    self.closeBtn:SetScript("OnLeave", function(btn)
+        btn._hoverTex:SetColorTexture(0.3, 0.3, 0.35, 0)
+    end)
+    self.closeBtn:SetScript("OnClick", function()
+        self.root.frame:Hide()
+    end)
     self.sheet = VGroup:New("RPE_RS_Sheet", {
         parent = self.root,
         width = 1, height = 1,
@@ -387,8 +431,32 @@ function Ruleset:RefreshRuleList()
     self.pageLabel:SetText(("Page %d/%d"):format(self.page,self.totalPages))
 end
 
+function Ruleset:ApplyPalette()
+    -- Update close button background color from palette
+    if self.closeBtn and self.closeBtn._bgTex then
+        local C = _G.RPE_UI.Colors
+        if C and C.Get then
+            local bgR, bgG, bgB, bgA = C.Get("background")
+            if bgR then
+                self.closeBtn._bgTex:SetColorTexture(bgR, bgG, bgB, bgA or 0.9)
+            else
+                self.closeBtn._bgTex:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+            end
+        else
+            self.closeBtn._bgTex:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+        end
+    end
+end
+
 function Ruleset.New(opts)
     local self=setmetatable({},Ruleset)
     self:BuildUI(opts or {})
+    
+    -- Register as palette consumer so UI updates when palette changes
+    local C = _G.RPE_UI.Colors
+    if C and C.RegisterConsumer then
+        C.RegisterConsumer(self)
+    end
+    
     return self
 end

@@ -194,7 +194,12 @@ function Crafting:_trySkillUp(recipe, profile)
     end
     
     local currentSkill = tonumber(profData.level) or 0
+    
+    -- Get max skill level from ActiveRules, default to 300
     local MAX_SKILL = 300
+    if RPE.ActiveRules and RPE.ActiveRules.Get then
+        MAX_SKILL = RPE.ActiveRules:Get("max_profession_level", 300)
+    end
     
     -- Don't level up past max
     if currentSkill >= MAX_SKILL then return end

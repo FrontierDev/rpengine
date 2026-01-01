@@ -1557,11 +1557,18 @@ function CharacterProfile:AttemptProfessionLevelUp(professionName)
     if not prof then return end
     
     local currentLevel = tonumber(prof.level) or 0
-    if currentLevel >= 200 then return end  -- No skill-ups after level 200
     
-    -- Linear chance: 100% at level 0, 0% at level 200
-    -- chance = 100 - (100 * level / 200)
-    local chancePct = math.max(0, 100 - (100 * currentLevel / 200))
+    -- Get max profession level from ActiveRules, default to 300
+    local maxLevel = 300
+    if RPE.ActiveRules and RPE.ActiveRules.Get then
+        maxLevel = RPE.ActiveRules:Get("max_profession_level", 300)
+    end
+    
+    if currentLevel >= maxLevel then return end  -- No skill-ups after max level
+    
+    -- Linear chance: 100% at level 0, 0% at max level
+    -- chance = 100 - (100 * level / maxLevel)
+    local chancePct = math.max(0, 100 - (100 * currentLevel / maxLevel))
     local roll = math.random(0, 99)
     
     if roll < chancePct then

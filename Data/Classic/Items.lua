@@ -1482,6 +1482,33 @@ RPE.Data.DefaultClassic.ITEMS_ARMOUR = {
 RPE.Data.DefaultClassic.BLACKSMITHING = {
     -- Rough Sharpening Stone
     ["item-oCBS0001"] = { basePriceU = 10, category = "CONSUMABLE", data = {}, spellId = "spell-oCCWeaponAP", spellRank = 1, description = "", icon = 135248, id = "item-oCBS0001", maxStack = 5, name = "Rough Sharpening Stone", rarity = "common", stackable = true, tags = { "tier_0",  "weaponbuff", "starter" }, vendorSellable = true, },    
+
+    -- Chain Sheets
+    ["item-oCBS0002"] = {basePriceU=0, itemLevel=1, vendorSellable=false, id="item-oCBS0002", priceOverrideC=10, data={stat_RANGED_AP="1", armorMaterial="any"}, tags={[1]="armormod"}, spellRank=0, description="Increases your ranged attack power by 1. Can only be applied to armour.", name="Bronze Chain Sheet", category="MODIFICATION", maxStack=1, stackable=false, icon=631511, rarity="common"},
+    ["item-oCBS0003"] = {basePriceU=0, rarity="common", vendorSellable=false, id="item-oCBS0003", description="Increases your ranged attack power by 2. Can only be applied to armour.", data={stat_RANGED_AP="2", armorMaterial="any"}, tags={[1]="armormod"}, spellRank=0, itemLevel=2, name="Steel Chain Sheet", category="MODIFICATION", maxStack=1, stackable=false, icon=134515, priceOverrideC=100},
+    ["item-oCBS0004"] = {basePriceU=0, rarity="uncommon", priceOverrideC=1000, id="item-oCBS0004", tags={[1]="armormod"}, data={stat_RANGED_AP="5", armorMaterial="any"}, vendorSellable=false, spellRank=0, itemLevel=11, name="Thorium Chain Sheet", category="MODIFICATION", maxStack=1, stackable=false, icon=631512, description="Increases your ranged attack power by 5. Can only be applied to armour."},
+    ["item-oCBS0005"] = {basePriceU=0, itemLevel=9, vendorSellable=false, id="item-oCBS0005", rarity="rare", data={armorMaterial="any", stat_RANGED_AP="10", stat_RANGED_HIT="1"}, tags={[1]="armormod"}, spellRank=0, description="Increases your ranged attack power by 10 and ranged hit rating by 1. Can only be applied to armour.", name="Dark Iron Chain Sheet", category="MODIFICATION", maxStack=1, stackable=false, icon=631515, priceOverrideC=10000},
+
+    -- Plate Sheets
+    ["item-oCBS0006"] = {basePriceU=0, itemLevel=1, priceOverrideC=10, id="item-oCBS0006", rarity="common", data={stat_ARMOR="1", armorMaterial="any"}, vendorSellable=false, spellRank=0, description="Increases your armour by 1. Can only be applied to armour.", name="Reinforced Bronze Plating", category="MODIFICATION", maxStack=1, stackable=false, icon=463553, tags={[1]="armormod"}},
+    ["item-oCBS0007"] = {basePriceU=0, itemLevel=2, vendorSellable=false, id="item-oCBS0007", priceOverrideC=100, data={armorMaterial="any", stat_ARMOR="2"}, tags={[1]="armormod"}, spellRank=0, description="Increases your armour by 2. Can only be applied to armour.", name="Reinforced Steel Plating", category="MODIFICATION", maxStack=1, stackable=false, icon=134518, rarity="common"},
+    ["item-oCBS0008"] = {basePriceU=0, description="Increases your armour by 3 and fire resistance by 1. Can only be applied to armour.", tags={[1]="armormod"}, id="item-oCBS0008", itemLevel=10, data={armorMaterial="any", stat_RESIST_FIRE="1", stat_ARMOR="3"}, priceOverrideC=1000, spellRank=0, rarity="uncommon", name="Reinforced Thorium Plating", category="MODIFICATION", maxStack=1, stackable=false, icon=133604, vendorSellable=false},
+    ["item-oCBS0009"] = {basePriceU=0, rarity="rare", vendorSellable=false, id="item-oCBS0009", tags={[1]="armormod"}, data={armorMaterial="any", stat_ARMOR="5", stat_FIRE_RESIST="1"}, itemLevel=6, spellRank=0, description="Increases your armour by 5 and fire resistance by 1. Can only be applied to armour.", name="Reinforced Dark Iron Plating", category="MODIFICATION", maxStack=1, stackable=false, icon=4622301, priceOverrideC=10000}
+}
+
+RPE.Data.DefaultClassic.TAILORING = {
+    ["item-oCTail001"] = {basePriceU=0, itemLevel=1, vendorSellable=false, id="item-oCTail001", rarity="common", data={stat_SPELL_AP="1", armorMaterial="any"}, priceOverrideC=10, spellRank=0, tags={[1]="armormod"}, name="Heavy Linen Underlay", category="MODIFICATION", maxStack=1, stackable=false, icon=132890, description="Increases your spell power by 1. Can only be applied to armour."},
+    ["item-oCTail002"] = {basePriceU=0, rarity="common", vendorSellable=false, id="item-oCTail002", priceOverrideC=100, data={stat_SPELL_AP="2", armorMaterial="any"}, tags={[1]="armormod"}, spellRank=0, description="Increases your spell power by 2. Can only be applied to armour.", name="Mageweave Underlay", category="MODIFICATION", maxStack=1, stackable=false, icon=454036, itemLevel=2},
+    ["item-oCTail003"] = {basePriceU=0, rarity="uncommon", tags={[1]="armormod"}, id="item-oCTail003", priceOverrideC=1000, data={stat_SPELL_AP="5", armorMaterial="any"}, itemLevel=11, spellRank=0, vendorSellable=false, name="Runecloth Underlay", category="MODIFICATION", maxStack=1, stackable=false, icon=3528456, description="Increases your spell power by 5. Can only be applied to armour."},
+    ["item-oCTail004"] = {basePriceU=0, rarity="rare", tags={[1]="armormod"}, id="item-oCTail004", priceOverrideC=10000, data={stat_SPELL_AP="10", stat_SPELL_HIT="1", armorMaterial="any"}, itemLevel=11, spellRank=0, vendorSellable=false, name="Spellcloth Underlay", category="MODIFICATION", maxStack=1, stackable=false, icon=466843, description="Increases your spell power by 10 and spell hit rating by 1. Can only be applied to armour."},
+
+}
+
+RPE.Data.DefaultClassic.LEATHERWORKING = {
+    ["item-oCLWork001"] = {basePriceU=0, rarity="common", tags={[1]="armormod"}, id="item-oCLWork001", itemLevel=1, data={stat_MELEE_AP="1", armorMaterial="any"}, vendorSellable=false, spellRank=0, priceOverrideC=10, name="Light Armor Kit", category="MODIFICATION", maxStack=1, stackable=false, icon=133611, description="Increases your melee attack power by 1. Can only be applied to armour."},
+    ["item-oCLWork002"] = {basePriceU=0, description="Increases your melee attack power by 2. Can only be applied to armour.", priceOverrideC=100, id="item-oCLWork002", rarity="common", data={stat_MELEE_AP="2", armorMaterial="any"}, itemLevel=2, spellRank=0, tags={[1]="armormod"}, name="Heavy Armor Kit", category="MODIFICATION", maxStack=1, stackable=false, icon=133610, vendorSellable=false},
+    ["item-oCLWork003"] = {basePriceU=0, rarity="uncommon", priceOverrideC=1000, id="item-oCLWork003", vendorSellable=false, data={armorMaterial="any", stat_MELEE_AP="5"}, description="Increases your melee attack power by 5. Can only be applied to armour.", spellRank=0, tags={[1]="armormod"}, name="Rugged Armor Kit", category="MODIFICATION", maxStack=1, stackable=false, icon=133612, itemLevel=11},
+    ["item-oCLWork004"] = {basePriceU=0, rarity="rare", priceOverrideC=10000, id="item-oCLWork004", description="Increases your melee attack power by 10 and melee hit rating by 1. Can only be applied to armour.", data={stat_MELEE_HIT="1", armorMaterial="any", stat_MELEE_AP="10"}, vendorSellable=false, spellRank=0, itemLevel=9, name="Black Dragonscale Armor Kit", category="MODIFICATION", maxStack=1, stackable=false, icon=1394891, tags={[1]="armormod"}}
 }
 
 RPE.Data.DefaultClassic.ENCHANTS = {
@@ -2272,6 +2299,12 @@ function RPE.Data.DefaultClassic.Items()
         items[k] = v
     end
     for k,v in pairs(RPE.Data.DefaultClassic.BLACKSMITHING) do
+        items[k] = v
+    end
+    for k,v in pairs(RPE.Data.DefaultClassic.LEATHERWORKING) do
+        items[k] = v
+    end
+    for k,v in pairs(RPE.Data.DefaultClassic.TAILORING) do
         items[k] = v
     end
     return items
