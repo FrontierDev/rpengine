@@ -53,8 +53,12 @@ function ShopItem:New(name, opts)
         icon = item.icon or "Interface\\Icons\\INV_Misc_QuestionMark",
     })
 
+    -- Determine if out of stock
+    local qty = tonumber(opts.stack)
+    local isOutOfStock = qty and qty == 0
+
     o.icon.frame:SetScript("OnEnter", function(self)
-        if not o.icon._locked and o.icon.icon and o.icon.icon.SetVertexColor then
+        if not isOutOfStock and not o.icon._locked and o.icon.icon and o.icon.icon.SetVertexColor then
             o.icon.icon:SetVertexColor(o.icon._hoverR, o.icon._hoverG, o.icon._hoverB, o.icon._hoverA)
         end
 
@@ -63,6 +67,10 @@ function ShopItem:New(name, opts)
 
     o.icon.frame:SetScript("OnLeave", function(self)
         Common:HideTooltip()
+        -- Restore grey color if out of stock
+        if isOutOfStock and o.icon.icon and o.icon.icon.SetVertexColor then
+            o.icon.icon:SetVertexColor(0.4, 0.4, 0.4, 0.6)
+        end
     end)
 
     o.icon.frame:SetScript("OnMouseUp", function(_, button)
@@ -87,8 +95,12 @@ function ShopItem:New(name, opts)
                         if profile:SpendCurrency("copper", price) then
                             profile:AddItem(item.id, 1)
                             PlaySound(120)
-                            -- Refresh shop window
+                            -- Update shop inventory stock if tracking this NPC
                             local shopWindow = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.ShopWindow
+                            if shopWindow and shopWindow.npcGuid then
+                                self:_UpdateShopStock(shopWindow.npcGuid, item.id, -1, profile)
+                            end
+                            -- Refresh shop window
                             if shopWindow and shopWindow.Refresh then
                                 shopWindow:Refresh()
                             end
@@ -98,6 +110,9 @@ function ShopItem:New(name, opts)
                     -- Stackable: show popup to ask for quantity
                     local Popup = RPE_UI.Prefabs.Popup
                     if not Popup then return end
+
+                    -- Get shop window reference early so callback can use it
+                    local shopWindow = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.ShopWindow
 
                     local p = Popup.New({
                         title = "Buy " .. (item.name or "Item"),
@@ -120,8 +135,11 @@ function ShopItem:New(name, opts)
                             if profile:SpendCurrency("copper", totalCost) then
                                 profile:AddItem(item.id, qty)
                                 PlaySound(567428)
+                                -- Update shop inventory stock if tracking this NPC
+                                if shopWindow and shopWindow.npcGuid then
+                                    self:_UpdateShopStock(shopWindow.npcGuid, item.id, -qty, profile)
+                                end
                                 -- Refresh shop window
-                                local shopWindow = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.ShopWindow
                                 if shopWindow and shopWindow.Refresh then
                                     shopWindow:Refresh()
                                 end
@@ -194,16 +212,27 @@ function ShopItem:New(name, opts)
     group:Add(o.icon)
 
     -- === Stack count (bottom-right corner of icon) ===
-    local qty = tonumber(opts.stack)
-    if qty and qty > 1 and qty < math.huge then
-        o.stack = Text:New(name .. "_StackText", {
-            parent = o.icon,
-            text = "(" .. qty .. ")",
-            fontTemplate = "GameFontNormalOutline",
-            color = { 1, 1, 1, 1 },
-        })
-        o.icon:AddChild(o.stack)
-        o.stack.frame:SetPoint("BOTTOMRIGHT", o.icon.frame, "BOTTOMRIGHT", -2, 2)
+    if qty and qty < math.huge then
+        -- Show stack for quantities > 1, and also show (0) for out-of-stock items
+        if qty > 1 or qty == 0 then
+            o.stack = Text:New(name .. "_StackText", {
+                parent = o.icon,
+                text = "(" .. qty .. ")",
+                fontTemplate = "GameFontNormalOutline",
+                color = { 1, 1, 1, 1 },
+            })
+            o.icon:AddChild(o.stack)
+            o.stack.frame:SetPoint("BOTTOMRIGHT", o.icon.frame, "BOTTOMRIGHT", -2, 2)
+        end
+    end
+
+    -- === Grey out if stock is 0 ===
+    if isOutOfStock then
+        -- Grey out the icon
+        if o.icon.icon and o.icon.icon.SetVertexColor then
+            o.icon.icon:SetVertexColor(0.4, 0.4, 0.4, 0.6)
+        end
+        o.icon.frame:SetScript("OnMouseUp", function() end)  -- Disable click
     end
 
     -- === Texts (name + cost) ===
@@ -241,6 +270,39 @@ function ShopItem:New(name, opts)
     textGroup:Add(o.cost)
 
     return o
+end
+
+--- Update shop inventory stock for a purchased item
+---@param npcGuid string -- NPC GUID
+---@param itemId string -- Item ID purchased
+---@param delta number -- Change in quantity (negative for purchases)
+---@param profile CharacterProfile -- Player's profile
+function ShopItem:_UpdateShopStock(npcGuid, itemId, delta, profile)
+    if not npcGuid or not itemId or not profile then
+        return
+    end
+    
+    -- Get the stored inventory
+    local storedItems = profile:GetStoredShopInventory(npcGuid)
+    if not storedItems or #storedItems == 0 then
+        return
+    end
+    
+    -- Find and update the item stack
+    for _, item in ipairs(storedItems) do
+        if item.id == itemId then
+            item.stack = math.max(0, (item.stack or 1) + delta)
+            break
+        end
+    end
+    
+    -- Re-store the updated inventory
+    profile:StoreShopInventory(npcGuid, storedItems)
+    RPE.Profile.DB.SaveProfile(profile)
+    
+    if RPE.Debug then
+        RPE.Debug:Internal(("[ShopItem] Updated stock for %s: delta=%d"):format(itemId, delta))
+    end
 end
 
 return ShopItem

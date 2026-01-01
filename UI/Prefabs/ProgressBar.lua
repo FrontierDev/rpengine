@@ -230,10 +230,6 @@ function ProgressBar:SetStyle(style)
     -- Handle team colors: "team1" -> look up palette "team1"
     if key:match("^team%d+$") then
         local r,g,b,a = C.Get(key)
-        if RPE and RPE.Debug and RPE.Debug.Internal then
-            RPE.Debug:Internal(string.format("[ProgressBar:SetStyle] Looking up '%s': r=%s, g=%s, b=%s, a=%s", 
-                key, tostring(r), tostring(g), tostring(b), tostring(a)))
-        end
         if r ~= nil then
             self.fill:SetColorTexture(r, g, b, a or 1)
             return
@@ -243,10 +239,6 @@ function ProgressBar:SetStyle(style)
     end
     
     local r,g,b,a = C.Get(key)
-    if RPE and RPE.Debug and RPE.Debug.Internal then
-        RPE.Debug:Internal(string.format("[ProgressBar:SetStyle] Setting '%s': r=%s, g=%s, b=%s, a=%s", 
-            key, tostring(r), tostring(g), tostring(b), tostring(a)))
-    end
     self.fill:SetColorTexture(r, g, b, a or 1)
 end
 

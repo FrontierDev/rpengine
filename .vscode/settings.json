@@ -65,7 +65,8 @@
         "ChatFrame_OpenChat",
         "UIDropDownMenu_SetAnchor",
         "UIDropDownMenu_GetSelectedValue",
-        "ChatFrame_RemoveChannel"
+        "ChatFrame_RemoveChannel",
+        "ReloadUI"
     ],
     "Lua.diagnostics.disable": [
         "assign-type-mismatch"

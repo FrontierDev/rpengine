@@ -501,12 +501,21 @@ function Resources:Refund(costs, spell, profile)
     profile = profile or RPE.Profile.DB.GetOrCreateActive()
     local refresh = false
     for _, c in ipairs(costs or {}) do
-        if c.refundOnInterrupt then
+        -- Refund costs that were spent during onStart (most cast costs)
+        -- These should be refunded when a cast is interrupted
+        if not c.when or c.when == "onStart" then
             local amt = evalCostAmount(spell, c, profile)
             local key = string.upper(c.resource)
             local stat = profile and profile.GetStat and profile:GetStat(key)
             local max = stat and stat:GetMaxValue(profile) or 0
+            local prev = self.pool[key] or 0
             self.pool[key] = math.min(max, (self.pool[key] or 0) + amt)
+            
+            if RPE and RPE.Debug and RPE.Debug.Internal then
+                RPE.Debug:Internal(("[Resources:Refund] Refunded %d %s on interrupt: %d → %d"):format(
+                    amt, key, prev, self.pool[key]))
+            end
+            
             refresh = true
         end
     end

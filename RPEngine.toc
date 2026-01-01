@@ -86,6 +86,8 @@ Core/NPCRegistry.lua
 Core/Language.lua
 Core/Location.lua
 Core/HarvestNode.lua
+Core/Extract.lua
+Core/Movement.lua
 
 ## Core: LFRP
 Core/LFRP/PinManager.lua

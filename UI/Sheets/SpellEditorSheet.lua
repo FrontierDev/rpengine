@@ -226,6 +226,49 @@ local _SCHOOLS          = { "Physical","Fire","Frost","Arcane","Shadow","Nature"
 local _SUMMON_TYPES     = { "None", "Pet", "Totem" }
 local function _trim(s) return (tostring(s or ""):gsub("^%s+",""):gsub("%s+$","")) end
 
+local function _titleCase(s)
+    if type(s) ~= "string" or s == "" then return s end
+    return s:sub(1, 1):upper() .. s:sub(2):lower()
+end
+
+local function _normalizeGroups(groups)
+    if type(groups) ~= "table" then return groups end
+    
+    local normalized = {}
+    for _, group in ipairs(groups) do
+        local newGroup = {}
+        for k, v in pairs(group) do
+            if k == "actions" and type(v) == "table" then
+                local newActions = {}
+                for _, action in ipairs(v) do
+                    local newAction = {}
+                    for ak, av in pairs(action) do
+                        if ak == "args" and type(av) == "table" then
+                            local newArgs = {}
+                            for argK, argV in pairs(av) do
+                                if argK == "school" and type(argV) == "string" then
+                                    newArgs[argK] = _titleCase(argV)
+                                else
+                                    newArgs[argK] = argV
+                                end
+                            end
+                            newAction[ak] = newArgs
+                        else
+                            newAction[ak] = av
+                        end
+                    end
+                    table.insert(newActions, newAction)
+                end
+                newGroup[k] = newActions
+            else
+                newGroup[k] = v
+            end
+        end
+        table.insert(normalized, newGroup)
+    end
+    return normalized
+end
+
 local function _buildSpellSchema(entryId, spellData, isEdit)
     spellData = spellData or {}
 
@@ -425,7 +468,7 @@ local function _saveSpellValues(ds, targetId, v, isEdit, oldId)
     local targeter = { default = v.targeterDefault or "PRECAST" }
 
     -- Groups (from prefab)
-    local groups = (type(v.groups) == "table" and v.groups) or nil
+    local groups = (type(v.groups) == "table" and _normalizeGroups(v.groups)) or nil
 
     -- Requirements (from comma-separated input)
     local requirements = nil

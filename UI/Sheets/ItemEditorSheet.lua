@@ -273,6 +273,7 @@ local function _buildItemSchema(entryId, itemData, isEdit)
                         id = "spellId",
                         label = "Spell ID",
                         type = "lookup",
+                        lookupTypes = "spells",
                         pattern = "^[0-9a-zA-Z-]+$",
                         tooltip = "Spell ID or spell key (numeric or string)",
                         default = itemData.spellId or "",
@@ -770,7 +771,34 @@ function ItemEditorSheet:BuildUI(opts)
                                     if not profile then
                                         return
                                     end
-                                    profile:AddItem(entry.id, 1)
+                                    
+                                    -- Get full item data to check if stackable
+                                    local itemData = self:GetOrReconstructItem(entry.id)
+                                    local isStackable = itemData and itemData.stackable or false
+                                    
+                                    if isStackable then
+                                        -- Prompt for quantity
+                                        local Popup = RPE_UI and RPE_UI.Prefabs and RPE_UI.Prefabs.Popup
+                                        if Popup then
+                                            Popup.Prompt(
+                                                "Add to Inventory",
+                                                "How many " .. (entry.name or entry.id) .. " to add?",
+                                                "1",
+                                                function(text)
+                                                    local qty = tonumber(text)
+                                                    if qty and qty > 0 and math.floor(qty) == qty then
+                                                        profile:AddItem(entry.id, qty)
+                                                    end
+                                                end,
+                                                nil
+                                            )
+                                        else
+                                            profile:AddItem(entry.id, 1)
+                                        end
+                                    else
+                                        -- Non-stackable: just add 1
+                                        profile:AddItem(entry.id, 1)
+                                    end
                                 end
                             end
                             UIDropDownMenu_AddButton(add, level)

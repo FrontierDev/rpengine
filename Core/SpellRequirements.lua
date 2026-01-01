@@ -246,6 +246,50 @@ local function check_no_summon(ctx, reqStr)
     return true
 end
 
+--- Check if the caster is disengaged (not in combat).
+--- Format: "disengaged"
+---@param ctx table - context with caster unit info
+---@param reqStr string - requirement string
+---@return boolean ok, string? reason, string? code
+local function check_disengaged(ctx, reqStr)
+    -- Get the active event
+    local ev = RPE and RPE.Core and RPE.Core.ActiveEvent
+    if not ev then
+        return false, "active event not available", "NO_EVENT"
+    end
+    
+    -- Get the local player's unit ID
+    local casterId = nil
+    if ev.GetLocalPlayerUnitId and type(ev.GetLocalPlayerUnitId) == "function" then
+        casterId = ev:GetLocalPlayerUnitId()
+    end
+    if not casterId then
+        return false, "caster not identified", "NO_CASTER"
+    end
+    
+    -- Find the caster unit
+    local casterUnit = nil
+    if ev.units then
+        for _, unit in pairs(ev.units) do
+            if unit.id == casterId then
+                casterUnit = unit
+                break
+            end
+        end
+    end
+    
+    if not casterUnit then
+        return false, "caster unit not found", "CASTER_NOT_FOUND"
+    end
+    
+    -- Check if caster is disengaged
+    if casterUnit:IsDisengaged() then
+        return true
+    end
+    
+    return false, "caster is engaged in combat", "ENGAGED"
+end
+
 --- Evaluate a single requirement string.
 ---@param ctx table - context (player unit, equipment, inventory, etc.)
 ---@param reqStr string - requirement string to evaluate
@@ -265,6 +309,8 @@ function SpellRequirements:EvalRequirement(ctx, reqStr)
         return check_inventory(ctx, reqStr)
     elseif reqStr == "hidden" then
         return check_hidden(ctx, reqStr)
+    elseif reqStr == "disengaged" then
+        return check_disengaged(ctx, reqStr)
     elseif reqStr == "nosummoned" then
         return check_no_summon(ctx, reqStr)
     else

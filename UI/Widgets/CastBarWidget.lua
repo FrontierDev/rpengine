@@ -74,12 +74,39 @@ function CastBarWidget:BuildUI()
         icon = 135274,
         hoverDarkenFactor = 0.90,
     })
-    self.icon:SetOnClick(function()
-        if self.currentCast then
-            local ctx = { event = RPE.Core.ActiveEvent, resources = RPE.Core.Resources }
+    self.icon:SetOnClick(function(iconButton, btn)
+        if not self.currentCast then return end
+        
+        -- Right-click to cancel and refund resources
+        if btn == "RightButton" then
+            local event = RPE.Core.ActiveEvent
+            local casterUnit = RPE.Common:FindUnitById(self.currentCast.caster)
+            
+            -- Build context with appropriate resources for the caster
+            local ctx = { event = event }
+            
+            -- If caster is an NPC, create a proxy resources object; otherwise use player resources
+            if casterUnit and casterUnit.isNPC then
+                ctx.resources = {
+                    Refund = function(self, costs)
+                        if not costs then return end
+                        for _, cost in ipairs(costs) do
+                            local resId = cost.resource:lower()
+                            local amt = tonumber(cost.amount) or 0
+                            if casterUnit[resId] then
+                                casterUnit[resId] = casterUnit[resId] + amt
+                            end
+                        end
+                    end,
+                }
+            else
+                ctx.resources = RPE.Core.Resources
+            end
+            
             self.currentCast:Interrupt(ctx, "Cancelled by player")
         end
     end)
+    self.icon:SetTooltip("Right-click to Cancel")
     self.content:Add(self.icon)
 
     -- Cast progress bar
@@ -195,6 +222,12 @@ function CastBarWidget:Interrupt(cast, reason)
     self.bar:SetStyle(self.bar.styles.interrupted)
     self.bar:SetValue(0, 1)
     self:FadeOut(0.8)
+    
+    -- Refresh action bar slots now that cast is cancelled
+    local ActionBarWidget = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+    if ActionBarWidget and ActionBarWidget.RefreshRequirements then
+        ActionBarWidget:RefreshRequirements()
+    end
 end
 
 -- Utility: fade out then hide

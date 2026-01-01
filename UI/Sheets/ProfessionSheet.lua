@@ -55,6 +55,24 @@ local function tipShow(frame, text)
 end
 local function tipHide() if GameTooltip then GameTooltip:Hide() end end
 
+-- Truncate text to a maximum visible width, adding ellipsis if needed
+local function truncateText(text, maxChars)
+    maxChars = maxChars or 25
+    if string.len(text) > maxChars then
+        return string.sub(text, 1, maxChars - 3) .. "..."
+    end
+    return text
+end
+
+-- Create a tooltip showing recipe name and skill level
+local function showRecipeTooltip(frame, recipeName, skillLevel)
+    if not GameTooltip or not frame then return end
+    GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
+    GameTooltip:SetText(recipeName, 1, 1, 1, 1, true)
+    GameTooltip:AddLine("Requires Skill: " .. (skillLevel or 1), 0.7, 0.7, 0.7, 1, true)
+    GameTooltip:Show()
+end
+
 -- ============================================================================
 function ProfessionSheet:BuildUI(opts)
     self.profile = RPE.Profile.DB.GetOrCreateActive()
@@ -423,13 +441,15 @@ function ProfessionSheet:_addCategory(parent, catKey, catTitle, items, prof, kno
             -- Learned recipes: color by skill level
             color = Common.GetRecipeColor and Common:GetRecipeColor(playerSkill, r.skill) or "|cffffffff"
         end
-        local label = string.format("%s%s|r", color, r.name)
+        local truncatedName = truncateText(r.name, 25)
+        local label = string.format("%s%s|r", color, truncatedName)
 
         local rbtn = TextBtn:New(("RPE_PS_Cat_%s_Item_%d"):format(catKey, i), {
             parent = list,
             text = label,
             height = 16,
             noBorder = true,
+            justifyH = "LEFT",
             onClick = function()
                 self:OnSelectRecipe(r)
             end,
@@ -441,6 +461,13 @@ function ProfessionSheet:_addCategory(parent, catKey, catTitle, items, prof, kno
         local tex = f:GetHighlightTexture()
         tex:SetAlpha(0.25)
         tex:SetAllPoints()
+
+        -- Hook tooltip to show full recipe name and skill requirement
+        f:EnableMouse(true)
+        f:SetScript("OnEnter", function()
+            showRecipeTooltip(f, r.name, r.skill)
+        end)
+        f:SetScript("OnLeave", tipHide)
 
         list:Add(rbtn)
     end
@@ -627,10 +654,12 @@ function ProfessionSheet:BuildCraftPanel(recipe)
     if titleRow.frame then titleRow.frame:SetHeight(TITLE_H) end
 
     local outIcon, outName, outItemDef
+    local recipeName = ""
     if r then
         local outItem   = r:GetOutputItem()
         outIcon         = outItem and outItem.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
         outName         = outItem and outItem.name or r.outputItemId
+        recipeName      = r.name
         -- Use outputItemId directly for registry lookup
         outItemDef      = (ItemRegistry and r.outputItemId) and ItemRegistry:Get(r.outputItemId) or nil
         local qualKey   = r.quality or "common"
@@ -645,11 +674,13 @@ function ProfessionSheet:BuildCraftPanel(recipe)
         parent = titleRow, width = 20, height = 20, icon = outIcon, noBorder = true,
     }); titleRow:Add(outBtn)
 
+    local displayText = r and truncateText(r.name, 25) or "Select a recipe"
     local outText = Text:New("RPE_PS_Craft_OutName", {
-        parent = titleRow, text = outName, fontTemplate = "GameFontNormalLarge", justifyH = "LEFT",
+        parent = titleRow, text = displayText, fontTemplate = "GameFontNormal", justifyH = "LEFT",
     }); titleRow:Add(outText)
 
-    -- Hook tooltip for the output icon & title (if item is known)
+    -- Hook tooltip for the output icon & title
+    -- Show item tooltip if available, otherwise show recipe tooltip with skill level
     if outItemDef and outItemDef.ShowTooltip and Common and Common.ShowTooltip then
         outBtn.frame:EnableMouse(true)
         outBtn.frame:SetScript("OnEnter", function()
@@ -668,12 +699,19 @@ function ProfessionSheet:BuildCraftPanel(recipe)
         outText.frame:SetScript("OnLeave", function()
             if Common.HideTooltip then Common:HideTooltip() end
         end)
+    elseif r then
+        -- Show recipe tooltip if item tooltip not available
+        outText.frame:EnableMouse(true)
+        outText.frame:SetScript("OnEnter", function()
+            showRecipeTooltip(outText.frame, recipeName, r.skill)
+        end)
+        outText.frame:SetScript("OnLeave", tipHide)
     end
 
     -- SCROLLVIEW (middle content only)
     local frameW   = (self.craftPanel and self.craftPanel.frame and self.craftPanel.frame:GetWidth()) or 0
     local visibleW = (frameW > 0 and frameW) or (self._paneW + 40 - SCROLLBAR_W)
-    local visibleH = math.max(80, self._paneH - TITLE_H - ACTION_H - GAP_TOP - GAP_BOT)
+    local visibleH = math.max(80, self._paneH - TITLE_H - ACTION_H - GAP_TOP - GAP_BOT) + 20
 
     local scrollPane = Panel:New("RPE_PS_Craft_ScrollPane", {
         parent   = self.craftPanel,

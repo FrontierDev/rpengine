@@ -340,6 +340,11 @@ function ActionBarWidget:RefreshRequirements()
     local AB = RPE.Core.Windows.ActionBarWidget
     if not (SR and Requirements) then return end
     
+    -- Refresh player's max movement speed
+    if RPE.Core.Movement and RPE.Core.Movement.RefreshMaxDistance then
+        RPE.Core.Movement:RefreshMaxDistance()
+    end
+    
     -- Check if caster is dead
     local casterIsDead = false
     local event = RPE.Core.ActiveEvent
@@ -536,6 +541,18 @@ function ActionBarWidget:BuildUI(opts)
                         ProfileDB.SaveProfile(profile)
                     end
                 end
+            end
+        end)
+        
+        -- Hook Show/Hide to also toggle the movement bar (for RPE_UI.Common:Toggle calls)
+        rootFrame:HookScript("OnShow", function()
+            if self.movementBar and self.movementBar.Show then
+                self.movementBar:Show()
+            end
+        end)
+        rootFrame:HookScript("OnHide", function()
+            if self.movementBar and self.movementBar.Hide then
+                self.movementBar:Hide()
             end
         end)
     end
@@ -756,6 +773,35 @@ function ActionBarWidget:BuildUI(opts)
     -- Styled chrome behind the bar
     self:_EnsureChrome()
 
+    -- Movement bar (underneath action bar)
+    local ProgressBar = RPE_UI.Prefabs.ProgressBar
+    if ProgressBar and RPE.ActiveRules:Get("use_movement", false) then
+        self.movementBar = ProgressBar:New("RPE_ActionBar_MovementBar", {
+            parent = nil,  -- Parent to chrome after it's created
+            width = self.numSlots * self.slotSize + (self.numSlots - 1) * self.spacing,
+            height = 6,
+            point = "TOP",
+            relativeTo = self.chrome,
+            relativePoint = "BOTTOM",
+            x = 0,
+            y = -12,
+            style = "progress_speed",
+            showLabel = true,
+            text = "Movement",
+            animSpeed = 15,
+            barColor = { r = 1, g = 0.6, b = 0 },  -- Yellow like flavor text
+        })
+        
+        -- Wire up the movement bar to the Movement system
+        if RPE.Core.Movement then
+            RPE.Core.Movement.OnDistanceUpdate = function(_, remaining, maximum)
+                if self.movementBar and self.movementBar.SetValue then
+                    self.movementBar:SetValue(remaining, maximum)
+                end
+            end
+        end
+    end
+
     -- Data caches
     self.slots          = {}
     self.actions        = {}
@@ -812,6 +858,8 @@ function ActionBarWidget:Layout()
     local padX, padY = self.padX, self.padY
     self.chrome:ClearAllPoints()
     self.chrome:SetPoint("CENTER", self.barHost.frame, "CENTER", 0, 0)
+    
+    -- Calculate total height including movement bar (if present)
     self.chrome:SetSize(totalW + padX * 2, totalH + padY * 2)
 end
 
@@ -903,6 +951,11 @@ function ActionBarWidget:SetTemporaryActions(actions, label, tintColor, controll
 
     -- Set new temporary actions
     self:SetActions(actions or {})
+    
+    -- Hide movement bar in temporary mode
+    if self.movementBar and self.movementBar.Hide then
+        self.movementBar:Hide()
+    end
     
     -- Now restore cooldown display after actions are set
     if self._controlledUnitId then
@@ -1109,6 +1162,11 @@ function ActionBarWidget:RestoreActions()
         self._originalActions = nil
     end
 
+    -- Show movement bar when exiting temporary mode
+    if self.movementBar and self.movementBar.Show then
+        self.movementBar:Show()
+    end
+
     -- Manually restore cooldowns from the Cooldowns tracker
     if playerNumericId and CD then
         self:RestoreCooldowns(tostring(playerNumericId), (event and event.turn) or 0)
@@ -1199,10 +1257,13 @@ end
 
 function ActionBarWidget:Show()
     if self.chrome then FadeInFrame(self.chrome, 0.2) end
+
     if self.root and self.root.Show then self.root:Show() end
+    if self.movementBar and self.movementBar.Show then self.movementBar:Show() end
 end
 
 function ActionBarWidget:Hide()
+    if self.movementBar and self.movementBar.Hide then self.movementBar:Hide() end
     if self.root and self.root.Hide then self.root:Hide() end
 end
 

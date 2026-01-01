@@ -374,6 +374,15 @@ function ShopWindow:Refresh()
     self.itemGroup.children = {}
 
     local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+    
+    -- Reload stored inventory if we have an NPC GUID (for finite-stock shops)
+    if self.npcGuid and profile then
+        local storedItems = profile:GetStoredShopInventory(self.npcGuid)
+        if storedItems and #storedItems > 0 then
+            self.items = storedItems
+        end
+    end
+    
     local playerCopper = profile and profile:GetCurrency("copper") or 0
 
     -- Determine items to display based on mode
@@ -534,10 +543,35 @@ function ShopWindow:AddItems(opts)
     if type(maxStock) ~= "number" or maxStock ~= maxStock or maxStock <= 0 then
         maxStock = math.huge
     end
+    
+    -- Check for stored inventory if we have a finite-stock shop and an NPC GUID
+    if self.npcGuid and maxStock ~= math.huge then
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+        if profile then
+            local storedItems = profile:GetStoredShopInventory(self.npcGuid)
+            if storedItems and #storedItems > 0 then
+                -- Use the stored inventory
+                self.items = storedItems
+                if RPE.Debug then
+                    local itemIds = {}
+                    for _, item in ipairs(storedItems) do
+                        table.insert(itemIds, item.id)
+                    end
+                    RPE.Debug:Internal(("[ShopWindow] Loaded %d stored items for NPC %s: %s"):format(#storedItems, self.npcGuid, table.concat(itemIds, ", ")))
+                end
+                self.page = 1
+                self:Refresh()
+                return
+            end
+        end
+    end
+    
     local matchAll  = opts.matchAll == true
     local seen      = {}
-    local added     = 0
+    local maxItems  = 12  -- Limit to 12 random items
 
+    -- First pass: collect all matching items
+    local candidates = {}
     local reg = ItemReg and ItemReg:All() or {}
     for id, item in pairs(reg) do
         if seen[id] then
@@ -579,24 +613,61 @@ function ShopWindow:AddItems(opts)
             if include then
                 local price = (item.GetPrice and item:GetPrice()) or math.random(1000, 100000)
 
-                local entry = {
+                table.insert(candidates, {
                     id = item.id,
                     price = price,
-                }
-
-                if maxStock ~= math.huge then
-                    entry.stack = (item.stackable and math.random(1, item.maxStack or 5)) or 1
-                end
-
-                table.insert(self.items, entry)
+                    stackable = item.stackable,
+                    maxStack = item.maxStack,
+                })
                 seen[id] = true
-                added = added + 1
-                if added >= maxStock then
-                    break
-                end
             end
         end
     end
+
+    -- Second pass: randomly select up to maxItems
+    local itemsToAdd = math.min(maxItems, #candidates)
+    
+    -- Fisher-Yates shuffle to randomly select items
+    for i = 1, itemsToAdd do
+        local randomIdx = math.random(i, #candidates)
+        candidates[i], candidates[randomIdx] = candidates[randomIdx], candidates[i]
+        
+        local item = candidates[i]
+        local entry = {
+            id = item.id,
+            price = item.price,
+        }
+
+        -- maxStock is the stack size for each item (not a limit on count)
+        if maxStock ~= math.huge then
+            entry.stack = math.random(1, maxStock)
+        else
+            -- If infinite, set to math.huge for infinite stock
+            entry.stack = math.huge
+        end
+
+        table.insert(self.items, entry)
+    end
+    
+    -- Store inventory if this is a finite-stock shop with an NPC GUID
+    if self.npcGuid and maxStock ~= math.huge then
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+        if profile then
+            profile:StoreShopInventory(self.npcGuid, self.items)
+            RPE.Profile.DB.SaveProfile(profile)
+            if RPE.Debug then
+                local itemIds = {}
+                for _, item in ipairs(self.items) do
+                    table.insert(itemIds, item.id)
+                end
+                RPE.Debug:Internal(("[ShopWindow] Generated and stored %d items for NPC %s: %s"):format(#self.items, self.npcGuid, table.concat(itemIds, ", ")))
+            end
+        end
+    end
+    
+    -- Reset to page 1 and refresh the UI
+    self.page = 1
+    self:Refresh()
 end
 
 
@@ -645,8 +716,9 @@ end
 --------------------------------------------------------------------------------
 -- == INSTANCE ==
 --------------------------------------------------------------------------------
-function ShopWindow.New()
+function ShopWindow.New(npcGuid)
     local self = setmetatable({}, ShopWindow)
+    self.npcGuid = npcGuid or nil  -- Store the NPC GUID for inventory persistence
     self:BuildUI()
     return self
 end

@@ -494,6 +494,237 @@ RPE.Data.DefaultClassic.SPELLS_COMMON = {
             }
         }
     },
+
+    -- Explosive (Raid Marker AoE Spell)
+    ["spell-oCSExplosive"] = {
+        id = "spell-oCSExplosive",
+        name = "Explosive",
+        description = "Deals $[1].amount$ $[1].school$ damage to the target and their adjacent allies. Has a 5% chance to crit, but a very high chance to hit.",
+        icon = 135826,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = true,
+        targeter = { default = "PRECAST" },
+        requirements = {
+        },
+        tags = {
+            [1] = "consumable"
+        },
+        costs = {
+            [1] = {
+                resource = "BONUS_ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 3,
+            starts = "onResolve",
+            sharedGroup = "explosives"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "DAMAGE",
+                        args = {
+                            threat = "1",
+                            perRank = "4",
+                            school = "Fire",
+                            amount = "(1d2 * 10)",
+                            targets = { targeter = "RAID_MARKER", maxTargets = 10, flags = "E" },
+                            requiresHit = true
+                        },
+                        hitThreshold = {
+                            [1] = "$stat.DEFENCE$",
+                            [2] = "$stat.AC$",
+                            [3] = "$stat.FIRE_RESIST$"
+                        },
+                        critMult = "2",
+                        critModifier = "",
+                        hitModifier = "10"
+                    },
+                },
+                phase = "onResolve"
+            }
+        }
+    },    
+
+    -- Bandage (Heal, 2 turn cast)
+    ["spell-oCSBandage"] = {
+        id = "spell-oCSBandage",
+        name = "Bandage",
+        description = "Heals you for $[1].amount$ health, based on your maximum health. Cannot be used in combat.",
+        icon = 133683,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {
+            [1] = "disengaged"
+        },
+        tags = {
+            [1] = "consumable",
+            [2] = "heal"
+        },
+        costs = {
+            [1] = {
+                resource = "ACTION",
+                amount = "1",
+                when = "onStart",
+                perRank = "",
+                refundOnInterrupt = false
+            }
+        },
+        cast = {
+            type = "CAST_TURNS",
+            turns = 2,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 3,
+            starts = "onResolve",
+            sharedGroup = "bandage"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "HEAL",
+                        args = {
+                            threat = "0.5",
+                            perRank = "math.ceil($stat.MAX_HEALTH$ * 0.025)",
+                            amount = "math.ceil($stat.MAX_HEALTH$ * 0.10)",
+                            targets = { targeter = "CASTER" },    
+                            requiresHit = false
+                        },
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    -- Health Food Buff
+    ["spell-oCSFoodHP"] = {
+        id = "spell-oCSFoodHP",
+        name = "Health Food",
+        description = "Increases maximum health by $[1].amount$%. Lasts until logout.",
+        icon = 136000,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {
+        },
+        tags = {
+            [1] = "consumable",
+            [2] = "buff"
+        },
+        costs = {
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 10,
+            starts = "onResolve",
+            sharedGroup = "food"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCAFoodHealth",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    },
+
+    -- Mana Food Buff
+    ["spell-oCSFoodMana"] = {
+        id = "spell-oCSFoodMana",
+        name = "Mana Food",
+        description = "Increases maximum mana by $[1].amount$%. Lasts until logout.",
+        icon = 136000,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {
+        },
+        tags = {
+            [1] = "consumable",
+            [2] = "buff"
+        },
+        costs = {
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 10,
+            starts = "onResolve",
+            sharedGroup = "food"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCAFoodMana",
+                            amount = 1,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    }
 }
 
 RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
@@ -620,7 +851,7 @@ RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
     ["spell-oCCStrBuff"] = {
         id = "spell-oCCStrBuff",
         name = "Strength",
-        description = "Increases Strength by $[1].amount$.",
+        description = "Increases your Strength score by $[1].amount$.",
         icon = 134938,
         npcOnly = false,
         alwaysKnown = false,
@@ -677,7 +908,7 @@ RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
     ["spell-oCCDexBuff"] = {
         id = "spell-oCCDexBuff",
         name = "Agility",
-        description = "Increases Agility by $[1].amount$.",
+        description = "Increases your Dexterity score by $[1].amount$.",
         icon = 134938,
         npcOnly = false,
         alwaysKnown = false,
@@ -734,7 +965,7 @@ RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
     ["spell-oCCStaBuff"] = {
         id = "spell-oCCStaBuff",
         name = "Stamina",
-        description = "Increases Stamina by $[1].amount$.",
+        description = "Increases your Constitution score by $[1].amount$.",
         icon = 134943,
         npcOnly = false,
         alwaysKnown = false,
@@ -791,7 +1022,7 @@ RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
     ["spell-oCCIntBuff"] = {
         id = "spell-oCCIntBuff",
         name = "Intellect",
-        description = "Increases Intellect by $[1].amount$.",
+        description = "Increases your Intelligence score by $[1].amount$.",
         icon = 134937,
         npcOnly = false,
         alwaysKnown = false,
@@ -848,7 +1079,7 @@ RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
     ["spell-oCCSpiBuff"] = {
         id = "spell-oCCSpiBuff",
         name = "Spirit",
-        description = "Increases Spirit by $[1].amount$.",
+        description = "Increases your Wisdom score by $[1].amount$.",
         icon = 134937,
         npcOnly = false,
         alwaysKnown = false,
@@ -1019,7 +1250,7 @@ RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
     ["spell-oCCElixirDex"] = {
         id = "spell-oCCElixirDex",
         name = "Elixir of Agility",
-        description = "Increases Agility by $[1].amount$.",
+        description = "Increases your Dexterity score by $[1].amount$.",
         icon = 134873,
         npcOnly = false,
         alwaysKnown = false,
@@ -1076,7 +1307,7 @@ RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
     ["spell-oCCElixirCon"] = {
         id = "spell-oCCElixirCon",
         name = "Elixir of Fortitude",
-        description = "Increases Fortitude by $[1].amount$.",
+        description = "Increases your Constitution score by $[1].amount$.",
         icon = 134824,
         npcOnly = false,
         alwaysKnown = false,
@@ -1133,7 +1364,7 @@ RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
     ["spell-oCCElixirInt"] = {
         id = "spell-oCCElixirInt",
         name = "Elixir of Intellect",
-        description = "Increases Intellect by $[1].amount$.",
+        description = "Increases your Intelligence score by $[1].amount$.",
         icon = 134866,
         npcOnly = false,
         alwaysKnown = false,
@@ -1190,7 +1421,7 @@ RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
     ["spell-oCCElixirWis"] = {
         id = "spell-oCCElixirWis",
         name = "Elixir of Spirit",
-        description = "Increases Spirit by $[1].amount$.",
+        description = "Increases your Wisdom score by $[1].amount$.",
         icon = 134859,
         npcOnly = false,
         alwaysKnown = false,
@@ -1243,6 +1474,57 @@ RPE.Data.DefaultClassic.SPELLS_CONSUMABLE = {
             }
         }
     },
+
+    ["spell-oCCWeaponAP"] = {
+        id = "spell-oCCWeaponAP",
+        name = "Sharpening Stone",
+        description = "Increases your melee attack power by $[1].amount$%.",
+        icon = 135248,
+        npcOnly = false,
+        alwaysKnown = false,
+        unlockLevel = 1,
+        rankInterval = 1,
+        canCrit = false,
+        targeter = { default = "CASTER" },
+        requirements = {},
+        tags = {
+            [1] = "consumable",
+            [2] = "buff",
+        },
+        costs = {
+        },
+        cast = {
+            type = "INSTANT",
+            turns = 0,
+            tickIntervalTurns = 1,
+            concentration = false,
+            moveAllowed = false
+        },
+        cooldown = {
+            turns = 10,
+            starts = "onResolve",
+            sharedGroup = "bs_stone"
+        },
+        groups = {
+            [1] = {
+                requirements = {},
+                logic = "ALL",
+                actions = {
+                    [1] = {
+                        key = "APPLY_AURA",
+                        args = {
+                            auraId = "aura-oCCWeaponAP",
+                            amount = 2,
+                            perRank = 2,
+                            targets = { targeter = "CASTER" }
+                        }
+                    }
+                },
+                phase = "onResolve"
+            }
+        }
+    }
+
 }
 
 RPE.Data.DefaultClassic.SPELLS_RACIAL = {
@@ -13330,8 +13612,8 @@ RPE.Data.DefaultClassic.SPELLS_MAGE = {
             }
         },
         cast = {
-            type = "INSTANT",
-            turns = 0,
+            type = "CAST_TURNS",
+            turns = 1,
             tickIntervalTurns = 1,
             concentration = false,
             moveAllowed = false

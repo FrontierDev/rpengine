@@ -509,15 +509,15 @@ function DatasetWindow:BuildUI()
     self.headerName.frame:ClearAllPoints()
     self.headerName.frame:SetPoint("BOTTOMLEFT", self.header.frame, "BOTTOMLEFT", HEADER_PAD_X, 6)
 
-    -- Header: buttons (right) - Load | Save | New Dataset
-    local btnWidth = 110
-    local pad = 6
+    -- Header: buttons (right) - Edit | Save | New | Sync | Activate | Delete
+    local btnWidth = 65
+    local pad = 4
 
     self.btnNew = TextBtn:New("RPE_DataManager_BtnNewDataset", {
         parent  = self.header,
         width   = btnWidth,
         height  = BUTTON_HEIGHT,
-        text    = "New Dataset",
+        text    = "New",
         noBorder = true,
         onClick = function()
             if not Popup or not Popup.Prompt then
@@ -552,11 +552,11 @@ function DatasetWindow:BuildUI()
         end,
     })
     self.btnNew.frame:ClearAllPoints()
-    self.btnNew.frame:SetPoint("RIGHT", self.header.frame, "RIGHT", -HEADER_PAD_X, 0)
+    self.btnNew.frame:SetPoint("TOP", self.header.frame, "TOP", -147, -8)
 
     self.btnSave = TextBtn:New("RPE_DataManager_BtnSave", {
         parent  = self.header,
-        width   = 72,
+        width   = 60,
         height  = BUTTON_HEIGHT,
         text    = "Save",
         noBorder = true,
@@ -590,13 +590,13 @@ function DatasetWindow:BuildUI()
         end,
     })
     self.btnSave.frame:ClearAllPoints()
-    self.btnSave.frame:SetPoint("RIGHT", self.btnNew.frame, "LEFT", -pad, 0)
+    self.btnSave.frame:SetPoint("LEFT", self.btnNew.frame, "RIGHT", -pad, 0)
 
     self.btnLoad = TextBtn:New("RPE_DataManager_BtnLoad", {
         parent  = self.header,
-        width   = 72,
+        width   = 60,
         height  = BUTTON_HEIGHT,
-        text    = "Load",
+        text    = "Edit",
         noBorder = true,
         onClick = function(btn)
             local DB = _DB()
@@ -718,11 +718,11 @@ function DatasetWindow:BuildUI()
         end,
     })
     self.btnLoad.frame:ClearAllPoints()
-    self.btnLoad.frame:SetPoint("RIGHT", self.btnSave.frame, "LEFT", -pad, 0)
+    self.btnLoad.frame:SetPoint("LEFT", self.btnSave.frame, "RIGHT", -pad, 0)
 
     self.btnActivate = TextBtn:New("RPE_DataManager_BtnActivate", {
         parent  = self.header,
-        width   = 90,
+        width   = 65,
         height  = BUTTON_HEIGHT,
         text    = "Activate",
         noBorder = true,
@@ -733,12 +733,12 @@ function DatasetWindow:BuildUI()
         end,
     })
     self.btnActivate.frame:ClearAllPoints()
-    self.btnActivate.frame:SetPoint("RIGHT", self.btnLoad.frame, "LEFT", -pad, 0)
+    self.btnActivate.frame:SetPoint("LEFT", self.btnLoad.frame, "RIGHT", -pad, 0)
 
     -- Delete button
     self.btnDelete = TextBtn:New("RPE_DataManager_BtnDelete", {
         parent  = self.header,
-        width   = 72,
+        width   = 60,
         height  = BUTTON_HEIGHT,
         text    = "Delete",
         noBorder = true,
@@ -749,7 +749,33 @@ function DatasetWindow:BuildUI()
         end,
     })
     self.btnDelete.frame:ClearAllPoints()
-    self.btnDelete.frame:SetPoint("RIGHT", self.btnActivate.frame, "LEFT", -pad, 0)
+    self.btnDelete.frame:SetPoint("LEFT", self.btnActivate.frame, "RIGHT", -pad, 0)
+
+    -- Sync button
+    self.btnSync = TextBtn:New("RPE_DataManager_BtnSync", {
+        parent  = self.header,
+        width   = 60,
+        height  = BUTTON_HEIGHT,
+        text    = "Sync",
+        noBorder = true,
+        onClick = function()
+            local name = self.editingName
+            if not name or name == "" then _dprint("No dataset selected to sync."); return end
+            local DB = _DB()
+            if not DB then _dprint("DatasetDB missing."); return end
+            local ds = DB.GetByName and DB.GetByName(name)
+            if not ds then _dprint("Dataset not found: " .. tostring(name)); return end
+            
+            local Broadcast = RPE and RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast
+            if not Broadcast then _dprint("Broadcast module not available."); return end
+            
+            if not Broadcast._StreamDataset then _dprint("Broadcast._StreamDataset not available."); return end
+            Broadcast:_StreamDataset(ds)
+            _dprint("Syncing dataset: " .. name)
+        end,
+    })
+    self.btnSync.frame:ClearAllPoints()
+    self.btnSync.frame:SetPoint("LEFT", self.btnDelete.frame, "RIGHT", -pad, 0)
 
     -- Bottom border
     self.bottomBorder = HBorder:New("RPE_DataManager_BottomBorder", {

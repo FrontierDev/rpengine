@@ -259,6 +259,37 @@ SlashCmdList["RPE"] = function(msg)
         prof:ClearWindowPositions()
         RPE.Profile.DB.SaveProfile(prof)
         RPE.Debug:Print("UI positions reset. Windows will return to default positions on next reload.")
+    elseif arg == "currency" then
+        -- Only allow developers to use this command
+        if not RPE.IsCurrentPlayerDeveloper() then
+            RPE.Debug:Warning("Only RPE developers can use the currency command.")
+            return
+        end
+        
+        -- Parse currency ID and amount from rest
+        local currencyId, amountStr = rest:match("^(%S+)%s+(%S+)$")
+        if not currencyId or not amountStr then
+            RPE.Debug:Error("Usage: /rpe currency <id> <amount>")
+            return
+        end
+        
+        -- Validate amount is a number
+        local amount = tonumber(amountStr)
+        if not amount then
+            RPE.Debug:Error("Amount must be a number.")
+            return
+        end
+        
+        -- Get active profile
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
+        if not profile then
+            RPE.Debug:Error("Could not retrieve active profile.")
+            return
+        end
+        
+        -- Add currency to profile
+        profile:AddCurrency(currencyId, amount)
+        RPE.Debug:Print(string.format("Added %d %s to profile.", amount, currencyId))
     else
     end
 end

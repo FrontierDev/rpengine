@@ -176,6 +176,424 @@ function EditorTable:SetColumnWidths(keyW, valueW)
 end
 
 -- =========================
+-- Lookup / Search functionality
+-- =========================
+
+--- Show lookup menu for selecting items/recipes/spells/auras/stats from datasets
+--- @param inputField any - The input element to populate with selected ID
+--- @param parentFrame any - The frame to anchor the menu to
+--- @param allowedTypes string|table|nil - "items", "recipes", "spells", "auras", "stats", or nil for all
+--- @param onSelect fun(id: string)|nil - Optional callback after selection
+function EditorTable:ShowLookupMenu(inputField, parentFrame, allowedTypes, onSelect)
+    if not (inputField and parentFrame) then return end
+    
+    -- Normalize allowedTypes to table
+    local typeFilter = {}
+    if allowedTypes then
+        if type(allowedTypes) == "string" then
+            typeFilter[allowedTypes] = true
+        elseif type(allowedTypes) == "table" then
+            for _, t in ipairs(allowedTypes) do
+                typeFilter[t] = true
+            end
+        end
+    else
+        -- If nil, allow all types
+        typeFilter.items = true
+        typeFilter.recipes = true
+        typeFilter.spells = true
+        typeFilter.auras = true
+        typeFilter.stats = true
+    end
+    
+    local Common = _G.RPE_UI and _G.RPE_UI.Common
+    if not (Common and Common.ContextMenu) then return end
+    
+    Common:ContextMenu(parentFrame or UIParent, function(level)
+        if level == 1 then
+            -- Level 1: Show datasets
+            local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+            if not DatasetDB then return end
+            
+            local allNames = DatasetDB.ListNames and DatasetDB.ListNames()
+            if not allNames or #allNames == 0 then
+                local info = UIDropDownMenu_CreateInfo()
+                info.isTitle = true
+                info.notCheckable = true
+                info.text = "No datasets available"
+                UIDropDownMenu_AddButton(info, level)
+                return
+            end
+            
+            table.sort(allNames)
+            for _, dsName in ipairs(allNames) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.notCheckable = true
+                info.text = dsName
+                info.hasArrow = true
+                info.value = dsName
+                UIDropDownMenu_AddButton(info, level)
+            end
+            return
+        end
+        
+        if level == 2 then
+            -- Level 2: Show available types based on filter
+            local datasetName = UIDROPDOWNMENU_MENU_VALUE
+            if not datasetName then return end
+            
+            local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+            if not DatasetDB then return end
+            
+            local sourceDs = DatasetDB.GetByName and DatasetDB.GetByName(datasetName)
+            if not sourceDs then return end
+            
+            -- Check availability based on filter
+            local hasItems = typeFilter.items and sourceDs.items and next(sourceDs.items)
+            local hasRecipes = typeFilter.recipes and (
+                (sourceDs.recipes and next(sourceDs.recipes)) or 
+                (sourceDs.extra and sourceDs.extra.recipes and next(sourceDs.extra.recipes))
+            )
+            local hasSpells = typeFilter.spells and (
+                (sourceDs.spells and next(sourceDs.spells)) or
+                (sourceDs.extra and sourceDs.extra.spells and next(sourceDs.extra.spells))
+            )
+            local hasAuras = typeFilter.auras and (
+                (sourceDs.auras and next(sourceDs.auras)) or
+                (sourceDs.extra and sourceDs.extra.auras and next(sourceDs.extra.auras))
+            )
+            local hasStats = typeFilter.stats and (
+                (sourceDs.stats and next(sourceDs.stats)) or
+                (sourceDs.extra and sourceDs.extra.stats and next(sourceDs.extra.stats))
+            )
+            
+            if not hasItems and not hasRecipes and not hasSpells and not hasAuras and not hasStats then
+                local typeList = {}
+                if typeFilter.items then table.insert(typeList, "items") end
+                if typeFilter.recipes then table.insert(typeList, "recipes") end
+                if typeFilter.spells then table.insert(typeList, "spells") end
+                if typeFilter.auras then table.insert(typeList, "auras") end
+                if typeFilter.stats then table.insert(typeList, "stats") end
+                local typeStr = table.concat(typeList, ", ")
+                
+                local info = UIDropDownMenu_CreateInfo()
+                info.isTitle = true
+                info.notCheckable = true
+                info.text = "No " .. typeStr .. " found"
+                UIDropDownMenu_AddButton(info, level)
+                return
+            end
+            
+            if hasItems then
+                local info = UIDropDownMenu_CreateInfo()
+                info.notCheckable = true
+                info.text = "Items"
+                info.hasArrow = true
+                info.value = datasetName .. "|items"
+                UIDropDownMenu_AddButton(info, level)
+            end
+            
+            if hasRecipes then
+                local info = UIDropDownMenu_CreateInfo()
+                info.notCheckable = true
+                info.text = "Recipes"
+                info.hasArrow = true
+                info.value = datasetName .. "|recipes"
+                UIDropDownMenu_AddButton(info, level)
+            end
+            
+            if hasSpells then
+                local info = UIDropDownMenu_CreateInfo()
+                info.notCheckable = true
+                info.text = "Spells"
+                info.hasArrow = true
+                info.value = datasetName .. "|spells"
+                UIDropDownMenu_AddButton(info, level)
+            end
+            
+            if hasAuras then
+                local info = UIDropDownMenu_CreateInfo()
+                info.notCheckable = true
+                info.text = "Auras"
+                info.hasArrow = true
+                info.value = datasetName .. "|auras"
+                UIDropDownMenu_AddButton(info, level)
+            end
+            
+            if hasStats then
+                local info = UIDropDownMenu_CreateInfo()
+                info.notCheckable = true
+                info.text = "Stats"
+                info.hasArrow = true
+                info.value = datasetName .. "|stats"
+                UIDropDownMenu_AddButton(info, level)
+            end
+            return
+        end
+        
+        if level == 3 then
+            -- Level 3: Show items/recipes/spells/auras/stats grouped by first letter
+            local encodedValue = UIDROPDOWNMENU_MENU_VALUE
+            if not encodedValue then return end
+            
+            local pipeIdx = encodedValue:find("|", 1, true)
+            if not pipeIdx then return end
+            local datasetName = encodedValue:sub(1, pipeIdx - 1)
+            local itemType = encodedValue:sub(pipeIdx + 1)
+            
+            local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+            if not DatasetDB then return end
+            
+            local sourceDs = DatasetDB.GetByName and DatasetDB.GetByName(datasetName)
+            if not sourceDs then return end
+            
+            -- Collect items/recipes/spells/auras/stats based on type
+            local items = {}
+            if itemType == "items" and sourceDs.items then
+                for itemId, itemDef in pairs(sourceDs.items) do
+                    table.insert(items, { id = itemId, def = itemDef })
+                end
+            elseif itemType == "recipes" then
+                local recipesBucket = {}
+                if sourceDs.recipes then
+                    for id, recipe in pairs(sourceDs.recipes) do
+                        recipesBucket[id] = recipe
+                    end
+                end
+                if sourceDs.extra and sourceDs.extra.recipes then
+                    for id, recipe in pairs(sourceDs.extra.recipes) do
+                        recipesBucket[id] = recipe
+                    end
+                end
+                for recipeId, recipeDef in pairs(recipesBucket) do
+                    table.insert(items, { id = recipeId, def = recipeDef })
+                end
+            elseif itemType == "spells" then
+                local spellsBucket = {}
+                if sourceDs.spells then
+                    for id, spell in pairs(sourceDs.spells) do
+                        spellsBucket[id] = spell
+                    end
+                end
+                if sourceDs.extra and sourceDs.extra.spells then
+                    for id, spell in pairs(sourceDs.extra.spells) do
+                        spellsBucket[id] = spell
+                    end
+                end
+                for spellId, spellDef in pairs(spellsBucket) do
+                    table.insert(items, { id = spellId, def = spellDef })
+                end
+            elseif itemType == "auras" then
+                local aurasBucket = {}
+                if sourceDs.auras then
+                    for id, aura in pairs(sourceDs.auras) do
+                        aurasBucket[id] = aura
+                    end
+                end
+                if sourceDs.extra and sourceDs.extra.auras then
+                    for id, aura in pairs(sourceDs.extra.auras) do
+                        aurasBucket[id] = aura
+                    end
+                end
+                for auraId, auraDef in pairs(aurasBucket) do
+                    table.insert(items, { id = auraId, def = auraDef })
+                end
+            elseif itemType == "stats" then
+                local statsBucket = {}
+                if sourceDs.stats then
+                    for id, stat in pairs(sourceDs.stats) do
+                        statsBucket[id] = stat
+                    end
+                end
+                if sourceDs.extra and sourceDs.extra.stats then
+                    for id, stat in pairs(sourceDs.extra.stats) do
+                        statsBucket[id] = stat
+                    end
+                end
+                for statId, statDef in pairs(statsBucket) do
+                    table.insert(items, { id = statId, def = statDef })
+                end
+            end
+            
+            if #items == 0 then
+                local info = UIDropDownMenu_CreateInfo()
+                info.isTitle = true
+                info.notCheckable = true
+                info.text = "No " .. itemType .. " found"
+                UIDropDownMenu_AddButton(info, level)
+                return
+            end
+            
+            -- Sort by name
+            table.sort(items, function(a, b)
+                local anName = (a.def and a.def.name) or a.id
+                local bnName = (b.def and b.def.name) or b.id
+                return tostring(anName):lower() < tostring(bnName):lower()
+            end)
+            
+            -- Group into chunks of 20
+            local itemsPerGroup = 20
+            local groups = {}
+            for i = 1, #items, itemsPerGroup do
+                local groupItems = {}
+                for j = i, math.min(i + itemsPerGroup - 1, #items) do
+                    table.insert(groupItems, items[j])
+                end
+                table.insert(groups, groupItems)
+            end
+            
+            -- Create submenu buttons for each group with letter ranges
+            for groupIdx, groupItems in ipairs(groups) do
+                if #groupItems > 0 then
+                    local firstName = (groupItems[1].def and groupItems[1].def.name) or groupItems[1].id
+                    local lastName = (groupItems[#groupItems].def and groupItems[#groupItems].def.name) or groupItems[#groupItems].id
+                    firstName = tostring(firstName):sub(1, 1):upper()
+                    lastName = tostring(lastName):sub(1, 2):upper()
+                    local rangeLabel = (firstName == lastName) and firstName or (firstName .. "-" .. lastName)
+                    
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.notCheckable = true
+                    info.text = rangeLabel
+                    info.hasArrow = true
+                    info.value = datasetName .. "|" .. itemType .. "|" .. tostring(groupIdx)
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end
+            return
+        end
+        
+        if level == 4 then
+            -- Level 4: Show individual items/recipes/spells/auras/stats in the selected group
+            local encodedValue = UIDROPDOWNMENU_MENU_VALUE
+            if not encodedValue then return end
+            
+            -- Parse: "datasetName|itemType|groupIdx"
+            local parts = {}
+            for part in encodedValue:gmatch("[^|]+") do
+                table.insert(parts, part)
+            end
+            if #parts < 3 then return end
+            
+            local datasetName = parts[1]
+            local itemType = parts[2]
+            local groupIdx = tonumber(parts[3])
+            
+            local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+            if not DatasetDB then return end
+            
+            local sourceDs = DatasetDB.GetByName and DatasetDB.GetByName(datasetName)
+            if not sourceDs then return end
+            
+            -- Reconstruct items/recipes/spells/auras/stats
+            local items = {}
+            if itemType == "items" and sourceDs.items then
+                for itemId, itemDef in pairs(sourceDs.items) do
+                    table.insert(items, { id = itemId, def = itemDef })
+                end
+            elseif itemType == "recipes" then
+                local recipesBucket = {}
+                if sourceDs.recipes then
+                    for id, recipe in pairs(sourceDs.recipes) do
+                        recipesBucket[id] = recipe
+                    end
+                end
+                if sourceDs.extra and sourceDs.extra.recipes then
+                    for id, recipe in pairs(sourceDs.extra.recipes) do
+                        recipesBucket[id] = recipe
+                    end
+                end
+                for recipeId, recipeDef in pairs(recipesBucket) do
+                    table.insert(items, { id = recipeId, def = recipeDef })
+                end
+            elseif itemType == "spells" then
+                local spellsBucket = {}
+                if sourceDs.spells then
+                    for id, spell in pairs(sourceDs.spells) do
+                        spellsBucket[id] = spell
+                    end
+                end
+                if sourceDs.extra and sourceDs.extra.spells then
+                    for id, spell in pairs(sourceDs.extra.spells) do
+                        spellsBucket[id] = spell
+                    end
+                end
+                for spellId, spellDef in pairs(spellsBucket) do
+                    table.insert(items, { id = spellId, def = spellDef })
+                end
+            elseif itemType == "auras" then
+                local aurasBucket = {}
+                if sourceDs.auras then
+                    for id, aura in pairs(sourceDs.auras) do
+                        aurasBucket[id] = aura
+                    end
+                end
+                if sourceDs.extra and sourceDs.extra.auras then
+                    for id, aura in pairs(sourceDs.extra.auras) do
+                        aurasBucket[id] = aura
+                    end
+                end
+                for auraId, auraDef in pairs(aurasBucket) do
+                    table.insert(items, { id = auraId, def = auraDef })
+                end
+            elseif itemType == "stats" then
+                local statsBucket = {}
+                if sourceDs.stats then
+                    for id, stat in pairs(sourceDs.stats) do
+                        statsBucket[id] = stat
+                    end
+                end
+                if sourceDs.extra and sourceDs.extra.stats then
+                    for id, stat in pairs(sourceDs.extra.stats) do
+                        statsBucket[id] = stat
+                    end
+                end
+                for statId, statDef in pairs(statsBucket) do
+                    table.insert(items, { id = statId, def = statDef })
+                end
+            end
+            
+            table.sort(items, function(a, b)
+                local anName = (a.def and a.def.name) or a.id
+                local bnName = (b.def and b.def.name) or b.id
+                return tostring(anName):lower() < tostring(bnName):lower()
+            end)
+            
+            -- Find the group
+            local itemsPerGroup = 20
+            local selectedGroupItems = {}
+            local currentGroupIdx = 0
+            for i = 1, #items, itemsPerGroup do
+                currentGroupIdx = currentGroupIdx + 1
+                if currentGroupIdx == groupIdx then
+                    for j = i, math.min(i + itemsPerGroup - 1, #items) do
+                        table.insert(selectedGroupItems, items[j])
+                    end
+                    break
+                end
+            end
+            
+            if #selectedGroupItems == 0 then return end
+            
+            for _, item in ipairs(selectedGroupItems) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.notCheckable = true
+                info.text = (item.def and item.def.name) or item.id
+                info.func = function()
+                    -- Set the lookup input to the selected ID
+                    inputField:SetText(item.id)
+                    _fireChange(self)
+                    if onSelect then
+                        pcall(onSelect, item.id)
+                    end
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+            return
+        end
+    end)
+end
+
+-- =========================
 -- Row creation
 -- =========================
 
@@ -322,7 +740,8 @@ function EditorTable:_addRow_structured(record)
                 noBorder = true, hasBorder = false,
                 tooltip = "Lookup",
                 onClick = function()
-                    -- TODO: implement lookup functionality
+                    -- Call the ShowLookupMenu method with optional type filter from column config
+                    self:ShowLookupMenu(lookupInput, row.frame or UIParent, col.lookupTypes, nil)
                 end,
             })
             row:Add(lookupBtn)

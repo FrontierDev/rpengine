@@ -32,7 +32,7 @@ function IconButton:New(name, opts)
     local f = CreateFrame("Button", name, parentFrame)
     f:SetSize(opts.width or 32, opts.height or 32)
     f:SetPoint(opts.point or "TOPLEFT", opts.relativeTo or parentFrame, opts.relativePoint or "TOPLEFT", opts.x or 0, opts.y or 0)
-    f:RegisterForClicks("LeftButtonUp")
+    f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     f:SetMotionScriptsWhileDisabled(true)
 
     -- Optional background & borders

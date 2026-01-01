@@ -28,7 +28,7 @@ Schemas.DAMAGE = {
     fields = {
         { id="amount",      label="Amount",       type="input",   required=true,  placeholder="$stat.MELEE_AP$ + 1d6" },
         { id="perRank",     label="Per Rank",     type="input",  required=false, placeholder="1d4" },
-        { id="school",      label="School",       type="select",  choices=SCHOOLS, default="Physical" },
+        { id="school",      label="School",       type="input",   required=false, placeholder="e.g. Physical, Fire, Ice" },
         { id="requiresHit", label="Requires Hit", type="checkbox", default=true },
         { id="hitModifier",  label="Hit Modifier",  type="input",   required=false, scope="action",
             placeholder="$stat.MELEE_HIT$"   },

@@ -315,10 +315,12 @@ end
 function SetupWindow:ResizeWindow(statCount)
     -- Calculate height needed based on number of stats
     -- Format: header (variable) + body (rows) + footer (fixed)
-    -- Use higher per-stat height to account for spacing and padding between rows
+    -- Stats are typically arranged in 2 columns, so calculate actual rows needed
+    local statsPerRow = 2  -- Most stat layouts use 2 columns
+    local statRows = math.max(1, math.ceil((statCount or 0) / statsPerRow))
     local headerHeight = HEADER_MIN_HEIGHT
-    local perStatHeight = 32  -- Height per stat row including spacing
-    local statRowsHeight = (statCount or 0) * perStatHeight
+    local perStatRowHeight = 32  -- Height per row of stats including spacing
+    local statRowsHeight = statRows * perStatRowHeight
     local newHeight = headerHeight + statRowsHeight + FOOTER_HEIGHT + 40  -- +40 for additional spacing/padding
     
     -- Clamp to min/max
@@ -339,11 +341,7 @@ function SetupWindow:ShowPage(idx)
     wipe_children(self.body)
 
     if #self.pages == 0 then
-        local text = Text:New("RPE_Setup_NoPages", {
-            parent = self.body, text = "No setup pages configured.",
-            fontSize = 12,
-        })
-        self.body:Add(text)
+        self:ShowNoSetupWizard()
         return
     end
 
@@ -568,45 +566,15 @@ function SetupWindow:RenderSelectRace(headerGroup, bodyGroup, page)
     traitContainer:Add(traitListGroup)
     
     -- Helper function to update trait list display
-    local columns = nil
-    local noTraitsText = nil
     function updateTraitList()
-        -- If columns don't exist, create them
-        if not columns then
-            columns = {
-                VGroup:New("RPE_Setup_TraitCol1", {
-                    parent = traitListGroup, spacingY = 4, alignH = "LEFT", alignV = "TOP",
-                    autoSize = true,
-                }),
-                VGroup:New("RPE_Setup_TraitCol2", {
-                    parent = traitListGroup, spacingY = 4, alignH = "LEFT", alignV = "TOP",
-                    autoSize = true,
-                }),
-                VGroup:New("RPE_Setup_TraitCol3", {
-                    parent = traitListGroup, spacingY = 4, alignH = "LEFT", alignV = "TOP",
-                    autoSize = true,
-                }),
-            }
-            for i, col in ipairs(columns) do
-                traitListGroup:Add(col)
+        -- Clear previous trait displays from traitListGroup
+        if traitListGroup.children then
+            for i = #traitListGroup.children, 1, -1 do
+                local ch = traitListGroup.children[i]
+                if ch and ch.frame and ch.frame.SetParent then ch.frame:SetParent(nil) end
+                if ch and ch.Hide then ch:Hide() end
+                traitListGroup.children[i] = nil
             end
-        end
-        
-        -- Clear previous trait entries from columns
-        for _, col in ipairs(columns) do
-            if col.children then
-                for i = #col.children, 1, -1 do
-                    local ch = col.children[i]
-                    if ch and ch.frame and ch.frame.SetParent then ch.frame:SetParent(nil) end
-                    if ch and ch.Hide then ch:Hide() end
-                    col.children[i] = nil
-                end
-            end
-        end
-        
-        -- Hide "no traits" message if it exists
-        if noTraitsText and noTraitsText.frame then
-            noTraitsText:Hide()
         end
         
         if not window.selectedRace then
@@ -643,16 +611,12 @@ function SetupWindow:RenderSelectRace(headerGroup, bodyGroup, page)
         end
         
         if #traits == 0 then
-            -- Create the "no traits" message once if it doesn't exist
-            if not noTraitsText or not noTraitsText.frame or not noTraitsText.frame:GetParent() then
-                noTraitsText = Text:New("RPE_Setup_RaceTraitNone", {
-                    parent = traitListGroup, text = "No racial traits available.",
-                    fontSize = 10,
-                })
-                traitListGroup:Add(noTraitsText)
-            else
-                noTraitsText:Show()
-            end
+            -- Create the "no traits" message
+            local noTraitsText = Text:New("RPE_Setup_RaceTraitNone", {
+                parent = traitListGroup, text = "No racial traits available.",
+                fontSize = 10,
+            })
+            traitListGroup:Add(noTraitsText)
             return
         end
         
@@ -662,9 +626,22 @@ function SetupWindow:RenderSelectRace(headerGroup, bodyGroup, page)
         -- Track trait entries for updating selection state
         local traitEntries = {}
         
+        -- Calculate how many columns we actually need (max 3)
+        local numColumns = math.min(3, #traits)
+        
+        -- Create only the columns we need
+        local columns = {}
+        for i = 1, numColumns do
+            columns[i] = VGroup:New("RPE_Setup_TraitCol" .. i, {
+                parent = traitListGroup, spacingY = 4, alignH = "LEFT", alignV = "TOP",
+                autoSize = true,
+            })
+            traitListGroup:Add(columns[i])
+        end
+        
         -- Distribute traits across columns
         for idx, trait in ipairs(traits) do
-            local colIdx = ((idx - 1) % 3) + 1
+            local colIdx = ((idx - 1) % numColumns) + 1
             local col = columns[colIdx]
             local traitId = trait.id
             
@@ -1427,14 +1404,28 @@ function SetupWindow:RenderSelectSpells(headerGroup, bodyGroup, page)
         if allSpells then
             for spellId, spell in pairs(allSpells) do
                 if spell and spell.name then
-                    table.insert(spellsList, {
-                        id = spellId,
-                        name = spell.name,
-                        icon = spell.icon or 134400,
-                        maxRanks = spell.maxRanks or 1,
-                        tags = spell.tags or {},
-                    })
-                    spellObjects[spellId] = spell  -- Store original spell object
+                    -- Filter out spells with "consumable" tag or npcOnly flag
+                    local isConsumable = false
+                    if spell.tags then
+                        for _, tag in ipairs(spell.tags) do
+                            if string.lower(tostring(tag)) == "consumable" then
+                                isConsumable = true
+                                break
+                            end
+                        end
+                    end
+                    
+                    -- Skip consumable spells or NPC-only spells
+                    if not isConsumable and not spell.npcOnly then
+                        table.insert(spellsList, {
+                            id = spellId,
+                            name = spell.name,
+                            icon = spell.icon or 134400,
+                            maxRanks = spell.maxRanks or 1,
+                            tags = spell.tags or {},
+                        })
+                        spellObjects[spellId] = spell  -- Store original spell object
+                    end
                 end
             end
         end
@@ -1645,6 +1636,41 @@ function SetupWindow:RenderSelectSpells(headerGroup, bodyGroup, page)
                         window:ShowPage(window.currentPageIdx)
                     end,
                 }, level)
+                
+                -- Other Tags section
+                if #extraTags > 0 then
+                    UIDropDownMenu_AddSeparator(level)
+                    
+                    -- Filter out race-related tags for "Other Tags" section
+                    local otherTags = {}
+                    for _, tag in ipairs(extraTags) do
+                        local tagLower = tag:lower()
+                        if not (tag:match("^race:") or extractRaceFromTags({tag}) or 
+                               tagLower == "racial" or tagLower == "melee" or 
+                               tagLower == "ranged" or tagLower == "spell") then
+                            table.insert(otherTags, tag)
+                        end
+                    end
+                    
+                    if #otherTags > 0 then
+                        local anyOtherActive = false
+                        for _, tag in ipairs(otherTags) do
+                            if self._spellActiveFilters[tag:lower()] then
+                                anyOtherActive = true
+                                break
+                            end
+                        end
+                        
+                        UIDropDownMenu_AddButton({
+                            text = "Other Tags",
+                            hasArrow = true,
+                            notCheckable = false,
+                            checked = anyOtherActive,
+                            keepShownOnClick = true,
+                            menuList = "other_tags_submenu",
+                        }, level)
+                    end
+                end
             elseif level == 2 and menuList == "class_submenu" then
                 -- Class/spec submenu
                 for _, classDef in ipairs(BUILTIN_CLASS_TAGS) do
@@ -1736,6 +1762,32 @@ function SetupWindow:RenderSelectSpells(headerGroup, bodyGroup, page)
                         end
                         break
                     end
+                end
+            elseif level == 2 and menuList == "other_tags_submenu" then
+                -- Other Tags submenu
+                local otherTags = {}
+                for _, tag in ipairs(extraTags) do
+                    local tagLower = tag:lower()
+                    if not (tag:match("^race:") or extractRaceFromTags({tag}) or 
+                           tagLower == "racial" or tagLower == "melee" or 
+                           tagLower == "ranged" or tagLower == "spell") then
+                        table.insert(otherTags, tag)
+                    end
+                end
+                
+                for _, tag in ipairs(otherTags) do
+                    local tagLower = tag:lower()
+                    UIDropDownMenu_AddButton({
+                        text = tag,
+                        isNotRadio = true,
+                        keepShownOnClick = true,
+                        checked = self._spellActiveFilters[tagLower] == true,
+                        func = function()
+                            self._spellActiveFilters[tagLower] = not self._spellActiveFilters[tagLower]
+                            updateFilterButtonLabel()
+                            window:ShowPage(window.currentPageIdx)
+                        end,
+                    }, level)
                 end
             end
         end)
@@ -3346,8 +3398,24 @@ function SetupWindow:RenderSimpleAssign(parent, statusRow, statIds, StatRegistry
         pointsDisplay:SetText(tostring(total - baseTotal))
     end
     
-    -- Render each stat as a row with three columns: label, value, buttons
-    for _, statId in ipairs(statIds) do
+    -- Create two-column layout for stats
+    local statsContainer = HGroup:New("RPE_Setup_SimpleAssignStatsContainer", {
+        parent = parent, spacingX = 20, alignH = "CENTER", alignV = "TOP", autoSize = true
+    })
+    parent:Add(statsContainer)
+    
+    local leftColumn = VGroup:New("RPE_Setup_SimpleAssignLeftCol", {
+        parent = statsContainer, spacingY = 8, alignH = "LEFT", alignV = "TOP", autoSize = true
+    })
+    statsContainer:Add(leftColumn)
+    
+    local rightColumn = VGroup:New("RPE_Setup_SimpleAssignRightCol", {
+        parent = statsContainer, spacingY = 8, alignH = "LEFT", alignV = "TOP", autoSize = true
+    })
+    statsContainer:Add(rightColumn)
+    
+    -- Distribute stats across two columns
+    for idx, statId in ipairs(statIds) do
         local statDef = StatRegistry and StatRegistry:Get(statId)
         if statDef then
             local baseVal = 10
@@ -3360,18 +3428,21 @@ function SetupWindow:RenderSimpleAssign(parent, statusRow, statIds, StatRegistry
                 self.statValues[statId] = baseVal
             end
 
+            -- Choose column (left for odd indices, right for even)
+            local targetColumn = (idx % 2 == 1) and leftColumn or rightColumn
+
             local statRow = HGroup:New("RPE_Setup_Stat_" .. statId, {
-                parent = parent, spacingX = 12, alignH = "CENTER", alignV = "CENTER",
-                autoSize = false, width = WIN_W - 20, height = 16,
+                parent = targetColumn, spacingX = 12, alignH = "LEFT", alignV = "CENTER",
+                autoSize = true,
             })
-            parent:Add(statRow)
+            targetColumn:Add(statRow)
 
             -- Column 1: Stat name label (fixed width)
             local nameText = Text:New("RPE_Setup_StatName_" .. statId, {
                 parent = statRow, text = (statDef.name or statId),
-                fontSize = 11, width = 60, autoSize = false,
+                fontSize = 11, width = 120, autoSize = false,
             })
-            nameText.frame:SetWidth(60)
+            nameText.frame:SetWidth(120)
             statRow:Add(nameText)
 
             -- Column 2: Stat value display (fixed width for alignment)
@@ -3402,7 +3473,7 @@ function SetupWindow:RenderSimpleAssign(parent, statusRow, statIds, StatRegistry
             local minusBtn = TextBtn:New("RPE_Setup_StatMinus_" .. statId, {
                 parent = statRow, text = "-", width = 24, height = 20,
                 onClick = function()
-                    if self.statValues[statId] > 1 then
+                    if self.statValues[statId] > 0 then
                         self.statValues[statId] = self.statValues[statId] - 1
                         -- Track the incrementBy value from this page (only if not already set)
                         if not self.statIncrementBy[statId] then
@@ -3479,6 +3550,209 @@ function SetupWindow:UpdateButtonStates()
     if self.finishBtn then
         self.finishBtn:SetEnabled(true)
     end
+end
+
+function SetupWindow:ShowNoSetupWizard()
+    -- Display error message when no setup wizard is configured
+    local containerGroup = VGroup:New("RPE_Setup_NoWizardGroup", {
+        parent = self.body, spacingY = 12, alignH = "CENTER", alignV = "CENTER",
+        autoSize = false, width = WIN_W - 40,
+    })
+    self.body:Add(containerGroup)
+    
+    local errorText = Text:New("RPE_Setup_NoWizardLabel", {
+        parent = containerGroup,
+        text = "You must have an active ruleset which includes the 'setup_wizard' key.",
+        fontSize = 12,
+    })
+    containerGroup:Add(errorText)
+    
+    -- Rulesets selector row
+    local rulesetRow = HGroup:New("RPE_Setup_RulesetRow", {
+        parent = containerGroup, spacingX = 10, alignH = "CENTER", alignV = "CENTER",
+        autoSize = true,
+    })
+    containerGroup:Add(rulesetRow)
+    
+    local rulesetLabel = Text:New("RPE_Setup_RulesetLabel", {
+        parent = rulesetRow,
+        text = "Available Rulesets:",
+        fontSize = 11,
+    })
+    rulesetRow:Add(rulesetLabel)
+    
+    -- Get available rulesets from RulesetDB
+    local rulesetChoices = {}
+    local RulesetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.RulesetDB
+    if RulesetDB and type(RulesetDB.ListNames) == "function" then
+        local allRulesets = RulesetDB.ListNames()
+        if allRulesets then
+            for _, name in ipairs(allRulesets) do
+                table.insert(rulesetChoices, name)
+            end
+        end
+    end
+    
+    -- Sort choices alphabetically
+    table.sort(rulesetChoices)
+    
+    -- Container for setup wizard info (initially hidden)
+    local wizardInfoContainer = VGroup:New("RPE_Setup_WizardInfoContainer", {
+        parent = containerGroup, spacingY = 8, alignH = "CENTER", alignV = "TOP",
+        autoSize = true, width = WIN_W - 40,
+    })
+    containerGroup:Add(wizardInfoContainer)
+    
+    local wizardInfoText = Text:New("RPE_Setup_WizardInfoText", {
+        parent = wizardInfoContainer,
+        text = "",
+        fontSize = 11,
+    })
+    wizardInfoContainer:Add(wizardInfoText)
+
+    local requireInfoText = Text:New("RPE_Setup_RequireInfoText", {
+        parent = wizardInfoContainer,
+        text = "",
+        fontSize = 11,
+    })
+    wizardInfoContainer:Add(requireInfoText)
+    
+    -- Create dropdown first
+    local rulesetDropdown = Dropdown:New("RPE_Setup_RulesetDropdown", {
+        parent = rulesetRow,
+        width = 250,
+        choices = rulesetChoices,
+        value = rulesetChoices[1],
+        onChanged = function(_, selectedRulesetName)
+            -- This will be set after updateWizardInfo is defined
+        end,
+    })
+    rulesetRow:Add(rulesetDropdown)
+    
+    -- Activate Now button (initially hidden)
+    local activateButton = TextBtn:New("RPE_Setup_ActivateButton", {
+        parent = wizardInfoContainer,
+        width = 120,
+        height = 25,
+        text = "Activate and Reload UI",
+        onClick = function()
+            local selectedRulesetName = rulesetDropdown:GetValue()
+            if not selectedRulesetName then return end
+            
+            local RulesetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.RulesetDB
+            local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+            if not RulesetDB or not DatasetDB then return end
+            
+            -- Activate the target ruleset
+            RulesetDB.SetActiveForCurrentCharacter(selectedRulesetName)
+            
+            -- Get the ruleset to read its rules
+            local selectedRuleset = RulesetDB.GetByName(selectedRulesetName)
+            
+            if selectedRuleset then
+                -- Activate the setup_wizard dataset
+                local setupWizardValue = selectedRuleset:GetRule("setup_wizard")
+                if setupWizardValue then
+                    print(setupWizardValue)
+                    DatasetDB.ToggleActive(setupWizardValue)
+                end
+                
+                -- Activate any datasets in dataset_require
+                local requireValue = selectedRuleset:GetRule("dataset_require")
+                if requireValue then
+                    local requiredDatasets = {}
+                    if type(requireValue) == "table" then
+                        requiredDatasets = requireValue
+                    elseif type(requireValue) == "string" and requireValue ~= "" then
+                        -- Parse comma-separated string
+                        for name in requireValue:gmatch("[^,]+") do
+                            name = name:match("^%s*(.-)%s*$")  -- trim whitespace
+                            if name ~= "" then
+                                table.insert(requiredDatasets, name)
+                            end
+                        end
+                    end
+                    
+                    -- Activate each required dataset
+                    for _, datasetName in ipairs(requiredDatasets) do
+                        print(datasetName  )
+                        DatasetDB.ToggleActive(datasetName)
+                    end
+                end
+                
+                -- Set as active in RPE.ActiveRules if available
+                if _G.RPE and _G.RPE.ActiveRules then
+                    _G.RPE.ActiveRules:SetRuleset(selectedRuleset)
+                end
+                
+                -- Close the setup window as activation is complete
+                self:Hide()
+
+                -- Reload the UI to apply changes
+                ReloadUI()
+            end
+        end,
+    })
+    wizardInfoContainer:Add(activateButton)
+    activateButton:Hide()  -- Initially hidden
+    
+    -- Function to update wizard info display (defined after button so it's in scope)
+    local function updateWizardInfo(selectedRulesetName)
+        if not selectedRulesetName then
+            wizardInfoText:SetText("")
+            return
+        end
+        
+        local RulesetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.RulesetDB
+        if not RulesetDB then
+            wizardInfoText:SetText("")
+            return
+        end
+        
+        local success, selectedRuleset = pcall(function()
+            return RulesetDB.GetByName(selectedRulesetName)
+        end)
+        
+        if not success or not selectedRuleset then
+            wizardInfoText:SetText("")
+            return
+        end
+        
+        local requireValue = selectedRuleset:GetRule("dataset_require")
+        if requireValue then
+            local displayText
+            if type(requireValue) == "table" then
+                displayText = table.concat(requireValue, ", ")
+            else
+                displayText = tostring(requireValue)
+            end
+            requireInfoText:SetText(string.format("The chosen ruleset requires the %s dataset(s).", displayText))
+        else
+            requireInfoText:SetText("The ruleset has no 'dataset_require' rule defined.\nAny datasets may be used.")
+        end
+
+        local wizardValue = selectedRuleset:GetRule("setup_wizard")
+        if wizardValue then
+            wizardInfoText:SetText(string.format("This ruleset's wizard is stored in the |cff00ff00%s|r dataset.", wizardValue or "unknown"))
+            activateButton:Show()  -- Show button when there's a wizard value
+        else
+            wizardInfoText:SetText("This ruleset does |cffff0000NOT|r include a setup wizard configuration.")
+            activateButton:Hide()  -- Hide button when no wizard value
+        end
+        
+        -- Recalculate layout to show/hide the button
+        if wizardInfoContainer and wizardInfoContainer.CalculateLayout then
+            wizardInfoContainer:CalculateLayout()
+        end
+    end
+    
+    -- Now set the dropdown's onChanged callback after updateWizardInfo is defined
+    rulesetDropdown.onChanged = function(_, selectedRulesetName)
+        updateWizardInfo(selectedRulesetName)
+    end
+    
+    -- Initial update
+    updateWizardInfo(rulesetChoices[1])
 end
 
 function SetupWindow:PreviousPage()

@@ -858,6 +858,14 @@ function SpellCast:Start(ctx, currentTurn)
         ctx.event:RegisterCast(self.caster, self)
     end
 
+    -- Refresh action bar slots to grey out while casting (for non-instant casts)
+    if not (self.remainingTurns == 0) then
+        local ActionBarWidget = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+        if ActionBarWidget and ActionBarWidget.RefreshRequirements then
+            ActionBarWidget:RefreshRequirements()
+        end
+    end
+
     -- Ensure cast bar exists and begin
     if not (self.remainingTurns == 0) then
         local CB = RPE.Core.Windows and RPE.Core.Windows.CastBarWidget
@@ -1007,6 +1015,12 @@ function SpellCast:Resolve(ctx, currentTurn)
     local Broadcast = RPE.Core.Comms and RPE.Core.Comms.Broadcast
     if Broadcast then
         Broadcast:SendClearCasting(self.caster)
+    end
+
+    -- Refresh action bar slots now that cast is complete
+    local ActionBarWidget = RPE.Core.Windows and RPE.Core.Windows.ActionBarWidget
+    if ActionBarWidget and ActionBarWidget.RefreshRequirements then
+        ActionBarWidget:RefreshRequirements()
     end
 
     RPE.Debug:Internal(("Resolving %s at Rank %d"):format(self.def.name or "?", self.def.rank or 1))

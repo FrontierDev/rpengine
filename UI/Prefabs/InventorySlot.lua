@@ -298,17 +298,11 @@ function InventorySlot:New(name, opts)
             end
 
         elseif button == "RightButton" and o.itemId then
-            -- Open context menu only for items that exist in the registry
+            -- Always open context menu (Delete Item is always available)
             local reg = RPE.Core and RPE.Core.ItemRegistry
             local item = reg and reg.Get and reg:Get(o.itemId) or nil
-            if item then
-                -- Always show context menu (right-click doesn't consume)
-                InventorySlot:ShowItemContextMenu(o, item)
-            else
-                if RPE and RPE.Debug and RPE.Debug.Warning then
-                    RPE.Debug:Warning("Item not available in active datasets; no actions available.")
-                end
-            end
+            -- Pass the item from registry if found, otherwise pass just the ID
+            InventorySlot:ShowItemContextMenu(o, item or { id = o.itemId })
         end
     end)
 
@@ -584,146 +578,303 @@ function InventorySlot:SetQualityBorderColor(r, g, b, a)
 end
 
 function InventorySlot:ShowItemContextMenu(slot, item)
-    -- Safety: only build a menu if the item still exists in the registry
+    -- Safety: get the item from registry if available
     local reg = RPE.Core and RPE.Core.ItemRegistry
     local live = reg and reg.Get and reg:Get(item and item.id) or nil
-    if not live then
-        if RPE and RPE.Debug and RPE.Debug.Warning then
-            RPE.Debug:Warning("Item not available in active datasets; no actions available.")
-        end
-        return
-    end
 
     RPE_UI.Common:ContextMenu(slot.frame, function(level, menuList)
         if level == 1 then
-            -- For consumables with spells, show "Use"; for others, show "Equip"
-            local isConsumableWithSpell = item.category == "CONSUMABLE" and item.spellId
-            local actionText = isConsumableWithSpell and "Use" or "Equip"
-            
-            UIDropDownMenu_AddButton({
-                text = actionText,
-                func = function()
-                    local check = reg and reg:Get(item.id)
-                    if not check then
-                        if RPE and RPE.Debug and RPE.Debug.Warning then
-                            RPE.Debug:Warning("Item not available in active datasets; cannot " .. (isConsumableWithSpell and "use" or "equip") .. ".")
-                        end
-                        return
-                    end
-                    
-                    if isConsumableWithSpell then
-                        -- Consume: cast spell using the full SpellCast system
-                        local SR = RPE.Core and RPE.Core.SpellRegistry
-                        local SC = RPE.Core and RPE.Core.SpellCast
-                        if not (SR and SC) then return end
-                        
-                        local spell = SR:Get(check.spellId)
-                        if not spell then 
-                            if RPE and RPE.Debug then
-                                RPE.Debug:Warning("Spell not found in registry: "..tostring(check.spellId))
-                            end
-                            return 
-                        end
-                        
-                        local event = RPE.Core.ActiveEvent
-                        if not event then return end
-                        
-                        -- Get player's numeric ID from event
-                        local casterId = event.localPlayerKey
-                        
-                        -- Create cast object
-                        local cast = SC.New(check.spellId, casterId, check.spellRank or 1)
-                        
-                        -- Build context
-                        local ctx = {
-                            event = event,
-                            resources = RPE.Core.Resources,
-                            cooldowns = RPE.Core.Cooldowns,
-                        }
-                        
-                        -- Validate and execute
-                        local ok, reason = cast:Validate(ctx)
-                        if not ok then
+            -- Only show "Use"/"Equip" and "Give to..." if item is in registry
+            if live then
+                -- For consumables with spells, show "Use"; for others, show "Equip"
+                local isConsumableWithSpell = item.category == "CONSUMABLE" and item.spellId
+                local actionText = isConsumableWithSpell and "Use" or "Equip"
+                
+                -- Check if an event is running
+                local Event = RPE.Core and RPE.Core.Event
+                local eventRunning = Event and Event.IsRunning and Event:IsRunning() or false
+                
+                UIDropDownMenu_AddButton({
+                    text = actionText,
+                    disabled = isConsumableWithSpell and not eventRunning,
+                    tooltipTitle = (isConsumableWithSpell and not eventRunning) and "Cannot Use" or nil,
+                    tooltipText = (isConsumableWithSpell and not eventRunning) and "Items can only be used during an event" or nil,
+                    func = function()
+                        local check = reg and reg:Get(item.id)
+                        if not check then
                             if RPE and RPE.Debug and RPE.Debug.Warning then
-                                RPE.Debug:Warning("Cannot cast: " .. (reason or ""))
+                                RPE.Debug:Warning("Item not available in active datasets; cannot " .. (isConsumableWithSpell and "use" or "equip") .. ".")
                             end
                             return
                         end
                         
-                        -- Handle targeting
-                        local defaultTargeter = spell.targeter and spell.targeter.default
-                        if defaultTargeter == "CASTER" or defaultTargeter == "SELF" or defaultTargeter == "ALL_ALLIES" or defaultTargeter == "ALL_ENEMIES" or defaultTargeter == "ALL_UNITS" then
-                            -- Self-targeting spell, execute immediately
-                            cast.targetSets = cast.targetSets or {}
-                            local tgtKey = (defaultTargeter == "SELF") and "CASTER" or defaultTargeter
-                            local sel = RPE.Core.Targeters and RPE.Core.Targeters:Select(tgtKey, ctx, cast, {})
+                        if isConsumableWithSpell then
+                            -- Consume: cast spell using the full SpellCast system
+                            local SR = RPE.Core and RPE.Core.SpellRegistry
+                            local SC = RPE.Core and RPE.Core.SpellCast
+                            local SpellReq = RPE.Core and RPE.Core.SpellRequirements
+                            if not (SR and SC) then return end
                             
-                            if sel and sel.targets and #sel.targets > 0 then
-                                cast.targetSets.precast = sel.targets
-                            else
-                                cast.targetSets.precast = { casterId }
-                            end
-                            
-                            cast:FinishTargeting(ctx)
-                        else
-                            -- Requires targeting
-                            cast:InitTargeting()
-                            cast:RequestNextTargetSet(ctx)
-                        end
-                        
-                        -- Remove one from inventory after casting (only if CONSUMABLE)
-                        if check.category == "CONSUMABLE" then
-                            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
-                            if profile then
-                                profile:RemoveItem(check.id, 1)
-                                if profile.Inventory and profile.Inventory.Refresh then
-                                    profile.Inventory:Refresh()
+                            local spell = SR:Get(check.spellId)
+                            if not spell then 
+                                if RPE and RPE.Debug then
+                                    RPE.Debug:Warning("Spell not found in registry: "..tostring(check.spellId))
                                 end
-                                -- Delay InventorySheet refresh until after spell finishes resolving (cooldown will be set during onResolve)
-                                C_Timer.After(0, function()
-                                    if RPE.Core and RPE.Core.Windows and RPE.Core.Windows.InventorySheet then
-                                        RPE.Core.Windows.InventorySheet:Refresh()
+                                return 
+                            end
+                            
+                            local event = RPE.Core.ActiveEvent
+                            if not event then return end
+                            
+                            -- Get player's numeric ID from event
+                            local casterId = event.localPlayerKey
+                            
+                            -- Check spell requirements first
+                            if SpellReq and spell.requirements then
+                                local ctx = {
+                                    event = event,
+                                    resources = RPE.Core.Resources,
+                                    cooldowns = RPE.Core.Cooldowns,
+                                }
+                                for _, req in ipairs(spell.requirements) do
+                                    local ok, reason = SpellReq:EvalRequirement(ctx, req)
+                                    if not ok then
+                                        if RPE and RPE.Debug and RPE.Debug.Warning then
+                                            RPE.Debug:Warning("Spell requirement not met: " .. (reason or tostring(req)))
+                                        end
+                                        return
                                     end
-                                end)
+                                end
+                            end
+                            
+                            -- Create cast object
+                            local cast = SC.New(check.spellId, casterId, check.spellRank or 1)
+                            
+                            -- Get player profile for stat calculations
+                            local playerProfile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+                            
+                            -- Build context
+                            local ctx = {
+                                event = event,
+                                resources = RPE.Core.Resources,
+                                cooldowns = RPE.Core.Cooldowns,
+                                profile = playerProfile,
+                            }
+                            
+                            -- Validate and execute
+                            local ok, reason = cast:Validate(ctx)
+                            if not ok then
+                                if RPE and RPE.Debug and RPE.Debug.Warning then
+                                    RPE.Debug:Warning("Cannot cast: " .. (reason or ""))
+                                end
+                                return
+                            end
+                            
+                            -- Handle targeting
+                            local defaultTargeter = spell.targeter and spell.targeter.default
+                            if defaultTargeter == "CASTER" or defaultTargeter == "SELF" or defaultTargeter == "ALL_ALLIES" or defaultTargeter == "ALL_ENEMIES" or defaultTargeter == "ALL_UNITS" then
+                                -- Self-targeting spell, execute immediately
+                                cast.targetSets = cast.targetSets or {}
+                                local tgtKey = (defaultTargeter == "SELF") and "CASTER" or defaultTargeter
+                                local sel = RPE.Core.Targeters and RPE.Core.Targeters:Select(tgtKey, ctx, cast, {})
+                                
+                                if sel and sel.targets and #sel.targets > 0 then
+                                    cast.targetSets.precast = sel.targets
+                                else
+                                    cast.targetSets.precast = { casterId }
+                                end
+                                
+                                cast:FinishTargeting(ctx)
+                            else
+                                -- Requires targeting
+                                cast:InitTargeting()
+                                cast:RequestNextTargetSet(ctx)
+                            end
+                            
+                            -- Remove one from inventory after casting (only if CONSUMABLE)
+                            if check.category == "CONSUMABLE" then
+                                local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+                                if profile then
+                                    profile:RemoveItem(check.id, 1)
+                                    if profile.Inventory and profile.Inventory.Refresh then
+                                        profile.Inventory:Refresh()
+                                    end
+                                    -- Delay InventorySheet refresh until after spell finishes resolving (cooldown will be set during onResolve)
+                                    C_Timer.After(0, function()
+                                        if RPE.Core and RPE.Core.Windows and RPE.Core.Windows.InventorySheet then
+                                            RPE.Core.Windows.InventorySheet:Refresh()
+                                        end
+                                    end)
+                                end
+                            end
+                        else
+                            -- Equip
+                            if check.data and check.data.slot then
+                                local profile = RPE.Profile.DB.GetOrCreateActive()
+                                profile:Equip(check.data.slot, check.id, false)
                             end
                         end
-                    else
-                        -- Equip
-                        if check.data and check.data.slot then
-                            local profile = RPE.Profile.DB.GetOrCreateActive()
-                            profile:Equip(check.data.slot, check.id, false)
-                        end
-                    end
-                end,
-                notCheckable = true
-            }, level)
+                    end,
+                    notCheckable = true
+                }, level)
 
-            -- Add "Modify..." option for EQUIPMENT items
-            if item.category == "EQUIPMENT" then
+                -- Add "Modify..." option for EQUIPMENT items
+                if item.category == "EQUIPMENT" then
+                    UIDropDownMenu_AddButton({
+                        text = "Modify...",
+                        hasArrow = true,
+                        notCheckable = true,
+                        menuList = "MODIFY_LIST"
+                    }, level)
+                end
+
                 UIDropDownMenu_AddButton({
-                    text = "Modify...",
+                    text = "Give to...",
                     hasArrow = true,
                     notCheckable = true,
-                    menuList = "MODIFY_LIST"
+                    menuList = "GIVE_TO_LIST",
+                    disabled = (live and live.data and live.data.soulbound == 1),
+                    tooltipTitle = (live and live.data and live.data.soulbound == 1) and "Cannot Trade" or nil,
+                    tooltipText = (live and live.data and live.data.soulbound == 1) and "Soulbound items cannot be traded." or nil,
                 }, level)
             end
 
-            UIDropDownMenu_AddButton({
-                text = "Give to...",
-                hasArrow = true,
-                notCheckable = true,
-                menuList = "GIVE_TO_LIST"
-            }, level)
-
-            UIDropDownMenu_AddButton({
-                text = "Delete Item",
-                func = function()
-                    local check = reg and reg:Get(item.id)
-                    if not check then return end
-
+            -- Disenchant button - show if item has disenchant tag
+            if item and item.tags then
+                local hasDisenchantTag = false
+                for _, tag in ipairs(item.tags) do
+                    if type(tag) == "string" and tag:match("^disenchant:") then
+                        hasDisenchantTag = true
+                        break
+                    end
+                end
+                
+                if hasDisenchantTag then
+                    -- Check if player has Enchanting profession
                     local profile = RPE.Profile.DB.GetOrCreateActive()
-                    local qty = slot.quantity or 1 -- CORRECT: pull from slot, not self
-                    profile:RemoveItem(check.id, qty)
+                    local hasEnchanting = profile and profile:HasProfession("Enchanting") or false
+                    
+                    if hasEnchanting then
+                        UIDropDownMenu_AddButton({
+                            text = "Disenchant",
+                            func = function()
+                                -- Get the Extract module
+                                local Extract = RPE.Core and RPE.Core.Extract
+                                if not Extract then
+                                    if RPE and RPE.Debug and RPE.Debug.Warning then
+                                        RPE.Debug:Warning("Extract module not loaded.")
+                                    end
+                                    return
+                                end
+                                
+                                -- Perform disenchanting
+                                local result = Extract:Extract(item)
+                                
+                                if result.success then
+                                    -- Add reagent to inventory
+                                    local profile = RPE.Profile.DB.GetOrCreateActive()
+                                    profile:AddItem(result.reagentId, result.quantity)
+                                    
+                                    -- Remove the enchant item
+                                    profile:RemoveItem(item.id, 1)
+
+                                    profile:AttemptProfessionLevelUp("Enchanting")
+                                else
+                                    -- Show failure message
+                                    RPE.Debug:Warning(result.message)
+                                end
+                                
+                                -- Refresh inventory UI
+                                if RPE.Core and RPE.Core.Windows and RPE.Core.Windows.InventorySheet then
+                                    RPE.Core.Windows.InventorySheet:Refresh()
+                                end
+                            end,
+                            notCheckable = true
+                        }, level)
+                    end
+                end
+            end
+
+            -- Prospect button - show if item has prospect tag
+            if item and item.tags then
+                local hasProspectTag = false
+                for _, tag in ipairs(item.tags) do
+                    if type(tag) == "string" and tag:match("^prospect:") then
+                        hasProspectTag = true
+                        break
+                    end
+                end
+                
+                if hasProspectTag then
+                    -- Check if player has Mining profession
+                    local profile = RPE.Profile.DB.GetOrCreateActive()
+                    local hasMining = profile and profile:HasProfession("Mining") or false
+                    
+                    if hasMining then
+                        -- Count how many of this ore type the player has
+                        local oreCount = 0
+                        if profile.items then
+                            for _, invSlot in ipairs(profile.items) do
+                                if invSlot.id == item.id then
+                                    oreCount = oreCount + (invSlot.qty or 1)
+                                end
+                            end
+                        end
+                        
+                        local canProspect = oreCount >= 20
+                        
+                        UIDropDownMenu_AddButton({
+                            text = "Prospect (20x ore)",
+                            disabled = not canProspect,
+                            tooltipTitle = canProspect and nil or "Insufficient Ore",
+                            tooltipText = canProspect and nil or string.format("Need 20x ore, have %d", oreCount),
+                            func = function()
+                                if not canProspect then return end
+                                
+                                -- Get the Extract module
+                                local Extract = RPE.Core and RPE.Core.Extract
+                                if not Extract then
+                                    if RPE and RPE.Debug and RPE.Debug.Warning then
+                                        RPE.Debug:Warning("Extract module not loaded.")
+                                    end
+                                    return
+                                end
+                                
+                                -- Perform prospecting using Extract system
+                                local result = Extract:Extract(item)
+                                
+                                if result.success then
+                                    -- Add gem to inventory
+                                    local profile = RPE.Profile.DB.GetOrCreateActive()
+                                    profile:AddItem(result.reagentId, result.quantity)
+                                    
+                                    -- Remove 20 ore from inventory
+                                    profile:RemoveItem(item.id, 20)
+
+                                    profile:AttemptProfessionLevelUp("Mining")
+                                else
+                                    -- Show failure message
+                                    RPE.Debug:Warning(result.message)
+                                end
+                                
+                                -- Refresh inventory UI
+                                if RPE.Core and RPE.Core.Windows and RPE.Core.Windows.InventorySheet then
+                                    RPE.Core.Windows.InventorySheet:Refresh()
+                                end
+                            end,
+                            notCheckable = true
+                        }, level)
+                    end
+                end
+            end
+
+            -- Delete Item button - always show
+            UIDropDownMenu_AddButton({
+                text = "|cffff4040Delete Item|r",
+                func = function()
+                    local profile = RPE.Profile.DB.GetOrCreateActive()
+                    local qty = slot.quantity or 1
+                    profile:RemoveItem(item.id, qty)
 
                     if RPE.Core and RPE.Core.Windows and RPE.Core.Windows.InventorySheet then
                         RPE.Core.Windows.InventorySheet:Refresh()

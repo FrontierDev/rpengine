@@ -399,7 +399,7 @@ local function _buildFieldRow(sheet, body, e, labelWidth)
         })
         row:Add(pasteBtn)
 
-        -- Lookup button (small icon button with lookup icon, does nothing for now)
+        -- Lookup button (small icon button with lookup icon)
         local lookupBtn = IconBtn:New(_name("RPE_EW_Lookup_Search_" .. id), {
             parent = row, width = 16, height = 16,
             icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\lookup.png",
@@ -407,7 +407,11 @@ local function _buildFieldRow(sheet, body, e, labelWidth)
             noBorder = true, hasBorder = false,
             tooltip = "Lookup",
             onClick = function()
-                -- TODO: implement lookup functionality
+                -- Use EditorTable's ShowLookupMenu method if available
+                local EditorTable = RPE_UI and RPE_UI.Elements and RPE_UI.Elements.EditorTable
+                if EditorTable and EditorTable.ShowLookupMenu then
+                    EditorTable:ShowLookupMenu(input, row.frame or UIParent, e.lookupTypes, nil)
+                end
             end,
         })
         row:Add(lookupBtn)

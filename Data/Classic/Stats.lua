@@ -92,7 +92,93 @@ RPE.Data.DefaultClassic.STATS = {
         itemTooltipPriority = 0,
         itemLevelWeight = 0,
     },
-
+    ["HOLY_POWER"] = {
+        id = "HOLY_POWER",
+        name = "Holy Power",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = 5,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\holy_power.png",
+        description = "",
+        tooltip = "",
+        recovery = {
+            ruleKey = "holy_power_regen",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {1, 1, 1},
+        itemTooltipPriority = 0,
+        itemLevelWeight = 0,
+    },
+    ["AMMO"] = {
+        id = "AMMO",
+        name = "Ammunition",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\ammo.png",
+        description = "",
+        tooltip = "",
+        recovery = {
+            ruleKey = "ammo_regen",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Ammunition",
+        itemTooltipColor = {1, 1, 1},
+        itemTooltipPriority = 0,
+        itemLevelWeight = 0,
+    },
+    -- Speed
+    ["SPEED"] = {
+        id = "SPEED",
+        name = "Speed",
+        category = "SECONDARY",
+        base = 30,
+        min = 0,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\speed.png",
+        tooltip = "Determines how much distance you can move during your turn.",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Movement Range",
+        itemTooltipColor = {1, 1, 1},
+        itemTooltipPriority = 99,
+        itemLevelWeight = 0.4,
+    },
     -- Threat
     ["THREAT"] = {
         id = "THREAT",
@@ -108,7 +194,7 @@ RPE.Data.DefaultClassic.STATS = {
             ruleKey = "",
             default = 0
         },
-        pct = 0,
+        pct = 1,
         mitigation = {
             normal = 0,
             critical = 0,
@@ -117,7 +203,7 @@ RPE.Data.DefaultClassic.STATS = {
         defenceName = "",
         data = {},
         sourceDataset = "DefaultClassic",
-        itemTooltipFormat = "$value$x Bonus Threat Generation",
+        itemTooltipFormat = "$value_pct$ Bonus Threat Generation",
         itemTooltipColor = {1, 1, 1},
         itemTooltipPriority = 99,
         itemLevelWeight = 0.4,
@@ -729,6 +815,171 @@ RPE.Data.DefaultClassic.STATS = {
         itemTooltipPriority = 50,
         itemLevelWeight = 0,
     },
+    ["FOCUS"] = {
+        id = "FOCUS",
+        name = "Focus",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = { ref = "MAX_FOCUS" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\focus.png",
+        tooltip = "Used to perform powerful melee attacks.",
+        recovery = {
+            ruleKey = "focus_regen",
+            default = 10
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {1, 0.5, 0},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_FOCUS"] = {
+        id = "MAX_FOCUS",
+        name = "Maximum Focus",
+        category = "RESOURCE",
+        base = 100,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\focus.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Focus",
+        itemTooltipColor = {0, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0,
+    },
+    ["AMMO"] = {
+        id = "AMMO",
+        name = "Ammo",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = { ref = "MAX_AMMO" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\focus.png",
+        tooltip = "Used to perform powerful ranged attacks.",
+        recovery = {
+            ruleKey = "ammo_regen",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {1, 0.5, 0},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_AMMO"] = {
+        id = "MAX_AMMO",
+        name = "Maximum Ammo",
+        category = "RESOURCE",
+        base = 5,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\focus.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Ammo Capacity",
+        itemTooltipColor = {0, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0.4,
+    },
+    ["HOLY_POWER"] = {
+        id = "HOLY_POWER",
+        name = "Holy Power",
+        category = "RESOURCE",
+        base = 0,
+        min = 0,
+        max = { ref = "MAX_HOLY_POWER" },
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\focus.png",
+        tooltip = "Used to perform powerful melee attacks.",
+        recovery = {
+            ruleKey = "holy_power_regen",
+            default = 10
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        data = {},
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "",
+        itemTooltipColor = {1, 0.5, 0},
+        itemTooltipPriority = 2,
+        itemLevelWeight = 1,
+    },
+    ["MAX_HOLY_POWER"] = {
+        id = "MAX_HOLY_POWER",
+        name = "Maximum Holy Power",
+        category = "RESOURCE",
+        base = 100,
+        min = 1,
+        max = math.huge,
+        visible = 0,
+        icon = "Interface\\Addons\\RPEngine\\UI\\Textures\\stats\\focus.png",
+        tooltip = "",
+        recovery = {
+            ruleKey = "",
+            default = 0
+        },
+        pct = 0,
+        mitigation = {
+            normal = 0,
+            critical = 0,
+            fail = 0
+        },
+        defenceName = "",
+        sourceDataset = "DefaultClassic",
+        itemTooltipFormat = "$value$ Max. Holy Power",
+        itemTooltipColor = {0, 1, 0},
+        itemTooltipPriority = 50,
+        itemLevelWeight = 0,
+    },
     
     -- Primary Attributes
     ["STR"] = {
@@ -1100,7 +1351,7 @@ RPE.Data.DefaultClassic.STATS = {
             ruleKey = "",
             default = 0
         },
-        pct = 0,
+        pct = 1,
         mitigation = {
             normal = 0,
             critical = 0,
@@ -1420,7 +1671,7 @@ RPE.Data.DefaultClassic.STATS = {
             ruleKey = "",
             default = 0
         },
-        pct = 0,
+        pct = 1,
         mitigation = {
             normal = 0,
             critical = 0,
@@ -1429,7 +1680,7 @@ RPE.Data.DefaultClassic.STATS = {
         defenceName = "",
         data = {},
         sourceDataset = "DefaultClassic",
-        itemTooltipFormat = "$value$x Melee Crit. Multiplier",
+        itemTooltipFormat = "$value_pct$ Melee Crit. Damage",
         itemTooltipColor = {0, 1, 0},
         itemTooltipPriority = 50,
         itemLevelWeight = 1.4,
@@ -1449,7 +1700,7 @@ RPE.Data.DefaultClassic.STATS = {
             ruleKey = "",
             default = 0
         },
-        pct = 0,
+        pct = 1,
         mitigation = {
             normal = 0,
             critical = 0,
@@ -1458,7 +1709,7 @@ RPE.Data.DefaultClassic.STATS = {
         defenceName = "",
         data = {},
         sourceDataset = "DefaultClassic",
-        itemTooltipFormat = "$value$x Ranged Crit. Multiplier",
+        itemTooltipFormat = "$value_pct$ Ranged Crit. Damage",
         itemTooltipColor = {0, 1, 0},
         itemTooltipPriority = 50,
         itemLevelWeight = 1.4,
@@ -1478,7 +1729,7 @@ RPE.Data.DefaultClassic.STATS = {
             ruleKey = "",
             default = 0
         },
-        pct = 0,
+        pct = 1,
         mitigation = {
             normal = 0,
             critical = 0,
@@ -1487,7 +1738,7 @@ RPE.Data.DefaultClassic.STATS = {
         defenceName = "",
         data = {},
         sourceDataset = "DefaultClassic",
-        itemTooltipFormat = "$value$x Spell Crit. Multiplier",
+        itemTooltipFormat = "$value_pct$ Spell Crit. Damage",
         itemTooltipColor = {0, 1, 0},
         itemTooltipPriority = 50,
         itemLevelWeight = 1.4,
@@ -1498,7 +1749,7 @@ RPE.Data.DefaultClassic.STATS = {
         id = "ARMOR",
         name = "Armor",
         category = "SECONDARY",
-        base = { expr = "$stat.DEX_MOD$ * 0.2", default = 0 },
+        base = { expr = "($stat.DEX_MOD$ * 0.2) * 10", default = 0 },
         min = 0,
         max = math.huge,
         visible = 1,

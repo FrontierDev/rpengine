@@ -17,6 +17,8 @@ local CharacterProfile = {}
 CharacterProfile.__index = CharacterProfile
 RPE.Profile.CharacterProfile = CharacterProfile
 
+local equipmentWarning = false
+
 -- --- Internal helpers -------------------------------------------------------
 local function normalizeStats(statsIn)
     -- Accepts nil, map<string, number>, or map<string, table> (serialized).
@@ -150,6 +152,7 @@ function CharacterProfile:New(name, opts)
         dev         = opts.dev or false,  -- whether this profile belongs to an RPE developer
         autoRejoinLFRP = opts.autoRejoinLFRP or false,  -- whether to auto-rejoin the last LFRP channel on login
         lfrpSettings = opts.lfrpSettings or {},  -- LFRP preferences { iAmIds, lookingForIds, broadcastLocation, recruiting, approachable }
+        shopInventories = opts.shopInventories or {},  -- Shop inventories keyed by NPC GUID: { npcGuid = { storedDate, items } }
         _initializing = true,  -- Flag to suppress UI callbacks during initialization
     }, self)
     
@@ -407,7 +410,10 @@ function CharacterProfile:RecalculateEquipmentStats()
                 end
             end
         else
-            RPE.Debug:Error(string.format("Equipped item %s not found in ItemRegistry.", itemId))
+            if not equipmentWarning then
+                RPE.Debug:Warning(string.format("You have at least one invalid item equipped in your profile. The dataset may have been unloaded or changed."))
+                equipmentWarning = true
+            end
         end
     end
 end
@@ -815,6 +821,98 @@ function CharacterProfile:SpendCurrency(currencyId, amount)
     end
 
     return true
+end
+
+--- Shop Inventory Storage API (keyed by NPC GUID) ---
+
+--- Get stored shop inventory for an NPC, if it exists and is from today.
+---@param npcGuid string -- The NPC's GUID
+---@return table|nil -- Returns the stored shop data (with id, price, stack) or nil
+function CharacterProfile:GetStoredShopInventory(npcGuid)
+    if not npcGuid or type(npcGuid) ~= "string" or npcGuid == "" then
+        return nil
+    end
+    
+    self.shopInventories = self.shopInventories or {}
+    local stored = self.shopInventories[npcGuid]
+    
+    if not stored then
+        return nil
+    end
+    
+    -- Check if the stored data is from today
+    local today = date("%Y%m%d")
+    if stored.storedDate ~= today then
+        -- Data is stale, remove it
+        self.shopInventories[npcGuid] = nil
+        touch(self)
+        return nil
+    end
+    
+    -- Return the items (without the storedDate wrapper)
+    -- Ensure each item has id, price, and stack
+    if stored.items then
+        local items = {}
+        for _, item in ipairs(stored.items) do
+            if item.id then
+                table.insert(items, {
+                    id = item.id,
+                    price = item.price or 0,
+                    stack = item.stack or 1,
+                })
+            end
+        end
+        return items
+    end
+    
+    return {}
+end
+
+--- Store a shop inventory for an NPC with today's date.
+---@param npcGuid string -- The NPC's GUID
+---@param items table -- Array of shop items: { {id, price, stack}, ... }
+function CharacterProfile:StoreShopInventory(npcGuid, items)
+    if not npcGuid or type(npcGuid) ~= "string" or npcGuid == "" then
+        return
+    end
+    
+    if type(items) ~= "table" then
+        return
+    end
+    
+    self.shopInventories = self.shopInventories or {}
+    
+    -- Normalize items to ensure they have id, price, and stack
+    local normalizedItems = {}
+    for _, item in ipairs(items) do
+        if item.id then
+            table.insert(normalizedItems, {
+                id = item.id,
+                price = item.price or 0,
+                stack = item.stack or 1,
+            })
+        end
+    end
+    
+    local today = date("%Y%m%d")
+    self.shopInventories[npcGuid] = {
+        storedDate = today,
+        items = normalizedItems,
+    }
+    
+    touch(self)
+end
+
+--- Clear stored shop inventory for an NPC.
+---@param npcGuid string -- The NPC's GUID
+function CharacterProfile:ClearStoredShopInventory(npcGuid)
+    if not npcGuid or type(npcGuid) ~= "string" or npcGuid == "" then
+        return
+    end
+    
+    self.shopInventories = self.shopInventories or {}
+    self.shopInventories[npcGuid] = nil
+    touch(self)
 end
 
 --- Get mods applied to an item slot.
@@ -1549,6 +1647,7 @@ function CharacterProfile:ToTable()
         dev = self.dev or false,
         autoRejoinLFRP = self.autoRejoinLFRP or false,
         lfrpSettings = self.lfrpSettings or {},
+        shopInventories = self.shopInventories or {},
     }
 end
 
@@ -1583,6 +1682,7 @@ function CharacterProfile.FromTable(t)
         dev = t.dev or false,
         autoRejoinLFRP = t.autoRejoinLFRP or false,
         lfrpSettings = type(t.lfrpSettings) == "table" and t.lfrpSettings or {},
+        shopInventories = type(t.shopInventories) == "table" and t.shopInventories or {},
     })
 end
 

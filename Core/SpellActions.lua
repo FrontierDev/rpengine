@@ -535,8 +535,8 @@ Actions:Register("HEAL", function(ctx, cast, targets, args)
     local ev      = ctx and ctx.event
     if not (ev and targets and #targets > 0) then return end
 
-    -- Get caster's stats: use NPC's stats if caster is an NPC, otherwise use player profile
-    local profile = cast and cast.profile
+    -- Get caster's stats: use profile from context if available, then check for NPC, otherwise try active profile
+    local profile = ctx and ctx.profile
     if not profile and cast and cast.caster then
         -- Find the caster unit to check if it's an NPC
         local casterUnit = findUnitById(cast.caster)
@@ -547,6 +547,12 @@ Actions:Register("HEAL", function(ctx, cast, targets, args)
                     return tonumber(casterUnit.stats[statId] or 1) or 1
                 end
             }
+        elseif not casterUnit or not casterUnit.isNPC then
+            -- Player character - try to get active profile as fallback
+            local activeProfile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+            if activeProfile then
+                profile = activeProfile
+            end
         end
     end
 
@@ -558,7 +564,7 @@ Actions:Register("HEAL", function(ctx, cast, targets, args)
             base = tonumber(args.amount) or 0
         end
 
-        local rank = tonumber(cast and cast.rank) or 1
+        local rank = tonumber((cast and cast.def and cast.def.rank) or cast.rank or 1) or 1
         local perExpr = args.perRank
         if rank > 1 and perExpr and perExpr ~= "" then
             local perAmount = tonumber(Formula:Roll(perExpr, profile)) or 0

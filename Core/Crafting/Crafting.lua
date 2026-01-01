@@ -203,8 +203,8 @@ function Crafting:_trySkillUp(recipe, profile)
     -- G = 45 (green threshold)
     -- Y = 15 (yellow threshold)
     -- X = skill difference
-    local G = 45
-    local Y = 15
+    local G = 40
+    local Y = 10
     local skillDiff = currentSkill - recipeSkill
     
     -- Only orange/yellow/green recipes can give skill ups

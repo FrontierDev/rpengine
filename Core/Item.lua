@@ -541,6 +541,62 @@ function Item:ShowTooltip(instanceGuid)
             itemLevelText = "Item Level " .. tostring(baseItemLevel)
         end
         table.insert(lines, { text = itemLevelText, r = 1, g = 1, b = 0, wrap = false })
+    end
+
+    -- Check for extraction indicators (prospectable/disenchantable)
+    if self.tags then
+        local hasProspect = false
+        local hasDisenchant = false
+        
+        for _, tag in ipairs(self.tags) do
+            if tag:match("^prospect:") then
+                hasProspect = true
+            elseif tag:match("^disenchant:") then
+                hasDisenchant = true
+            end
+        end
+        
+        -- Check player professions and add indicators
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+        local professions = {}
+        if profile and profile.GetProfessions then
+            professions = profile:GetProfessions() or {}
+        end
+        
+        if hasProspect then
+            local hasMining = professions["Mining"] and professions["Mining"] > 0
+            table.insert(lines, { text = "Prospectable", r = 0x80/255, g = 0x80/255, b = 0xFF/255, wrap = false })
+        end
+        
+        if hasDisenchant then
+            local hasEnchanting = professions["Enchanting"] and professions["Enchanting"] > 0
+            table.insert(lines, { text = "Disenchantable", r = 0x80/255, g = 0x80/255, b = 0xFF/255, wrap = false })
+        end
+    end
+
+    -- Soulbound
+    -- Mark as soulbound if it has any applied modifications
+    local isSoulbound = false
+    if self.data and self.data.soulbound == 1 then
+        isSoulbound = true
+    else
+        -- Check if item has any modifications applied
+        local ItemMod = RPE.Core and RPE.Core.ItemModification
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+        if ItemMod and profile and instanceGuid then
+            local applied = ItemMod:GetAppliedModifications(profile, instanceGuid)
+            if applied and #applied > 0 then
+                isSoulbound = true
+            end
+        end
+    end
+    
+    if isSoulbound then
+        table.insert(lines, { text = "Soulbound", r = 1, g = 1, b = 1, wrap = false })
+    end
+
+    if self.itemLevel and RPE.ActiveRules:Get("show_item_level") == 1 and self.category == "EQUIPMENT" then
+        -- Item level already displayed above
     elseif self.category == "MATERIAL" then
         if RPE.ActiveRules:Get("show_reagent_tiers") == 1 and self.data.tier then
             table.insert(lines, { text = "Tier " .. self.data.tier ..  " Crafting Material", r = 0, g = 0.66, b = 0.66, wrap = false })
@@ -688,41 +744,169 @@ function Item:ShowTooltip(instanceGuid)
             { key = "red_sockets",    icon = Common.InlineIcons.Socket_Red,    label = "Red Socket",      socketName = "red" },
             { key = "blue_sockets",   icon = Common.InlineIcons.Socket_Blue,   label = "Blue Socket",     socketName = "blue" },
             { key = "yellow_sockets", icon = Common.InlineIcons.Socket_Yellow, label = "Yellow Socket",   socketName = "yellow" },
+            { key = "green_sockets",  icon = Common.InlineIcons.Socket_Green,  label = "Green Socket",    socketName = "green" },
             { key = "meta_sockets",   icon = Common.InlineIcons.Socket_Meta,   label = "Meta Socket",     socketName = "meta" },
             { key = "cog_sockets",    icon = Common.InlineIcons.Socket_Cog,    label = "Cogwheel Socket", socketName = "cogwheel" },
+            { key = "prismatic_sockets", icon = Common.InlineIcons.Socket_Meta, label = "Prismatic Socket", socketName = "prismatic" },
         }
+        
+        -- Get the inventory slot to check for socket bonuses from modifications
+        local invSlot = nil
+        if profile and instanceGuid then
+            for _, slot in ipairs(profile.items or {}) do
+                if slot.instanceGuid == instanceGuid then
+                    invSlot = slot
+                    break
+                end
+            end
+        end
 
         local shownGemsInThisLoop = {}  -- Track gems we've already shown in this socket loop
         local socketSectionStarted = false  -- Track if we've added a spacer for sockets
         for _, st in ipairs(socketTypes) do
+            -- Calculate total socket count: base item + socket bonuses from modifications
             local count = tonumber(self.data[st.key]) or 0
+            
+            -- Add socket bonuses from applied modifications
+            if invSlot and invSlot.mods then
+                for modKey, modData in pairs(invSlot.mods) do
+                    if type(modKey) == "string" and modKey:match("^mod_") then
+                        local modItemId = modData.itemId
+                        local modItem = ItemReg and ItemReg:Get(modItemId)
+                        if modItem and modItem.data and modItem.data[st.key] then
+                            count = count + (tonumber(modItem.data[st.key]) or 0)
+                        end
+                    end
+                end
+            end
+            
             local socketName = st.socketName
             local gemInSocket = appliedGemsBySocket[socketName]
             
+            -- Count gems applied to this socket type
+            local gemsInThisSocket = 0
+            if ItemMod and profile and instanceGuid then
+                local applied = ItemMod:GetAppliedModifications(profile, instanceGuid)
+                for _, mod in ipairs(applied) do
+                    local fullMod = ItemReg and ItemReg:Get(mod.itemId)
+                    if not fullMod then fullMod = mod end
+                    
+                    local isGem = false
+                    if fullMod.tags then
+                        for _, tag in ipairs(fullMod.tags) do
+                            if tag == "gem" then
+                                isGem = true
+                                break
+                            end
+                        end
+                    end
+                    
+                    if isGem and fullMod.data and fullMod.data.socket_type then
+                        -- Check if this gem fits in this socket type
+                        local gemFitsHere = false
+                        for gemSocketType in fullMod.data.socket_type:gmatch("[^,]+") do
+                            local trimmed = gemSocketType:match("^%s*(.-)%s*$"):lower()
+                            -- Prismatic gems fit in any socket type
+                            if trimmed == "prismatic" then
+                                gemFitsHere = true
+                                break
+                            end
+                            -- Exact socket match
+                            if trimmed == socketName then
+                                gemFitsHere = true
+                                break
+                            end
+                        end
+                        
+                        -- Also check if gem fits in prismatic (for red, green, yellow gems)
+                        if not gemFitsHere and socketName == "prismatic" then
+                            for gemSocketType in fullMod.data.socket_type:gmatch("[^,]+") do
+                                local trimmed = gemSocketType:match("^%s*(.-)%s*$"):lower()
+                                if trimmed == "red" or trimmed == "green" or trimmed == "yellow" then
+                                    gemFitsHere = true
+                                    break
+                                end
+                            end
+                        end
+                        
+                        if gemFitsHere then
+                            gemsInThisSocket = gemsInThisSocket + 1
+                        end
+                    end
+                end
+            end
+            
+            -- Calculate empty socket slots
+            local emptySocketCount = math.max(0, count - gemsInThisSocket)
+            
             -- Only add spacer before the first socket section
-            if (count > 0 or gemInSocket) and not socketSectionStarted then
+            if (emptySocketCount > 0 or gemsInThisSocket > 0) and not socketSectionStarted then
                 table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })
                 socketSectionStarted = true
             end
             
-            -- Display the gem if one is applied (and we haven't shown it yet)
-            if gemInSocket and not shownGemsInThisLoop[gemInSocket.id or gemInSocket.name] then
-                local gemIcon = (type(gemInSocket.icon) == "number") and ("|T" .. gemInSocket.icon .. ":0:0:2:0|t") or tostring(gemInSocket.icon or "")
-                local gemDisplay = Common and Common.ColorByQuality and Common:ColorByQuality(gemInSocket.name, gemInSocket.rarity) or gemInSocket.name
-                table.insert(lines, {
-                    text = gemIcon .. " " .. gemDisplay,
-                    r = 1, g = 1, b = 1, wrap = false
-                })
-                -- Track this gem as shown in both tracking systems
-                shownGemsInThisLoop[gemInSocket.id or gemInSocket.name] = true
-                displayedGemIds[gemInSocket.name] = true
-                if gemInSocket.id then displayedGemIds[gemInSocket.id] = true end
+            -- Display all gems applied to this socket type
+            if ItemMod and profile and instanceGuid then
+                local applied = ItemMod:GetAppliedModifications(profile, instanceGuid)
+                for _, mod in ipairs(applied) do
+                    local fullMod = ItemReg and ItemReg:Get(mod.itemId)
+                    if not fullMod then fullMod = mod end
+                    
+                    local isGem = false
+                    if fullMod.tags then
+                        for _, tag in ipairs(fullMod.tags) do
+                            if tag == "gem" then
+                                isGem = true
+                                break
+                            end
+                        end
+                    end
+                    
+                    if isGem and fullMod.data and fullMod.data.socket_type and not shownGemsInThisLoop[fullMod.id or fullMod.name] then
+                        -- Check if this gem fits in this socket type
+                        local gemFitsHere = false
+                        for gemSocketType in fullMod.data.socket_type:gmatch("[^,]+") do
+                            local trimmed = gemSocketType:match("^%s*(.-)%s*$"):lower()
+                            -- Prismatic gems fit in any socket type
+                            if trimmed == "prismatic" then
+                                gemFitsHere = true
+                                break
+                            end
+                            -- Exact socket match
+                            if trimmed == socketName then
+                                gemFitsHere = true
+                                break
+                            end
+                        end
+                        
+                        -- Also check if gem fits in prismatic (for red, green, yellow gems)
+                        if not gemFitsHere and socketName == "prismatic" then
+                            for gemSocketType in fullMod.data.socket_type:gmatch("[^,]+") do
+                                local trimmed = gemSocketType:match("^%s*(.-)%s*$"):lower()
+                                if trimmed == "red" or trimmed == "green" or trimmed == "yellow" then
+                                    gemFitsHere = true
+                                    break
+                                end
+                            end
+                        end
+                        
+                        if gemFitsHere then
+                            local gemIcon = (type(fullMod.icon) == "number") and ("|T" .. fullMod.icon .. ":0:0:2:0|t") or tostring(fullMod.icon or "")
+                            local gemDisplay = Common and Common.ColorByQuality and Common:ColorByQuality(fullMod.name, fullMod.rarity) or fullMod.name
+                            table.insert(lines, {
+                                text = gemIcon .. " " .. gemDisplay,
+                                r = 1, g = 1, b = 1, wrap = false
+                            })
+                            shownGemsInThisLoop[fullMod.id or fullMod.name] = true
+                            displayedGemIds[fullMod.name] = true
+                            if fullMod.id then displayedGemIds[fullMod.id] = true end
+                        end
+                    end
+                end
             end
             
-            -- Display empty sockets (only those not filled by a gem that we showed)
-            local gemShownForThisSocket = gemInSocket and not not shownGemsInThisLoop[gemInSocket.id or gemInSocket.name]
-            local startIndex = gemShownForThisSocket and 2 or 1
-            for i = startIndex, count do
+            -- Display empty sockets
+            for i = 1, emptySocketCount do
                 table.insert(lines, {
                     text = st.icon .. " " .. st.label,
                     r = 1, g = 1, b = 1, wrap = false
@@ -884,7 +1068,7 @@ function Item:ShowTooltip(instanceGuid)
 
     -- ==== Description ====
     if self.description and self.description ~= "" then
-        local descColor = self.category == "MODIFICATION" and { r = 0, g = 1, b = 0 } or { r = 1, g = 1, b = 0 }
+        local descColor = self.category == "MODIFICATION" and { r = 0, g = 1, b = 0 } or { r = 1, g = 0xD1/255, b = 0 }
         local formattedDescription = self.description
         if self.category ~= "MODIFICATION" then
             table.insert(lines, { text = " ", r = 1, g = 1, b = 1, wrap = false })

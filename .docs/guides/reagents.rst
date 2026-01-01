@@ -253,6 +253,7 @@ These materials have the tag ``cloth``, ``thread`` or ``gossamer``.
    Mageweave Cloth, item-r4338, 3
    Runecloth, item-r14047, 4
    Silk Cloth, item-r4306, 2
+   Spellcloth, item-r24271, 5
    Wool Cloth, item-r2592, 1
    Ironweb Spider Silk, item-r14227, 2
    Shadow Silk, item-r10285, 4

@@ -158,18 +158,13 @@ local function _buildEditSchema(recipeId, def)
                   choices={"common","uncommon","rare","epic","legendary"}, default=def.quality or "uncommon" },
             }},
             { title="Output", elements={
-                { id="outputItemId", label="Output Item Id", type="lookup", pattern="^item%-[a-fA-F0-9]+$", default=def.outputItemId or "item-placeholder" },
+                { id="outputItemId", label="Output Item Id", type="lookup", lookupTypes="items", pattern="^item%-[a-fA-F0-9]+$", default=def.outputItemId or "item-placeholder" },
                 { id="outputQty",    label="Output Qty",    type="number", default=tonumber(def.outputQty) or 1 },
             }},
             { title="Reagents", elements={
                 { id="reagents", label="Reagents", type="editor_table",
-                  columns={{id="id",header="Item Id",type="lookup",pattern="^item%-[a-fA-F0-9]+$",width=240},{id="qty",header="Qty",type="number",width=60}},
+                  columns={{id="id",header="Item Id",type="lookup",lookupTypes="items",pattern="^item%-[a-fA-F0-9]+$",width=240},{id="qty",header="Qty",type="number",width=60}},
                   default=_tableToArray(def.reagents) or {} },
-            }},
-            { title="Optional Reagents", elements={
-                { id="optional", label="Optional", type="editor_table",
-                  columns={{id="id",header="Item Id",type="lookup",pattern="^item%-[a-fA-F0-9]+$",width=240},{id="qty",header="Qty",type="number",width=60}},
-                  default=_tableToArray(def.optional) or {} },
             }},
             { title="Tools", elements={
                 { id="tools", label="Tools", type="list", default=def.tools or {"Hammer","Anvil"} },
@@ -177,7 +172,7 @@ local function _buildEditSchema(recipeId, def)
             { title="Costs", elements={
                 { id="cost", label="Recipe Costs", type="editor_table",
                   columns = {
-                      { id="key",   header="Type / Item Id", type="lookup", pattern="^item%-[a-fA-F0-9]+$", width=240 },
+                      { id="key",   header="Type / Item Id", type="lookup", lookupTypes="items", pattern="^item%-[a-fA-F0-9]+$", width=240 },
                       { id="value", header="Amount",         type="number", width=80 },
                   },
                   default = (function()

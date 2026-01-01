@@ -1,0 +1,124 @@
+﻿=== RECIPE LIST BY PROFESSION ===
+
+
+[Blacksmithing] - 19 recipes
+============================================================
+Lvl   1  Plans: Copper Sabatons
+Lvl   5  Plans: Copper Gauntlets
+Lvl  10  Plans: Copper Spear
+Lvl  15  Plans: Copper Longsword
+Lvl  15  Plans: Copper Chain Coif
+Lvl  20  Plans: Copper Battleaxe
+Lvl  25  Plans: Copper Mace
+Lvl  30  Plans: Copper Warhammer
+Lvl  30  Plans: Copper Shield
+Lvl  35  Plans: Copper Dagger
+Lvl  40  Plans: Copper Hatchet
+Lvl  45  Plans: Copper Warglaive
+Lvl  50  Plans: Balanced Throwing Knife
+Lvl  55  Plans: Copper Shortsword
+Lvl  60  Plans: Copper Chain Hauberk
+Lvl  65  Plans: Copper Helmet
+Lvl  70  Plans: Copper Chain Boots
+Lvl  70  Plans: Copper Chestplate
+Lvl  75  Plans: Copper Chain Gauntlets
+
+[Tailoring] - 5 recipes
+============================================================
+Lvl  10  Pattern: Linen Robe
+Lvl  35  Pattern: Linen Gloves
+Lvl  40  Pattern: Linen Cloak
+Lvl  45  Pattern: Linen Boots
+Lvl  60  Pattern: Linen Hood
+
+[Leatherworking] - 4 recipes
+============================================================
+Lvl  20  Pattern: Light Leather Armor
+Lvl  50  Pattern: Light Leather Gloves
+Lvl  55  Pattern: Light Leather Boots
+Lvl  65  Pattern: Light Leather Hood
+
+[Alchemy] - 27 recipes
+============================================================
+Lvl  25  Recipe: Elixir of Minor Strength
+Lvl  35  Recipe: Minor Mana Potion
+Lvl  45  Recipe: Elixir of Minor Intellect
+Lvl  45  Recipe: Minor Healing Potion
+Lvl  50  Recipe: Elixir of Minor Fortitude
+Lvl  50  Recipe: Elixir of Minor Spirit
+Lvl  55  Recipe: Elixir of Minor Agility
+Lvl  75  Recipe: Elixir of Intellect
+Lvl  75  Recipe: Elixir of Fortitude
+Lvl  80  Recipe: Elixir of Spirit
+Lvl 100  Recipe: Elixir of Strength
+Lvl 115  Recipe: Lesser Mana Potion
+Lvl 120  Recipe: Elixir of Agility
+Lvl 125  Recipe: Elixir of Greater Strength
+Lvl 125  Recipe: Elixir of Greater Agility
+Lvl 125  Recipe: Lesser Healing Potion
+Lvl 130  Recipe: Elixir of Greater Intellect
+Lvl 150  Recipe: Elixir of Greater Fortitude
+Lvl 155  Recipe: Mana Potion
+Lvl 160  Recipe: Elixir of Greater Spirit
+Lvl 165  Recipe: Healing Potion
+Lvl 175  Recipe: Major Healing Potion
+Lvl 180  Recipe: Major Mana Potion
+Lvl 225  Recipe: Superior Mana Potion
+Lvl 230  Recipe: Superior Healing Potion
+Lvl 275  Recipe: Greater Healing Potion
+Lvl 280  Recipe: Greater Mana Potion
+
+[Inscription] - 20 recipes
+============================================================
+Lvl   5  Pattern: Scroll of Intellect I
+Lvl  35  Plans: Maple Battlestaff
+Lvl  50  Pattern: Scroll of Agility I
+Lvl  55  Pattern: Scroll of Armor I
+Lvl  60  Pattern: Scroll of Spirit I
+Lvl  60  Pattern: Scroll of Stamina I
+Lvl  70  Pattern: Scroll of Strength I
+Lvl  75  Plans: Copper-Reinforced Quarterstaff
+Lvl  80  Pattern: Scroll of Stamina II
+Lvl  85  Pattern: Scroll of Armor II
+Lvl  90  Pattern: Scroll of Spirit II
+Lvl  95  Pattern: Scroll of Intellect II
+Lvl 105  Pattern: Scroll of Agility II
+Lvl 110  Pattern: Scroll of Strength II
+Lvl 130  Pattern: Scroll of Spirit III
+Lvl 135  Pattern: Scroll of Strength III
+Lvl 140  Pattern: Scroll of Stamina III
+Lvl 145  Pattern: Scroll of Agility III
+Lvl 170  Pattern: Scroll of Intellect III
+Lvl 175  Pattern: Scroll of Armor III
+
+[Herbalism] - 23 recipes
+============================================================
+Lvl   1  Mill: Moonglow Ink
+Lvl   1  Mill: Fiery Ink
+Lvl   1  Mill: Apricate Ink
+Lvl  50  Mill: Lion's Ink
+Lvl  50  Mill: Tranquil Ink
+Lvl  50  Mill: Ethereal Ink
+Lvl  50  Mill: Midnight Ink
+Lvl 100  Mill: Jadefire Ink
+Lvl 100  Mill: Inferno Ink
+Lvl 100  Mill: Blazing Ink
+Lvl 100  Mill: Celestial Ink
+Lvl 150  Mill: Blackfallow Ink
+Lvl 150  Mill: Ultramarine Ink
+Lvl 150  Mill: Burnished Ink
+Lvl 150  Mill: Snowfall Ink
+Lvl 150  Mill: Cosmic Ink
+Lvl 150  Mill: Ink of the Sea
+Lvl 200  Mill: Shadow Ink
+Lvl 200  Mill: Royal Ink
+Lvl 200  Mill: Starlight Ink
+Lvl 200  Mill: Crimson Ink
+Lvl 200  Mill: Ink of Dreams
+Lvl 200  Mill: Hunter's Ink
+
+[Engineering] - 3 recipes
+============================================================
+Lvl   1  Schematic: Hunting Crossbow
+Lvl   5  Schematic: Hunting Bow
+Lvl  25  Schematic: Hunting Rifle

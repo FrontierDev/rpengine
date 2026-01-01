@@ -47,7 +47,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 					maxStock = "inf",
 					maxRarity = "uncommon",
 					matchAll = false,
-					tags = "tailoring",
+					tags = { "tailoring", "thread" },
 				},
 			},
 		},
@@ -110,10 +110,10 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 				label = "Alchemy Supplies",
 				action = "SHOP",
 				args = {
-					maxStock = "inf",
+					maxStock = 5,
 					maxRarity = "uncommon",
 					matchAll = false,
-					tags = "alchemy",
+					tags = { "alchemy", "herb" },
 				},
 			},
 		},
@@ -151,6 +151,23 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 			},
 		},
 		target = "Herbalism Trainer",
+	},
+
+	["ixn-herbalism-goods"] = {
+		id = "ixn-herbalism-goods",
+		options = {
+			{
+				label = "Shop",
+				action = "SHOP",
+				args = {
+					maxStock = "5",
+					maxRarity = "uncommon",
+					matchAll = false,
+					tags = { "herb" },
+				},
+			},
+		},
+		target = "Herbalism Supplies",
 	},
 
 	-- Mining (gatherer, usually mobile)
@@ -298,11 +315,27 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 					maxStock = "inf",
 					maxRarity = "uncommon",
 					matchAll = false,
-					tags = "inscription",
+					tags = {"inscription", "parchment"},
 				},
 			},
 		},
 		target = "Inscription Supplies",
+	},
+	["ixn-inscription-inks"] = {
+		id = "ixn-inscription-inks",
+		options = {
+			{
+				label = "Ink Trader",
+				action = "SHOP",
+				args = {
+					maxStock = 3,
+					maxRarity = "uncommon",
+					matchAll = false,
+					tags = { "ink" },
+				},
+			},
+		},
+		target = "Ink Trader",
 	},
 	["ixn-inscription-trainer"] = {
 		id = "ixn-inscription-trainer",
@@ -397,7 +430,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 				action = "SALVAGE",
 				requiresDead = 1,
 				output = {
-					{ itemId = "item-r2589", qty = "1d3", chance = 1.0 },
+					{ itemId = "item-r2996", qty = "1d3", chance = 1.0 },
 				},
 			},
 		},
@@ -413,7 +446,7 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 				action = "SKIN",
 				requiresDead = 1,
 				output = {
-					{ itemId = "item-r2318", qty = "1d2", chance = 1.0 },
+					{ itemId = "item-2934", qty = "1d2", chance = 1.0 },
 				},
 			},
 		},
@@ -434,5 +467,57 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 			},
 		},
 		target = "Paladin Trainer",
+	},
+
+	-- Trade Goods/ Trade Supplies
+	["ixn-trade-goods"] = {
+		id = "ixn-trade-goods",
+		options = {
+			{
+				label = "Shop",
+				action = "SHOP",
+				args = {
+					maxStock = "inf",
+					maxRarity = "uncommon",
+					matchAll = false,
+					tags = { "tool", "trade-good" },
+				},
+			},
+		},
+		target = "Trade Goods",
+	},
+
+	["ixn-trade-supplies"] = {
+		id = "ixn-trade-supplies",
+		options = {
+			{
+				label = "Shop",
+				action = "SHOP",
+				args = {
+					maxStock = "inf",
+					maxRarity = "uncommon",
+					matchAll = false,
+					tags = { "tool", "trade-good" },
+				},
+			},
+		},
+		target = "Trade Supplies",
+	},
+
+	["ixn-general-goods"] = {
+		id = "ixn-general-goods",
+		options = {
+			{
+				label = "Shop",
+				action = "SHOP",
+				args = {
+					maxStock = "inf",
+					maxRarity = "uncommon",
+					matchAll = false,
+					tags = { "tool", "trade-good" },
+				},
+			},
+		},
+		target = "General Goods",
 	},
 }

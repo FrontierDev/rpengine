@@ -327,6 +327,11 @@ local function _targetPhraseFromSpec(self, action)
     return "the target"
 end
 
+local function _titleCase(s)
+    if type(s) ~= "string" then return s end
+    return s:sub(1, 1):upper() .. s:sub(2):lower()
+end
+
 function Spell:_flattenActions()
     local flat = {}
     for gi, group in ipairs(self.groups or {}) do
@@ -454,12 +459,12 @@ function Spell:_resolveActionProperty(entry, propPath, vars)
                 if item then
                     local d = (type(item) == "table") and (item.data or item) or {}
                     local ds = d.damageSchool or d.school or d.damage_school
-                    if ds and ds ~= "" then return tostring(ds) end
+                    if ds and ds ~= "" then return _titleCase(tostring(ds)) end
                 end
                 return "Physical"
             end
         end
-        return tostring(raw)
+        return _titleCase(tostring(raw))
     elseif propPath == "target" then
         return _targetPhraseFromSpec(self, act)
     elseif propPath == "auraId" then

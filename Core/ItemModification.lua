@@ -24,9 +24,35 @@ local function getModificationBonuses(modificationItem)
     
     local bonuses = {}
     for key, value in pairs(modificationItem.data) do
-        if type(key) == "string" and key:match("^stat_") then
+        if type(key) == "string" and key:match("^stat_") and not key:match("_pct$") then
             local statId = key:sub(6)  -- Remove "stat_" prefix
             bonuses[statId] = tonumber(value) or 0
+        end
+    end
+    return bonuses
+end
+
+--- Extract socket bonuses from a modification item's data.
+---@param modificationItem Item
+---@return table -- { red_sockets = bonusAmount, blue_sockets = bonusAmount, ... }
+local function getModificationSocketBonuses(modificationItem)
+    if not modificationItem or not modificationItem.data then return {} end
+    
+    local socketKeys = {
+        "red_sockets",
+        "blue_sockets",
+        "yellow_sockets",
+        "green_sockets",
+        "meta_sockets",
+        "cog_sockets",
+        "prismatic_sockets",
+    }
+    
+    local bonuses = {}
+    for _, socketKey in ipairs(socketKeys) do
+        local value = modificationItem.data[socketKey]
+        if value then
+            bonuses[socketKey] = tonumber(value) or 0
         end
     end
     return bonuses
@@ -135,13 +161,21 @@ local function countGemsInSocket(profile, instanceGuid, socketType)
     return count
 end
 
---- Check if a gem modification can fit into target item's sockets.
+--- Check if a gem modification can be applied to target item.
+--- Gems can only be applied to EQUIPMENT items that have matching socket slots available.
 ---@param gemItem Item -- the gem modification
 ---@param targetItem Item -- the item being modified
+---@param profile CharacterProfile -- needed to check actual inventory slot socket counts
+---@param instanceGuid string -- the instance GUID of the target item
 ---@return boolean canFit
 ---@return string|nil reason
-local function canGemFitInSockets(gemItem, targetItem)
+local function canGemFitInSockets(gemItem, targetItem, profile, instanceGuid)
     if not gemItem or not targetItem then return false, "Missing item data" end
+    
+    -- Gems can only be applied to EQUIPMENT items
+    if targetItem.category ~= "EQUIPMENT" then
+        return false, "Gems can only be applied to equipment items"
+    end
     
     -- Gem must have socket_type
     local gemSocketType = gemItem.data and gemItem.data.socket_type
@@ -162,24 +196,198 @@ local function canGemFitInSockets(gemItem, targetItem)
         return false, "Gem socket_type is empty"
     end
     
-    -- Target item must have socket capacity
+    -- Find the actual inventory slot to check current socket counts (including from modifications)
+    local invSlot = nil
+    if profile and instanceGuid then
+        for _, slot in ipairs(profile.items or {}) do
+            if slot.instanceGuid == instanceGuid then
+                invSlot = slot
+                break
+            end
+        end
+    end
+    
+    -- Target item MUST have socket slots defined and available
     local socketMaps = {
         red       = "red_sockets",
         blue      = "blue_sockets",
         yellow    = "yellow_sockets",
+        green     = "green_sockets",
         meta      = "meta_sockets",
         cogwheel  = "cog_sockets",
+        prismatic = "prismatic_sockets",
+    }
+    
+    -- Prismatic sockets can accept red, green, and yellow gems
+    local prismaticCompatible = {
+        red = true,
+        green = true,
+        yellow = true,
     }
     
     local hasAnySocket = false
+    
+    -- Check if this gem is a prismatic gem (socket_type contains "prismatic")
+    local isPrismaticGem = gemTypes["prismatic"] or false
+    
     for gemType in pairs(gemTypes) do
         local socketKey = socketMaps[gemType]
         if socketKey then
+            -- Start with base item socket count
             local count = tonumber(targetItem.data[socketKey]) or 0
-            if count > 0 then
-                hasAnySocket = true
-                break
+            
+            -- Add socket bonuses from applied modifications
+            if invSlot and invSlot.mods then
+                for modKey, modData in pairs(invSlot.mods) do
+                    if type(modKey) == "string" and modKey:match("^mod_") then
+                        local modItemId = modData.itemId
+                        local modItem = ItemRegistry and ItemRegistry:Get(modItemId)
+                        if modItem then
+                            local modSocketBonuses = getModificationSocketBonuses(modItem)
+                            if modSocketBonuses[socketKey] then
+                                count = count + modSocketBonuses[socketKey]
+                            end
+                        end
+                    end
+                end
             end
+            
+            -- Check if there's available space in this socket type
+            if count > 0 then
+                local usedSockets = countGemsInSocket(profile, instanceGuid, gemType)
+                if usedSockets < count then
+                    hasAnySocket = true
+                    break
+                end
+            end
+        end
+        
+        -- Also check if this gem type can fit in prismatic sockets
+        if prismaticCompatible[gemType] then
+            local prismaticKey = "prismatic_sockets"
+            local count = tonumber(targetItem.data[prismaticKey]) or 0
+            
+            -- Add prismatic socket bonuses from applied modifications
+            if invSlot and invSlot.mods then
+                for modKey, modData in pairs(invSlot.mods) do
+                    if type(modKey) == "string" and modKey:match("^mod_") then
+                        local modItemId = modData.itemId
+                        local modItem = ItemRegistry and ItemRegistry:Get(modItemId)
+                        if modItem then
+                            local modSocketBonuses = getModificationSocketBonuses(modItem)
+                            if modSocketBonuses[prismaticKey] then
+                                count = count + modSocketBonuses[prismaticKey]
+                            end
+                        end
+                    end
+                end
+            end
+            
+            -- Check if there's available space in prismatic sockets
+            if count > 0 then
+                -- For prismatic sockets, count all red, green, and yellow gems applied
+                local usedSockets = 0
+                if invSlot and invSlot.mods then
+                    for modKey, modData in pairs(invSlot.mods) do
+                        if type(modKey) == "string" and modKey:match("^mod_") and type(modData) == "table" then
+                            local modItemId = modData.itemId
+                            if modItemId then
+                                local modItem = ItemRegistry and ItemRegistry:Get(modItemId)
+                                if modItem and modItem.tags then
+                                    -- Check if this is a gem
+                                    local isGem = false
+                                    for _, tag in ipairs(modItem.tags) do
+                                        if tag == "gem" then
+                                            isGem = true
+                                            break
+                                        end
+                                    end
+                                    
+                                    if isGem and modItem.data and modItem.data.socket_type then
+                                        -- Check if this gem is compatible with prismatic (red, green, yellow, or prismatic)
+                                        local gemTypeList = {}
+                                        for gtype in modItem.data.socket_type:gmatch("[^,]+") do
+                                            local normalized = normalizeProp(gtype)
+                                            if normalized ~= "" then
+                                                gemTypeList[normalized] = true
+                                            end
+                                        end
+                                        
+                                        if gemTypeList["red"] or gemTypeList["green"] or gemTypeList["yellow"] or gemTypeList["prismatic"] then
+                                            usedSockets = usedSockets + 1
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                if usedSockets < count then
+                    hasAnySocket = true
+                    break
+                end
+            end
+        end
+    end
+    
+    -- Check if this is a prismatic gem and if there are available sockets (any type)
+    if isPrismaticGem then
+        -- Prismatic gems can fit in any socket type, so count total sockets and total gems
+        local totalSockets = 0
+        
+        -- Sum all socket types
+        for socketName, socketKey in pairs(socketMaps) do
+            local count = tonumber(targetItem.data[socketKey]) or 0
+            
+            -- Add socket bonuses from applied modifications
+            if invSlot and invSlot.mods then
+                for modKey, modData in pairs(invSlot.mods) do
+                    if type(modKey) == "string" and modKey:match("^mod_") then
+                        local modItemId = modData.itemId
+                        local modItem = ItemRegistry and ItemRegistry:Get(modItemId)
+                        if modItem then
+                            local modSocketBonuses = getModificationSocketBonuses(modItem)
+                            if modSocketBonuses[socketKey] then
+                                count = count + modSocketBonuses[socketKey]
+                            end
+                        end
+                    end
+                end
+            end
+            
+            totalSockets = totalSockets + count
+        end
+        
+        -- Count total gems applied (all types, as prismatic can fill any)
+        local totalGemsApplied = 0
+        if invSlot and invSlot.mods then
+            for modKey, modData in pairs(invSlot.mods) do
+                if type(modKey) == "string" and modKey:match("^mod_") and type(modData) == "table" then
+                    local modItemId = modData.itemId
+                    if modItemId then
+                        local modItem = ItemRegistry and ItemRegistry:Get(modItemId)
+                        if modItem and modItem.tags then
+                            -- Check if this is a gem
+                            local isGem = false
+                            for _, tag in ipairs(modItem.tags) do
+                                if tag == "gem" then
+                                    isGem = true
+                                    break
+                                end
+                            end
+                            
+                            if isGem then
+                                totalGemsApplied = totalGemsApplied + 1
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        if totalSockets > 0 and totalGemsApplied < totalSockets then
+            hasAnySocket = true
         end
     end
     
@@ -300,37 +508,12 @@ local function isModificationCompatible(modItem, targetItem, profile, instanceGu
         
         if primaryTag == "gem" then
             -- For gems, check socket compatibility
-            local canFit, gemReason = canGemFitInSockets(modItem, targetItem)
+            local canFit, gemReason = canGemFitInSockets(modItem, targetItem, profile, instanceGuid)
             if not canFit then
                 return false, gemReason
             end
             
-            -- Also check if gem can fit in available sockets
-            local gemSocketType = modItem.data.socket_type
-            if gemSocketType then
-                for socketType in gemSocketType:gmatch("[^,]+") do
-                    local normalized = normalizeProp(socketType)
-                    local socketKey = nil
-                    
-                    if normalized == "red" then socketKey = "red_sockets"
-                    elseif normalized == "blue" then socketKey = "blue_sockets"
-                    elseif normalized == "yellow" then socketKey = "yellow_sockets"
-                    elseif normalized == "meta" then socketKey = "meta_sockets"
-                    elseif normalized == "cogwheel" then socketKey = "cog_sockets"
-                    end
-                    
-                    if socketKey then
-                        local maxSockets = tonumber(targetItem.data[socketKey]) or 0
-                        local usedSockets = countGemsInSocket(profile, instanceGuid, socketType)
-                        
-                        if usedSockets < maxSockets then
-                            return true  -- Found an available socket
-                        end
-                    end
-                end
-                
-                return false, "No available sockets for this gem"
-            end
+            -- Gems can be applied to any item - compatibility check passed above
         else
             -- Non-gem: check max_[tag] limit
             -- Priority: item data > active rules > default (999)
@@ -441,6 +624,15 @@ function ItemModification:ApplyModification(profile, instanceGuid, modificationI
         itemId = modificationItemId,
         appliedAt = time() or 0,
     }
+    
+    -- Apply socket bonuses to the item (for "Add Socket" type modifications, not gems)
+    local socketBonuses = getModificationSocketBonuses(modItem)
+    if next(socketBonuses) ~= nil then
+        invSlot.data = invSlot.data or {}
+        for socketKey, bonusAmount in pairs(socketBonuses) do
+            invSlot.data[socketKey] = (tonumber(invSlot.data[socketKey]) or 0) + bonusAmount
+        end
+    end
     
     -- Consume one of the modification items from inventory
     -- If modificationInstanceGuid is provided, remove that specific instance
@@ -621,6 +813,15 @@ function ItemModification:RemoveModificationByKey(profile, instanceGuid, modKey,
         return false
     end
     
+    -- Remove socket bonuses from the item
+    local socketBonuses = getModificationSocketBonuses(modItem)
+    if next(socketBonuses) ~= nil then
+        invSlot.data = invSlot.data or {}
+        for socketKey, bonusAmount in pairs(socketBonuses) do
+            invSlot.data[socketKey] = math.max(0, (tonumber(invSlot.data[socketKey]) or 0) - bonusAmount)
+        end
+    end
+    
     -- Remove from inventory slot
     invSlot.mods[modKey] = nil
     
@@ -747,19 +948,44 @@ function ItemModification:HasModification(profile, instanceGuid, modificationIte
     return false
 end
 
---- Get total stat bonuses from all applied modifications to an item instance.
+--- Get total stat and socket bonuses from all applied modifications to an item instance.
 ---@param profile CharacterProfile
 ---@param instanceGuid string -- instance GUID of the item
----@return table -- { statId = totalBonus, ... }
+---@return table -- { statId = totalBonus, red_sockets = totalBonus, ... }
 function ItemModification:GetTotalModificationBonuses(profile, instanceGuid)
     if not profile or not instanceGuid then return {} end
     
-    local applied = self:GetAppliedModifications(profile, instanceGuid)
+    local invSlot = nil
+    for _, slot in ipairs(profile.items or {}) do
+        if slot.instanceGuid == instanceGuid then
+            invSlot = slot
+            break
+        end
+    end
+    
     local totals = {}
     
+    -- Aggregate stat bonuses from applied modifications
+    local applied = self:GetAppliedModifications(profile, instanceGuid)
     for _, modData in ipairs(applied) do
         for statId, bonus in pairs(modData.bonuses) do
             totals[statId] = (totals[statId] or 0) + bonus
+        end
+    end
+    
+    -- Aggregate socket bonuses from applied "Add Socket" type modifications
+    if invSlot and invSlot.mods then
+        for modKey, modData in pairs(invSlot.mods) do
+            if type(modKey) == "string" and modKey:match("^mod_") then
+                local modItemId = modData.itemId
+                local modItem = ItemRegistry and ItemRegistry:Get(modItemId)
+                if modItem then
+                    local socketBonuses = getModificationSocketBonuses(modItem)
+                    for socketKey, bonus in pairs(socketBonuses) do
+                        totals[socketKey] = (totals[socketKey] or 0) + bonus
+                    end
+                end
+            end
         end
     end
     

@@ -445,7 +445,8 @@ end
 
 ---Create a manager (usually per-Event).
 ---@param event table|nil
-function AuraManager.New(event)
+---@param skipTraits boolean|nil  -- if true, don't apply player traits on creation
+function AuraManager.New(event, skipTraits)
     RPE.Debug:Internal(">> Created the Aura Manager.")
     local o = {
         event = event,
@@ -455,20 +456,22 @@ function AuraManager.New(event)
     }
     local manager = setmetatable(o, AuraManager)
     
-    -- Apply player's traits as auras when manager is created
-    local Common = RPE.Common
-    local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
-    if profile and profile.GetTraits and Common and Common.LocalPlayerId then
-        local traits = profile:GetTraits()
-        if traits and #traits > 0 then
-            local playerId = Common:LocalPlayerId()
-            if playerId then
-                for _, traitId in ipairs(traits) do
-                    local ok, inst = manager:Apply(playerId, playerId, traitId)
-                    if ok then
-                        RPE.Debug:Internal(("[AuraManager.New] Applied trait '%s' to player"):format(tostring(traitId)))
-                    else
-                        RPE.Debug:Warning(("[AuraManager.New] Failed to apply trait '%s': %s"):format(tostring(traitId), tostring(inst)))
+    -- Apply player's traits as auras when manager is created (unless skipTraits is true)
+    if not skipTraits then
+        local Common = RPE.Common
+        local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive()
+        if profile and profile.GetTraits and Common and Common.LocalPlayerId then
+            local traits = profile:GetTraits()
+            if traits and #traits > 0 then
+                local playerId = Common:LocalPlayerId()
+                if playerId then
+                    for _, traitId in ipairs(traits) do
+                        local ok, inst = manager:Apply(playerId, playerId, traitId)
+                        if ok then
+                            RPE.Debug:Internal(("[AuraManager.New] Applied trait '%s' to player"):format(tostring(traitId)))
+                        else
+                            RPE.Debug:Warning(("[AuraManager.New] Failed to apply trait '%s': %s"):format(tostring(traitId), tostring(inst)))
+                        end
                     end
                 end
             end

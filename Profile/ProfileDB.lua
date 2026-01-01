@@ -55,6 +55,12 @@ function ProfileDB.LoadActiveForCurrentCharacter()
     -- Equipment stat mods are already recalculated in CharacterProfile constructor via RecalculateEquipmentStats()
     -- Do NOT call Equip() here as it would double-apply the mods via applyEquipMods() using +1 delta
 
+    -- Create AuraManager instance and apply player's traits
+    local AuraManager = RPE.Core and RPE.Core.AuraManager
+    if AuraManager then
+        RPE._auraManager = AuraManager.New(nil, false)  -- nil event (not in combat yet), false = apply traits
+    end
+
     loaded = true
     return profile
 end
@@ -276,6 +282,21 @@ function ProfileDB.InitializeUI()
     -- Recalculate equipment stats once after profile is fully loaded and ready
     if profile and type(profile.RecalculateEquipmentStats) == "function" then
         profile:RecalculateEquipmentStats()
+    end
+    
+    -- Apply player's traits as auras now that profile is loaded
+    if RPE._auraManager and profile and profile.GetTraits then
+        local traits = profile:GetTraits()
+        local Common = RPE.Common
+        local playerId = Common and Common:LocalPlayerId()
+        if traits and #traits > 0 and playerId then
+            for _, traitId in ipairs(traits) do
+                local ok, inst = RPE._auraManager:Apply(playerId, playerId, traitId)
+                if ok then
+                    if RPE.Debug then RPE.Debug:Internal(("[ProfileDB.InitializeUI] Applied trait '%s'"):format(tostring(traitId))) end
+                end
+            end
+        end
     end
     
     -- Initialize the Language system with profile data

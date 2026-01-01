@@ -55,11 +55,27 @@ end)
 Executor.RegisterHandler("SHOP", function(opt, target)
     RPE.Debug:Internal("Opening shop with " .. (target or "?"))
 
+    -- Get the actual target NPC GUID
+    local targetGuid = nil
+    if target == "target" or target == "npc" then
+        targetGuid = UnitGUID("target")
+    elseif type(target) == "string" and target:match("0x") then
+        -- Target is already a GUID
+        targetGuid = target
+    end
+    
+    if targetGuid then
+        RPE.Debug:Internal(("[Shop] NPC GUID: %s"):format(targetGuid))
+    end
+
     local win = _G.RPE and _G.RPE.Core and _G.RPE.Core.Windows and _G.RPE.Core.Windows.ShopWindow
     if not win then
         local ShopWindowClass = RPE_UI.Windows.ShopWindow
-        win = ShopWindowClass.New()
+        win = ShopWindowClass.New(targetGuid)
         _G.RPE.Core.Windows.ShopWindow = win
+    else
+        -- Update the NPC GUID if opening an existing window with a different NPC
+        win.npcGuid = targetGuid
     end
 
     win.items = {}

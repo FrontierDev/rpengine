@@ -91,21 +91,26 @@ end
 -- One-time init when our addon loads
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
+f:RegisterEvent("PLAYER_LOGIN")
 f:SetScript("OnEvent", function(_, event, loadedName)
-    if loadedName ~= ADDON_NAME then return end
+    if event == "ADDON_LOADED" then
+        if loadedName ~= ADDON_NAME then return end
 
-    RPEngine.AddonName    = ADDON_NAME
-    RPEngine.AddonVersion = GetMeta(ADDON_NAME, "Version") or "dev"
+        RPEngine.AddonName    = ADDON_NAME
+        RPEngine.AddonVersion = GetMeta(ADDON_NAME, "Version") or "dev"
 
-    -- Register addon message prefix
-    C_ChatInfo.RegisterAddonMessagePrefix(RPEngine.AddonPrefix)
+        -- Register addon message prefix
+        C_ChatInfo.RegisterAddonMessagePrefix(RPEngine.AddonPrefix)
 
-    -- Finish initialisation
-    RPEngine.IsInitialised = true
-    if RPE.Debug and RPE.Debug.Print then
-        RPE.Debug:Print(("Loaded %s v%s"):format(RPEngine.AddonName, RPEngine.AddonVersion))
+        -- Finish initialisation
+        RPEngine.IsInitialised = true
+        if RPE.Debug and RPE.Debug.Print then
+            RPE.Debug:Print(("Loaded %s v%s"):format(RPEngine.AddonName, RPEngine.AddonVersion))
+        end
+    elseif event == "PLAYER_LOGIN" then
+        -- Create persistent AuraManager at login (lasts entire session)
+        if RPE.Core and RPE.Core.AuraManager and not RPE._auraManager then
+            RPE._auraManager = RPE.Core.AuraManager.New(nil, true)  -- skipTraits=true, will apply them in ProfileDB.InitializeUI
+        end
     end
-
-    -- No longer need the listener
-    f:UnregisterAllEvents()
 end)

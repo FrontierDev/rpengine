@@ -266,6 +266,22 @@ function ActionBarSlot:New(name, opts)
             return
         end
 
+        -- Check if already casting (prevent spell selection during cast)
+        local castingUnitId = nil
+        if o._ownerWidget and o._ownerWidget._controlledUnitId then
+            castingUnitId = o._ownerWidget._controlledUnitId
+        else
+            -- For player, find the unit ID
+            if event.localPlayerKey and event.units and event.units[event.localPlayerKey] then
+                castingUnitId = event.units[event.localPlayerKey].id
+            end
+        end
+        
+        if castingUnitId and event:GetActiveCast(castingUnitId) then
+            UIErrorsFrame:AddMessage("Already casting a spell.", 1, 0.2, 0.2)
+            return
+        end
+
         -- Check if the caster is dead (HP <= 0)
         local casterUnit = nil
         if o._ownerWidget and o._ownerWidget._controlledUnitId then
@@ -551,6 +567,23 @@ function ActionBarSlot:MeetsAllRequirements()
         end
         if not Resources:CanAfford(spell.costs, spell, nil, casterUnitId) then
             return false  -- insufficient resources
+        end
+    end
+
+    -- Check if currently casting (grey out all slots while casting)
+    if event then
+        local castingUnitId = nil
+        if self._ownerWidget and self._ownerWidget._controlledUnitId then
+            castingUnitId = self._ownerWidget._controlledUnitId
+        else
+            -- For player, find the unit ID
+            if event.localPlayerKey and event.units and event.units[event.localPlayerKey] then
+                castingUnitId = event.units[event.localPlayerKey].id
+            end
+        end
+        
+        if castingUnitId and event:GetActiveCast(castingUnitId) then
+            return false  -- currently casting, grey out this slot
         end
     end
 

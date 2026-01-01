@@ -1416,6 +1416,11 @@ function Event:OnPlayerTickStart()
     -- Recover only the local player's resources
     RPE.Core.Resources:OnPlayerTurnStart()
 
+    -- Begin tracking player movement
+    if RPE.Core.Movement then
+        RPE.Core.Movement:OnPlayerTurnStart()
+    end
+
     -- Tick player's active cast from registry
     -- This ensures the player's actual cast (in _activeCasts) is processed, not just what's
     -- displayed in the cast bar. This matters when we temporarily control another unit,
@@ -1425,7 +1430,13 @@ function Event:OnPlayerTickStart()
     if playerUnitId then
         local playerCast = self._activeCasts and self._activeCasts[playerUnitId]
         if playerCast then
-            local ctx = { event = self, resources = RPE.Core.Resources, cooldowns = RPE.Core.Cooldowns }
+            local playerProfile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB:GetOrCreateActive()
+            local ctx = { 
+                event = self, 
+                resources = RPE.Core.Resources, 
+                cooldowns = RPE.Core.Cooldowns,
+                profile = playerProfile,
+            }
             -- Tick will internally handle:
             -- 1. Decrementing remainingTurns
             -- 2. Calling CB:Update() to update the cast bar
@@ -1516,6 +1527,11 @@ function Event:OnPlayerTickEnd()
     local CBW = RPE.Core.Windows and RPE.Core.Windows.ChatBoxWidget
     if CBW and CBW.PushPlayerTurnEndMessage then
         CBW:PushPlayerTurnEndMessage()
+    end
+
+    -- End tracking player movement
+    if RPE.Core.Movement then
+        RPE.Core.Movement:OnPlayerTurnEnd()
     end
 
     if RPE.Core.Resources:Has("ACTION") and RPE.Core.Resources:Has("BONUS_ACTION") then

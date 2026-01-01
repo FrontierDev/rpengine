@@ -21,6 +21,7 @@ C.RegisterPalette("DarkIron", {
     progress_xp            = { 0.45, 0.30, 0.65, 0.90 },
     progress_health        = { 0.20, 0.55, 0.30, 0.90 },
     progress_mana          = { 0.20, 0.55, 0.70, 0.90 },
+    progress_speed         = { 0.75, 0.45, 0.20, 0.90 },
     progress_interrupted   = { 0.75, 0.45, 0.20, 0.90 },
 
     progress_event         = { 0.75, 0.45, 0.20, 0.85 },

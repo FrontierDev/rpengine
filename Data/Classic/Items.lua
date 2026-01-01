@@ -469,6 +469,7 @@ RPE.Data.DefaultClassic.CONSUMABLES = {
         vendorSellable = true,
     },
 
+    ------ Armour Scrolls ------
     ["item-oCCSArmor1"] = {
         basePriceU = 10,
         category = "CONSUMABLE",
@@ -774,7 +775,6 @@ RPE.Data.DefaultClassic.CONSUMABLES = {
         tags = { "tier_2",  "elixir" },
         vendorSellable = true,
     },
-
 }
 
 RPE.Data.DefaultClassic.ITEMS_WEAPONS = {
@@ -851,6 +851,23 @@ RPE.Data.DefaultClassic.ITEMS_WEAPONS = {
         rarity = "common",
         stackable = false,
         tags = { "tier_0",  "melee", "starter" },
+        vendorSellable = true,
+    },
+
+    ["item-oCW00003U"] = {
+        basePriceU = 10,
+        itemLevel = 23,
+        category = "MISC",
+        data = {
+        },
+        description = "Unsuitable for use, but can be disenchanted.",
+        icon = 3736877,
+        id = "item-oCW00003U",
+        maxStack = 100,
+        name = "Enchanted Armament",
+        rarity = "uncommon",
+        stackable = true,
+        tags = { "tier_0",  "melee", "disenchant:dust:0:2-4:0.8", "disenchant:essence:0:1-2:0.2" },
         vendorSellable = true,
     },
 
@@ -1052,84 +1069,6 @@ RPE.Data.DefaultClassic.ITEMS_WEAPONS = {
         rarity = "common",
         stackable = false,
         tags = { "tier_0",  "melee", "starter" },
-        vendorSellable = true,
-    },
-
-    -- Hunting Bow (ranged, two-handed)
-    ["item-oCW00012"] = {
-        basePriceU = 10,
-        itemLevel = 23,
-        category = "EQUIPMENT",
-        data = {
-            slot = "ranged",
-            hand = "Ranged",
-            weaponType = "Bow",
-            damageSchool = "Physical",
-            minDamage = 10,
-            maxDamage = 100,
-                stat_RANGED_AP = 20,
-                stat_RANGED_HIT = 2,
-        },
-        description = "",
-        icon = 3737009,
-        id = "item-oCW00012",
-        maxStack = 1,
-        name = "Hunting Bow",
-        rarity = "common",
-        stackable = false,
-        tags = { "tier_0",  "ranged", "starter" },
-        vendorSellable = true,
-    },
-
-    -- Hunting Crossbow (ranged, two-handed)
-    ["item-oCW00013"] = {
-        basePriceU = 10,
-        itemLevel = 23,
-        category = "EQUIPMENT",
-        data = {
-            slot = "ranged",
-            hand = "Ranged",
-            weaponType = "Crossbow",
-            damageSchool = "Physical",
-            minDamage = 10,
-            maxDamage = 100,
-                stat_RANGED_AP = 20,
-                stat_RANGED_HIT = 2,
-        },
-        description = "",
-        icon = 5387169,
-        id = "item-oCW00013",
-        maxStack = 1,
-        name = "Hunting Crossbow",
-        rarity = "common",
-        stackable = false,
-        tags = { "tier_0",  "ranged", "starter" },
-        vendorSellable = true,
-    },
-
-    -- Hunting Rifle (ranged, two-handed)
-    ["item-oCW00014"] = {
-        basePriceU = 10,
-        itemLevel = 23,
-        category = "EQUIPMENT",
-        data = {
-            slot = "ranged",
-            hand = "Ranged",
-            weaponType = "Gun",
-            damageSchool = "Physical",
-            minDamage = 10,
-            maxDamage = 100,
-                stat_RANGED_AP = 20,
-                stat_RANGED_HIT = 2,
-        },
-        description = "",
-        icon = 960906,
-        id = "item-oCW00014",
-        maxStack = 1,
-        name = "Hunting Rifle",
-        rarity = "common",
-        stackable = false,
-        tags = { "tier_0",  "ranged", "starter" },
         vendorSellable = true,
     },
 
@@ -1540,6 +1479,769 @@ RPE.Data.DefaultClassic.ITEMS_ARMOUR = {
 
 }
 
+RPE.Data.DefaultClassic.BLACKSMITHING = {
+    -- Rough Sharpening Stone
+    ["item-oCBS0001"] = { basePriceU = 10, category = "CONSUMABLE", data = {}, spellId = "spell-oCCWeaponAP", spellRank = 1, description = "", icon = 135248, id = "item-oCBS0001", maxStack = 5, name = "Rough Sharpening Stone", rarity = "common", stackable = true, tags = { "tier_0",  "weaponbuff", "starter" }, vendorSellable = true, },    
+}
+
+RPE.Data.DefaultClassic.ENCHANTS = {
+    -- Chest enchants.
+    ["item-oCECh001"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCE00001",itemLevel=6,data={stat_MAX_HEALTH="5",slot="chest"},description="Use: Enchants a chest item to increase your maximum health by 5.",spellRank=0,vendorSellable=false,name="Enchant Chest: Minor Health",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+    ["item-oCECh002"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCE00002",itemLevel=6,data={stat_MAX_MANA="5",slot="chest"},description="Use: Enchants a chest item to increase your maximum mana by 5.",spellRank=0,vendorSellable=false,name="Enchant Chest: Minor Mana",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+    ["item-oCECh003"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCE00003",itemLevel=6,data={stat_ARMOR="2",slot="chest"},description="Use: Enchants a chest item to increase your armor by 2.",spellRank=0,vendorSellable=false,name="Enchant Chest: Minor Protection",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+
+    -- Cloak enchants
+    ["item-oCECl001"]={basePriceU=0,rarity="common",tags={[1]="enchant",[2]="tier_0"},id="item-oCECl001",description="Use: Enchants a cloak item to increase your maximum armor by 1.",data={slot="back",stat_ARMOR="3"},itemLevel=2,spellRank=0,vendorSellable=false,name="Enchant Cloak: Minor Protection",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,priceOverrideC=100},
+    ["item-oCECl002"]={basePriceU=0,rarity="common",tags={[1]="enchant",[2]="tier_0"},id="item-oCECl002",description="Use: Enchants a cloak item to increase your fire resistance by 1.",data={slot="back",stat_FIRE_RESIST="1"},itemLevel=2,spellRank=0,vendorSellable=false,name="Enchant Cloak: Minor Fire Resistance",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,priceOverrideC=100},
+    ["item-oCECl003"]={basePriceU=0,rarity="common",tags={[1]="enchant",[2]="tier_0"},id="item-oCECl003",description="Use: Enchants a cloak item to increase your frost resistance by 1.",data={slot="back",stat_FROST_RESIST="1"},itemLevel=2,spellRank=0,vendorSellable=false,name="Enchant Cloak: Minor Frost Resistance",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,priceOverrideC=100},
+    ["item-oCECl004"]={basePriceU=0,rarity="common",tags={[1]="enchant",[2]="tier_0"},id="item-oCECl004",description="Use: Enchants a cloak item to increase your arcane resistance by 1.",data={slot="back",stat_ARCANE_RESIST="1"},itemLevel=2,spellRank=0,vendorSellable=false,name="Enchant Cloak: Minor Arcane Resistance",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,priceOverrideC=100},
+
+    -- Glove enchants
+    ["item-oCEGl001"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCEGl001",itemLevel=4,data={stat_STR="1",slot="hands"},description="Use: Enchants gloves to increase your Strength score by 1.",spellRank=0,vendorSellable=false,name="Enchant Gloves: Minor Strength",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+    ["item-oCEGl002"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCEGl002",itemLevel=4,data={stat_DEX="1",slot="hands"},description="Use: Enchants gloves to increase your Dexterity score by 1.",spellRank=0,vendorSellable=false,name="Enchant Gloves: Minor Agility",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+    ["item-oCEGl003"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCEGl003",itemLevel=4,data={stat_INT="1",slot="hands"},description="Use: Enchants gloves to increase your Intelligence score by 1.",spellRank=0,vendorSellable=false,name="Enchant Gloves: Minor Intellect",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+    ["item-oCEGl004"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCEGl004",itemLevel=4,data={stat_WIS="1",slot="hands"},description="Use: Enchants gloves to increase your Wisdom score by 1.",spellRank=0,vendorSellable=false,name="Enchant Gloves: Minor Spirit",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+
+    -- Boot enchants
+    ["item-oCEBo001"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCEBo001",itemLevel=4,data={stat_SPEED="3",slot="feet"},description="Use: Enchants boots to increase your movement range by 3.",spellRank=0,vendorSellable=false,name="Enchant Boots: Minor Speed",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+    ["item-oCEBo002"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCEBo002",itemLevel=4,data={stat_DODGE="1",slot="feet"},description="Use: Enchants boots to increase your dodge rating by 1.",spellRank=0,vendorSellable=false,name="Enchant Boots: Minor Dodge",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+
+    -- Enchant ring
+    ["item-oCER001"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCER001",itemLevel=4,data={stat_THREAT="5",stat_THREAT_pct=true,slot="finger"},description="Use: Enchants a ring to increase your threat generation by 5%.",spellRank=0,vendorSellable=false,name="Enchant Ring: Minor Threat",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+    ["item-oCER002"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCER002",itemLevel=4,data={stat_THREAT="-5",stat_THREAT_pct=true,slot="finger"},description="Use: Enchants a ring to decrease your threat generation by 5%.",spellRank=0,vendorSellable=false,name="Enchant Ring: Minor Subtlety",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+
+    -- 1H/2H melee Weapon enchants
+    ["item-oCEW001"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCEW001",itemLevel=6,data={stat_MELEE_AP="3",slot="mainhand",hand="Two-Hand"},description="Use: Enchants a 2-handed weapon to increase your melee attack power by 3.",spellRank=0,vendorSellable=false,name="Enchant 2H Weapon: Minor Impact",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+    ["item-oCEW002"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCEW002",itemLevel=6,data={stat_MELEE_AP="2",slot="mainhand"},description="Use: Enchants a weapon to increase your melee attack power by 2.",spellRank=0,vendorSellable=false,name="Enchant Weapon: Minor Striking",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+    ["item-oCEW003"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCEW003",itemLevel=6,data={stat_SPELL_POWER="3",slot="mainhand",hand="Two-Hand"},description="Use: Enchants a 2-handed weapon to increase your spell power by 3.",spellRank=0,vendorSellable=false,name="Enchant 2H Weapon: Minor Spell Power",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+    ["item-oCEW004"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCEW004",itemLevel=6,data={stat_HEALING_POWER="3",slot="mainhand",hand="Two-Hand"},description="Use: Enchants a 2-handed weapon to increase your healing power by 3.",spellRank=0,vendorSellable=false,name="Enchant 2H Weapon: Minor Healing Power",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+
+    -- Shield enchants
+    ["item-oCESh001"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCESh001",itemLevel=6,data={stat_BLOCK="1",slot="offhand"},description="Use: Enchants a shield to increase block rating by 1.",spellRank=0,vendorSellable=false,name="Enchant Shield: Minor Deflection",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}},
+    ["item-oCESh002"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCESh002",itemLevel=6,data={stat_SHIELD_BLOCK="2",slot="offhand"},description="Use: Enchants a shield to increase block value by 2.",spellRank=0,vendorSellable=false,name="Enchant Shield: Minor Blocking",category="MODIFICATION",maxStack=1,stackable=false,icon=1500861,tags={[1]="enchant",[2]="tier_0"}}
+}
+
+RPE.Data.DefaultClassic.JEWELCRAFTING = {
+    -- Shadowgem (red, blue sockets)
+    ["item-oCGem002"]={basePriceU=100,rarity="uncommon",priceOverrideC=0,id="item-oCGem002",itemLevel=9,data={stat_MELEE_AP="1",stat_MAX_HEALTH="1",socket_type="red, blue",tier="0"},tags={[1]="gem"},spellRank=0,description="",name="Cut Shadowgem",category="MODIFICATION",maxStack=1,stackable=false,icon=134074,vendorSellable=false},
+    ["item-oCGem003"]={basePriceU=100,rarity="uncommon",priceOverrideC=0,id="item-oCGem003",itemLevel=9,data={stat_RANGED_AP="1",stat_ARMOR="1",socket_type="red, blue",tier="0"},tags={[1]="gem"},spellRank=0,description="",name="Chiselled Shadowgem",category="MODIFICATION",maxStack=1,stackable=false,icon=134074,vendorSellable=false},
+    ["item-oCGem004"]={basePriceU=100,rarity="uncommon",priceOverrideC=0,id="item-oCGem004",itemLevel=9,data={stat_SPELL_AP="1",stat_MAX_MANA="1",socket_type="red, blue",tier="0"},tags={[1]="gem"},spellRank=0,description="",name="Inscribed Shadowgem",category="MODIFICATION",maxStack=1,stackable=false,icon=134074,vendorSellable=false},
+
+    -- Malachite (yellow, blue sockets)
+    ["item-oCGem001"]={basePriceU=100,rarity="uncommon",priceOverrideC=0,id="item-oCGem001",itemLevel=9,data={stat_MELEE_CRIT_MULT="0.02",stat_ARMOR="1",socket_type="yellow, blue",tier="0"},tags={[1]="gem"},spellRank=0,description="",name="Cut Malachite",category="MODIFICATION",maxStack=1,stackable=false,icon=134106,vendorSellable=false},
+    ["item-oCGem005"]={basePriceU=100,rarity="uncommon",priceOverrideC=0,id="item-oCGem005",itemLevel=9,data={stat_RANGED_CRIT_MULT="0.02",stat_ARMOR="1",socket_type="yellow, blue",tier="0"},tags={[1]="gem"},spellRank=0,description="",name="Chiselled Malachite",category="MODIFICATION",maxStack=1,stackable=false,icon=134106,vendorSellable=false},
+    ["item-oCGem006"]={basePriceU=100,rarity="uncommon",priceOverrideC=0,id="item-oCGem006",itemLevel=9,data={stat_SPELL_CRIT_MULT="0.02",stat_MAX_MANA="1",socket_type="yellow, blue",tier="0"},tags={[1]="gem"},spellRank=0,description="",name="Inscribed Malachite",category="MODIFICATION",maxStack=1,stackable=false,icon=134106,vendorSellable=false},
+
+    -- Tigerseye (red, yellow sockets)
+    ["item-oCGem007"]={basePriceU=100,rarity="uncommon",priceOverrideC=0,id="item-oCGem007",itemLevel=9,data={stat_MELEE_AP="1",stat_MELEE_CRIT_MULT="0.02",socket_type="red, yellow",tier="0"},tags={[1]="gem"},spellRank=0,description="",name="Cut Tigerseye",category="MODIFICATION",maxStack=1,stackable=false,icon=134118,vendorSellable=false},
+    ["item-oCGem008"]={basePriceU=100,rarity="uncommon",priceOverrideC=0,id="item-oCGem008",itemLevel=9,data={stat_RANGED_AP="1",stat_MELEE_CRIT_MULT="0.02",socket_type="red, yellow",tier="0"},tags={[1]="gem"},spellRank=0,description="",name="Chiselled Tigerseye",category="MODIFICATION",maxStack=1,stackable=false,icon=134118,vendorSellable=false},
+    ["item-oCGem009"]={basePriceU=100,rarity="uncommon",priceOverrideC=0,id="item-oCGem009",itemLevel=9,data={stat_SPELL_AP="1",stat_SPELL_CRIT_MULT="0.02",socket_type="red, yellow",tier="0"},tags={[1]="gem"},spellRank=0,description="",name="Inscribed Tigerseye",category="MODIFICATION",maxStack=1,stackable=false,icon=134118,vendorSellable=false},
+
+    -- Socket Modifications
+    ["item-oCJC001a"]={basePriceU=0,rarity="common",priceOverrideC=1000,id="item-oCJC001a",itemLevel=1,data={prismatic_sockets="1"},description="Use: Adds a prismatic gem socket to an item.",spellRank=0,vendorSellable=false,name="Bronze Setting",category="MODIFICATION",maxStack=1,stackable=false,icon=133237,tags={[1]="addsocket",[2]="hiddenmod"}},
+    ["item-ocJC001b"]={basePriceU=0,itemLevel=2,vendorSellable=false,id="item-ocJC001b",description="",data={socket_type="red, yellow, blue",stat_MAX_HEALTH="1"},tags={[1]="gem"},spellRank=0,priceOverrideC=0,name="Polished Stone",category="MODIFICATION",maxStack=1,stackable=false,icon=237477,rarity="common"},
+
+    -- Rings with Prismatic Sockets
+    ["item-oCRing001"] = {
+        basePriceU = 15,
+        itemLevel = 5,
+        category = "EQUIPMENT",
+        data = {
+            slot = "finger",
+            accessoryType = "Ring",
+            stat_CON = 1,
+            prismatic_sockets = 1,
+        },
+        description = "",
+        icon = 133354,
+        id = "item-oCRing001",
+        maxStack = 1,
+        name = "Heavy Copper Band",
+        rarity = "uncommon",
+        stackable = false,
+        tags = { "tier_0", "ring", "starter" },
+        vendorSellable = true,
+    },
+    ["item-oCRing002"] = {
+        basePriceU = 15,
+        itemLevel = 5,
+        category = "EQUIPMENT",
+        data = {
+            slot = "finger",
+            accessoryType = "Ring",
+            stat_CHA = 1,
+            prismatic_sockets = 1,
+        },
+        description = "",
+        icon = 133355,
+        id = "item-oCRing002",
+        maxStack = 1,
+        name = "Woven Copper Band",
+        rarity = "uncommon",
+        stackable = false,
+        tags = { "tier_0", "ring", "starter" },
+        vendorSellable = true,
+    },
+    ["item-oCRing003"] = {
+        basePriceU = 15,
+        itemLevel = 5,
+        category = "EQUIPMENT",
+        data = {
+            slot = "finger",
+            accessoryType = "Ring",
+            stat_WIS = 1,
+            prismatic_sockets = 1,
+        },
+        description = "",
+        icon = 133354,
+        id = "item-oCRing003",
+        maxStack = 1,
+        name = "Braided Copper Band",
+        rarity = "uncommon",
+        stackable = false,
+        tags = { "tier_0", "ring", "starter" },
+        vendorSellable = true,
+    },
+}
+
+RPE.Data.DefaultClassic.ENGINEERING = {
+    -- Ammo
+    ["item-oCAmmo001"] = { basePriceU = 1, itemLevel = 1, category = "EQUIPMENT", data = { slot = "ammo", stat_RANGE_AP = 2, stat_MAX_AMMO = 20, }, description = "", icon = 132384, id = "item-oCAmmo001", maxStack = 1, name = "Light Shot", rarity = "common", stackable = false, tags = { "tier_0",  "ammo", "starter" }, vendorSellable = true, },    
+    ["item-oCAmmo002"] = { basePriceU = 1, itemLevel = 2, category = "EQUIPMENT", data = { slot = "ammo", stat_RANGE_AP = 4, stat_MAX_AMMO = 20, }, description = "", icon = 132384, id = "item-oCAmmo002", maxStack = 1, name = "Heavy Shot", rarity = "common", stackable = false, tags = { "tier_1",  "ammo", "starter" }, vendorSellable = true, },    
+    ["item-oCAmmo003"] = { basePriceU = 2, itemLevel = 3, category = "EQUIPMENT", data = { slot = "ammo", stat_RANGE_AP = 7, stat_MAX_AMMO = 20, }, description = "", icon = 132384, id = "item-oCAmmo003", maxStack = 1, name = "Solid Shot", rarity = "common", stackable = false, tags = { "tier_2",  "ammo" }, vendorSellable = true, },    
+    ["item-oCAmmo004"] = { basePriceU = 3, itemLevel = 4, category = "EQUIPMENT", data = { slot = "ammo", stat_RANGE_AP = 10, stat_MAX_AMMO = 20, }, description = "", icon = 132383, id = "item-oCAmmo004", maxStack = 1, name = "Accurate Slugs", rarity = "common", stackable = false, tags = { "tier_3",  "ammo" }, vendorSellable = true, },    
+
+    -- Cogwheels
+    ["item-oCCog001"]={basePriceU=150,rarity="uncommon",priceOverrideC=0,id="item-oCCog001",itemLevel=8,data={stat_MELEE_CRIT_MULT="0.1",stat_RANGED_CRIT_MULT="0.1",stat_SPELL_CRIT_MULT="0.1",socket_type="cogwheel",tier="0"},tags={[1]="cogwheel"},spellRank=0,description="",name="Precision Bronze Cogwheel",category="MODIFICATION",maxStack=1,stackable=false,icon=237293,vendorSellable=false},
+    
+    -- Scopes
+    ["item-oCEng002"]={basePriceU=0,rarity="common",priceOverrideC=100,id="item-oCEng002",itemLevel=1,data={stat_RANGED_HIT="1",slot="ranged"},description="Use: Apply to a ranged item to increase your ranged hit by 1.",spellRank=0,vendorSellable=false,name="Crude Scope",category="MODIFICATION",maxStack=1,stackable=false,icon=134441,tags={[1]="enchant",[2]="tier_0"}},
+
+    -- Hunting Bow (ranged, two-handed)
+    ["item-oCW00012"] = {
+        basePriceU = 10,
+        itemLevel = 23,
+        category = "EQUIPMENT",
+        data = {
+            slot = "ranged",
+            hand = "Ranged",
+            weaponType = "Bow",
+            damageSchool = "Physical",
+            minDamage = 10,
+            maxDamage = 100,
+                stat_RANGED_AP = 20,
+                stat_RANGED_HIT = 2,
+        },
+        description = "",
+        icon = 3737009,
+        id = "item-oCW00012",
+        maxStack = 1,
+        name = "Hunting Bow",
+        rarity = "common",
+        stackable = false,
+        tags = { "tier_0",  "ranged", "starter" },
+        vendorSellable = true,
+    },
+
+    -- Hunting Crossbow (ranged, two-handed)
+    ["item-oCW00013"] = {
+        basePriceU = 10,
+        itemLevel = 23,
+        category = "EQUIPMENT",
+        data = {
+            slot = "ranged",
+            hand = "Ranged",
+            weaponType = "Crossbow",
+            damageSchool = "Physical",
+            minDamage = 10,
+            maxDamage = 100,
+                stat_RANGED_AP = 20,
+                stat_RANGED_HIT = 2,
+        },
+        description = "",
+        icon = 5387169,
+        id = "item-oCW00013",
+        maxStack = 1,
+        name = "Hunting Crossbow",
+        rarity = "common",
+        stackable = false,
+        tags = { "tier_0",  "ranged", "starter" },
+        vendorSellable = true,
+    },
+
+    -- Hunting Rifle (ranged, two-handed)
+    ["item-oCW00014"] = {
+        basePriceU = 10,
+        itemLevel = 23,
+        category = "EQUIPMENT",
+        data = {
+            slot = "ranged",
+            hand = "Ranged",
+            weaponType = "Gun",
+            damageSchool = "Physical",
+            minDamage = 10,
+            maxDamage = 100,
+                stat_RANGED_AP = 20,
+                stat_RANGED_HIT = 2,
+        },
+        description = "",
+        icon = 960906,
+        id = "item-oCW00014",
+        maxStack = 1,
+        name = "Hunting Rifle",
+        rarity = "common",
+        stackable = false,
+        tags = { "tier_0",  "ranged", "starter" },
+        vendorSellable = true,
+    },
+
+    ----- Explosives -----
+    ["item-oCCExp001"] = {
+        basePriceU = 15,
+        category = "CONSUMABLE",
+        data = {
+            soulbound = 1,
+        },
+        spellId = "spell-oCSExplosive",
+        spellRank = 1,
+        description = "",
+        icon = 133714,
+        id = "item-oCCExp001",
+        maxStack = 10,
+        name = "Rough Dynamite",
+        rarity = "common",
+        stackable = true,
+        tags = { "tier_0", "explosive", "starter" },
+        vendorSellable = true,
+    },
+
+    ["item-oCCExp002"] = {
+        basePriceU = 20,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSExplosive",
+        spellRank = 1,
+        description = "",
+        icon = 133714,
+        id = "item-oCCExp002",
+        maxStack = 10,
+        name = "EZ-Thro Dynamite",
+        rarity = "common",
+        stackable = true,
+        tags = { "tier_1", "explosive" },
+        vendorSellable = true,
+    },
+
+    ["item-oCCExp003"] = {
+        basePriceU = 25,
+        category = "CONSUMABLE",
+        data = {
+            soulbound = 1,
+        },
+        spellId = "spell-oCSExplosive",
+        spellRank = 2,
+        description = "",
+        icon = 133717,
+        id = "item-oCCExp003",
+        maxStack = 10,
+        name = "Small Bronze Bomb",
+        rarity = "common",
+        stackable = true,
+        tags = { "tier_1", "explosive"  },
+        vendorSellable = true,
+    },
+    
+    -- Flying Tiger Goggles
+    ["item-oCEng001"] = {
+        basePriceU = 25,
+        itemLevel = 14,
+        category = "EQUIPMENT",
+        data = {
+            slot = "head",
+            armorMaterial = "Leather",
+            armorType = "Head",
+            stat_ARMOR = 6,
+            stat_RANGED_HIT = 1,
+            stat_RANGED_AP = 5,
+            cog_sockets = 1,
+            soulbound = 1,
+        },
+        description = "",
+        icon = 133149,
+        id = "item-oCEng001",
+        maxStack = 1,
+        name = "Flying Tiger Goggles",
+        rarity = "uncommon",
+        stackable = false,
+        tags = { "tier_0", "engineering", "head"},
+        vendorSellable = true,
+    },
+}
+
+RPE.Data.DefaultClassic.FIRST_AID = {
+    -- Linen Bandage
+    ["item-oCS-FA001"] = {
+        basePriceU = 2,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSBandage",
+        spellRank = 1,
+        description = "",
+        icon = 133685,
+        id = "item-oCS-FA001",
+        maxStack = 20,
+        name = "Linen Bandage",
+        rarity = "common",
+        stackable = true,
+        tags = { "tier_0", "bandage", "firstaid" },
+        vendorSellable = true,
+    },
+    
+    ["item-oCS-FA002"] = {
+        basePriceU = 3,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSBandage",
+        spellRank = 2,
+        description = "",
+        icon = 133688,
+        id = "item-oCS-FA002",
+        maxStack = 20,
+        name = "Heavy Linen Bandage",
+        rarity = "uncommon",
+        stackable = true,
+        tags = { "tier_0", "bandage", "firstaid" },
+        vendorSellable = true,
+    },
+    
+    -- Wool Bandage
+    ["item-oCS-FA003"] = {
+        basePriceU = 4,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSBandage",
+        spellRank = 3,
+        description = "",
+        icon = 133684,
+        id = "item-oCS-FA003",
+        maxStack = 20,
+        name = "Wool Bandage",
+        rarity = "common",
+        stackable = true,
+        tags = { "tier_1", "bandage", "firstaid" },
+        vendorSellable = true,
+    },
+    
+    ["item-oCS-FA004"] = {
+        basePriceU = 5,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSBandage",
+        spellRank = 4,
+        description = "",
+        icon = 133687,
+        id = "item-oCS-FA004",
+        maxStack = 20,
+        name = "Heavy Wool Bandage",
+        rarity = "uncommon",
+        stackable = true,
+        tags = { "tier_1", "bandage", "firstaid" },
+        vendorSellable = true,
+    },
+    
+    -- Silk Bandage
+    ["item-oCS-FA005"] = {
+        basePriceU = 6,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSBandage",
+        spellRank = 5,
+        description = "",
+        icon = 133671,
+        id = "item-oCS-FA005",
+        maxStack = 20,
+        name = "Silk Bandage",
+        rarity = "common",
+        stackable = true,
+        tags = { "tier_2", "bandage", "firstaid" },
+        vendorSellable = true,
+    },
+    
+    ["item-oCS-FA006"] = {
+        basePriceU = 7,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSBandage",
+        spellRank = 6,
+        description = "",
+        icon = 133672,
+        id = "item-oCS-FA006",
+        maxStack = 20,
+        name = "Heavy Silk Bandage",
+        rarity = "uncommon",
+        stackable = true,
+        tags = { "tier_2", "bandage", "firstaid" },
+        vendorSellable = true,
+    },
+    
+    -- Mageweave Bandage
+    ["item-oCS-FA007"] = {
+        basePriceU = 8,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSBandage",
+        spellRank = 7,
+        description = "",
+        icon = 133689,
+        id = "item-oCS-FA007",
+        maxStack = 20,
+        name = "Mageweave Bandage",
+        rarity = "common",
+        stackable = true,
+        tags = { "tier_3", "bandage", "firstaid" },
+        vendorSellable = true,
+    },
+    
+    ["item-oCS-FA008"] = {
+        basePriceU = 9,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSBandage",
+        spellRank = 8,
+        description = "",
+        icon = 133690,
+        id = "item-oCS-FA008",
+        maxStack = 20,
+        name = "Heavy Mageweave Bandage",
+        rarity = "uncommon",
+        stackable = true,
+        tags = { "tier_3", "bandage", "firstaid" },
+        vendorSellable = true,
+    },
+    
+    -- Runecloth Bandage
+    ["item-oCS-FA009"] = {
+        basePriceU = 10,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSBandage",
+        spellRank = 9,
+        description = "",
+        icon = 133681,
+        id = "item-oCS-FA009",
+        maxStack = 20,
+        name = "Runecloth Bandage",
+        rarity = "common",
+        stackable = true,
+        tags = { "tier_4", "bandage", "firstaid" },
+        vendorSellable = true,
+    },
+    
+    ["item-oCS-FA010"] = {
+        basePriceU = 11,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSBandage",
+        spellRank = 10,
+        description = "",
+        icon = 133682,
+        id = "item-oCS-FA010",
+        maxStack = 20,
+        name = "Heavy Runecloth Bandage",
+        rarity = "uncommon",
+        stackable = true,
+        tags = { "tier_4", "bandage", "firstaid" },
+        vendorSellable = true,
+    },
+}
+
+RPE.Data.DefaultClassic.COOKING = {
+    ["item-oCFood000"] = {
+        basePriceU = 2,
+        category = "CONSUMABLE",
+        data = {},
+        spellId = "spell-oCSFoodHP",
+        spellRank = 1,
+        description = "",
+        icon = 134051,
+        id = "item-oCFood000",
+        maxStack = 20,
+        name = "Spiced Bread",
+        rarity = "common",
+        stackable = true,
+        tags = { "tier_0", "food", "cooking" },
+        vendorSellable = true,
+    },
+
+    -- ===== FOOD & COOKING =====
+    ["item-oCFood001"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodMana",
+        spellRank = 1,
+        description = "",
+        icon = 133893,
+        id = "item-oCFood001",
+        maxStack = 20,
+        name = "Brilliant Smallfish",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood002"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 1,
+        description = "",
+        icon = 134018,
+        id = "item-oCFood002",
+        maxStack = 20,
+        name = "Gingerbread Cookie",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood003"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodMana",
+        spellRank = 1,
+        description = "",
+        icon = 133910,
+        id = "item-oCFood003",
+        maxStack = 20,
+        name = "Slitherskin Mackerel",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood004"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 1,
+        description = "",
+        icon = 134002,
+        id = "item-oCFood004",
+        maxStack = 20,
+        name = "Crispy Bat Wing",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood005"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 1,
+        description = "",
+        icon = 132834,
+        id = "item-oCFood005",
+        maxStack = 20,
+        name = "Herb Baked Egg",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood006"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 1,
+        description = "",
+        icon = 134024,
+        id = "item-oCFood006",
+        maxStack = 20,
+        name = "Kaldorei Spider Kabob",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood007"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 1,
+        description = "",
+        icon = 133952,
+        id = "item-oCFood007",
+        maxStack = 20,
+        name = "Scorpid Surprise",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood008"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 1,
+        description = "",
+        icon = 134004,
+        id = "item-oCFood008",
+        maxStack = 20,
+        name = "Beer Basted Boar Ribs",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood009"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 2,
+        description = "",
+        icon = 134016,
+        id = "item-oCFood009",
+        maxStack = 20,
+        name = "Roasted Kodo Meat",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood010"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodMana",
+        spellRank = 2,
+        description = "",
+        icon = 132791,
+        id = "item-oCFood010",
+        maxStack = 20,
+        name = "Egg Nog",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood011"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 2,
+        description = "",
+        icon = 133969,
+        id = "item-oCFood011",
+        maxStack = 20,
+        name = "Smoked Bear Meat",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood012"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodMana",
+        spellRank = 2,
+        description = "",
+        icon = 133918,
+        id = "item-oCFood012",
+        maxStack = 20,
+        name = "Longjaw Mud Snapper",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood013"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodMana",
+        spellRank = 2,
+        description = "",
+        icon = 133913,
+        id = "item-oCFood013",
+        maxStack = 20,
+        name = "Rainbow Fin Albacore",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood014"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 2,
+        description = "",
+        icon = 133972,
+        id = "item-oCFood014",
+        maxStack = 20,
+        name = "Strider Stew",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood015"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 2,
+        description = "",
+        icon = 133952,
+        id = "item-oCFood015",
+        maxStack = 20,
+        name = "Goretusk Liver Pie",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood016"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 2,
+        description = "",
+        icon = 134712,
+        id = "item-oCFood016",
+        maxStack = 20,
+        name = "Loch Frenzy Delight",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood017"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 2,
+        description = "",
+        icon = 133891,
+        id = "item-oCFood017",
+        maxStack = 20,
+        name = "Fillet of Frenzy",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood018"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 2,
+        description = "",
+        icon = 134005,
+        id = "item-oCFood018",
+        maxStack = 20,
+        name = "Blood Sausage",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+    ["item-oCFood019"] = {
+        category = "CONSUMABLE",
+        spellId = "spell-oCSFoodHP",
+        spellRank = 3,
+        description = "",
+        icon = 133748,
+        id = "item-oCFood019",
+        maxStack = 20,
+        name = "Westfall Stew",
+        rarity = "common",
+        stackable = true,
+        tags = { "food", "cooking" },
+        vendorSellable = true,
+    },
+}
+
 function RPE.Data.DefaultClassic.Items()
     local items = {}
     for k,v in pairs(RPE.Data.DefaultClassic.ITEMS_WEAPONS) do
@@ -1552,6 +2254,24 @@ function RPE.Data.DefaultClassic.Items()
         items[k] = v
     end
     for k,v in pairs(RPE.Data.DefaultClassic.CONSUMABLES) do
+        items[k] = v
+    end
+    for k,v in pairs(RPE.Data.DefaultClassic.ENCHANTS) do
+        items[k] = v
+    end
+    for k,v in pairs(RPE.Data.DefaultClassic.JEWELCRAFTING) do
+        items[k] = v
+    end
+    for k,v in pairs(RPE.Data.DefaultClassic.ENGINEERING) do
+        items[k] = v
+    end
+    for k,v in pairs(RPE.Data.DefaultClassic.FIRST_AID) do
+        items[k] = v
+    end
+    for k,v in pairs(RPE.Data.DefaultClassic.COOKING) do
+        items[k] = v
+    end
+    for k,v in pairs(RPE.Data.DefaultClassic.BLACKSMITHING) do
         items[k] = v
     end
     return items

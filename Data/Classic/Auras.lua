@@ -3204,6 +3204,165 @@ RPE.Data.DefaultClassic.AURAS_RACIAL = {
 }
 
 RPE.Data.DefaultClassic.AURAS_CONSUMABLE = {
+    -- Well Fed: Health
+    ["aura-oCAFoodHealth"] = {
+        id = "aura-oCAFoodHealth",
+        name = "Well Fed",
+        description = "Health increased by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 136000,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueGroup = "wellfed",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD_PCT",
+                stat = "MAX_HEALTH",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    },    
+
+    -- Well Fed: Mana
+    ["aura-oCAFoodMana"] = {
+        id = "aura-oCAFoodMana",
+        name = "Well Fed",
+        description = "Mana increased by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 136000,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = false,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueGroup = "wellfed",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD_PCT",
+                stat = "MAX_MANA",
+                value = "$amount$",
+                perRank = "1"
+            }
+        }
+    },   
+
+    -- Weapon: AP
+    ["aura-oCCWeaponAP"] = {
+        id = "aura-oCCWeaponAP",
+        name = "Sharpening Stone",
+        description = "Increases your melee attack power by $amount$.",
+        duration = {
+            expires = "ON_OWNER_TURN_END",
+            turns = 0
+        },
+        icon = 135248,
+        isTrait = false,
+        isHelpful = true,
+        dispelType = "MAGIC",
+        hidden = false,
+        unpurgable = true,
+        stackingPolicy = "REFRESH_DURATION",
+        conflictPolicy = "KEEP_HIGHER",
+        uniqueGroup = "weapon",
+        uniqueByCaster = false,
+        removeOnDamageTaken = false,
+        maxStacks = 1,
+        tags = {
+            [1] = "consumable"
+        },
+        triggers = {},
+        crowdControl = {
+            blockAllActions = false,
+            blockActionsByTag = {},
+            slowMovement = 0,
+            failDefencesByStats = {},
+            failAllDefences = false
+        },
+        immunity = {
+            dispelTypes = {},
+            tags = {},
+            damageSchools = {},
+            helpful = false,
+            harmful = false,
+            ids = {}
+        },
+        modifiers = {
+            {
+                source = "CASTER",
+                snapshot = "DYNAMIC",
+                scaleWithStacks = "",
+                mode = "ADD",
+                stat = "MELEE_AP",
+                value = "$amount$",
+                perRank = "2"
+            }
+        }
+    },
+
     -- Strength
     ["aura-oCAScrStr"] = {
         id = "aura-oCAScrStr",
@@ -3464,6 +3623,7 @@ RPE.Data.DefaultClassic.AURAS_CONSUMABLE = {
         }
     },
 
+    -- Armor
     ["aura-oCAScrArmor"] = {
         id = "aura-oCAScrArmor",
         name = "Armor",
