@@ -1,7 +1,7 @@
 ## Interface: 110207
 ## Title: RPEngine
 ## Notes: Fully-integrated roll system and associated RP tools.
-## Version: 1.0.3
+## Version: 1.0.4
 ## Author: Ortellus @ Argent Dawn (Discord: ortellus)
 ## SavedVariables: RPEngineProfilesDB, RPEngineRulesetDB, RPEngineDatasetDB
 
