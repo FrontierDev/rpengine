@@ -62,6 +62,7 @@ Schemas.APPLY_AURA = {
     key    = "APPLY_AURA",
     fields = {
         { id="auraId",  label="Aura ID", type="lookup", pattern="^aura%-[a-fA-F0-9]+$", required=true, placeholder="e.g. aura-c6e847e7" },
+        { id="amount",  label="Amount",  type="input",  required=false, placeholder="e.g. 5 or 1d4+STAT" },
         { id="perRank", label="Per Rank", type="number", required=false, min=0, max=9999, step=1, default=0 },
     },
 }

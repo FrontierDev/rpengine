@@ -357,6 +357,9 @@ local function _saveAuraValues(ds, targetId, v, isEdit, oldId)
                         if row.auraId then 
                             action.args.auraId = row.auraId 
                         end
+                        if row.amount then 
+                            action.args.amount = row.amount 
+                        end
                     elseif row.key == "GAIN_RESOURCE" then
                         if row.auraId then 
                             action.args.resourceId = row.auraId 
