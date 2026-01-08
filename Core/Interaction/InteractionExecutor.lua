@@ -91,9 +91,10 @@ end)
 
 
 Executor.RegisterHandler("TRAIN", function(opt, target)
-    local mode     = opt.args and opt.args.type or "RECIPES"
-    local maxLevel = tonumber(opt.args and opt.args.maxLevel) or 0
-    local flags    = opt.args and opt.args.flags or {}
+    local args = opt.args or {}
+    local mode     = args.type or "RECIPES"
+    local maxLevel = tonumber(args.maxLevel) or 0
+    local flags    = args.flags or {}
 
     RPE.Debug:Internal(("Opening trainer (%s - %s) [maxLevel=%d]"):format(
         mode,
@@ -115,11 +116,13 @@ Executor.RegisterHandler("TRAIN", function(opt, target)
         _G.RPE.Core.Windows.TrainerWindow = win
     end
 
-    -- Apply trainer data
+    -- Apply trainer data (pass the entire args object)
     if win.SetTrainerData then
         win:SetTrainerData({
+            type     = mode,
             mode     = mode,
             flags    = flags,
+            tags     = args.tags,
             maxLevel = maxLevel,
             target   = target,
         })

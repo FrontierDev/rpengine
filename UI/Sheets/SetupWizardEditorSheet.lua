@@ -6,9 +6,10 @@ RPE_UI.Elements = RPE_UI.Elements or {}
 RPE_UI.Prefabs  = RPE_UI.Prefabs or {}
 RPE_UI.Windows  = RPE_UI.Windows or {}
 
-local VGroup      = RPE_UI.Elements.VerticalLayoutGroup
-local Text        = RPE_UI.Elements.Text
-local SetupPages  = RPE_UI.Prefabs.SetupPages
+local VGroup       = RPE_UI.Elements.VerticalLayoutGroup
+local Text         = RPE_UI.Elements.Text
+local TextButton   = RPE_UI.Elements.TextButton
+local SetupPages   = RPE_UI.Prefabs.SetupPages
 
 ---@class SetupWizardEditorSheet
 ---@field Name string

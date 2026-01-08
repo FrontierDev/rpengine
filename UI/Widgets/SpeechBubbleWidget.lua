@@ -421,6 +421,12 @@ function SpeechBubbleWidget:_UpdateBubbles()
 end
 
 function SpeechBubbleWidget:Show()
+    -- Check profile setting - never show if disabled
+    local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
+    if profile and not profile.showTalkingHeads then
+        return
+    end
+    
     if self.root and self.root.Show then self.root:Show() end
 end
 

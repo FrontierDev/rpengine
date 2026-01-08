@@ -469,6 +469,198 @@ RPE.Data.Default.INTERACTIONS_COMMON = {
 		target = "Paladin Trainer",
 	},
 
+	-- Warrior Trainer
+	["ixn-warrior-trainer"] = {
+		id = "ixn-warrior-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "warrior",
+				},
+			},
+		},
+		target = "Warrior Trainer",
+	},
+
+	-- Death Knight Trainer
+	["ixn-deathknight-trainer"] = {
+		id = "ixn-deathknight-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "deathknight",
+				},
+			},
+		},
+		target = "Death Knight Trainer",
+	},
+
+	-- Demon Hunter Trainer
+	["ixn-demonhunter-trainer"] = {
+		id = "ixn-demonhunter-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "demonhunter",
+				},
+			},
+		},
+		target = "Demon Hunter Trainer",
+	},
+
+	-- Mage Trainer
+	["ixn-mage-trainer"] = {
+		id = "ixn-mage-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "mage",
+				},
+			},
+		},
+		target = "Mage Trainer",
+	},
+
+	-- Warlock Trainer
+	["ixn-warlock-trainer"] = {
+		id = "ixn-warlock-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "warlock",
+				},
+			},
+		},
+		target = "Warlock Trainer",
+	},
+
+	-- Priest Trainer
+	["ixn-priest-trainer"] = {
+		id = "ixn-priest-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "priest",
+				},
+			},
+		},
+		target = "Priest Trainer",
+	},
+
+	-- Rogue Trainer
+	["ixn-rogue-trainer"] = {
+		id = "ixn-rogue-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "rogue",
+				},
+			},
+		},
+		target = "Rogue Trainer",
+	},
+
+	-- Druid Trainer
+	["ixn-druid-trainer"] = {
+		id = "ixn-druid-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "druid",
+				},
+			},
+		},
+		target = "Druid Trainer",
+	},
+
+	-- Shaman Trainer
+	["ixn-shaman-trainer"] = {
+		id = "ixn-shaman-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "shaman",
+				},
+			},
+		},
+		target = "Shaman Trainer",
+	},
+
+	-- Hunter Trainer
+	["ixn-hunter-trainer"] = {
+		id = "ixn-hunter-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "hunter",
+				},
+			},
+		},
+		target = "Hunter Trainer",
+	},
+
+	-- Evoker Trainer
+	["ixn-evoker-trainer"] = {
+		id = "ixn-evoker-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "evoker",
+				},
+			},
+		},
+		target = "Evoker Trainer",
+	},
+
+	-- Monk Trainer
+	["ixn-monk-trainer"] = {
+		id = "ixn-monk-trainer",
+		options = {
+			{
+				label = "Train",
+				action = "TRAIN",
+				args = {
+					type = "SPELLS",
+					tags = "monk",
+				},
+			},
+		},
+		target = "Monk Trainer",
+	},
+
 	-- Trade Goods/ Trade Supplies
 	["ixn-trade-goods"] = {
 		id = "ixn-trade-goods",

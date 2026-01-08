@@ -59,13 +59,29 @@ end
 function LoadingWidget:New()
     local o = setmetatable({}, self)
     
-    -- Create main frame (parented to UIParent, positioned top-center)
-    local f = CreateFrame("Frame", "RPE_LoadingWidget", UIParent)
+    -- Determine parent frame (WorldFrame for Immersion mode, UIParent otherwise)
+    local parentFrame = (RPE.Core and RPE.Core.ImmersionMode) and WorldFrame or UIParent
+    
+    -- Create main frame (positioned top-center)
+    local f = CreateFrame("Frame", "RPE_LoadingWidget", parentFrame)
     f:SetSize(SIZE + 40, SIZE + 60)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, -200)
     f:SetFrameStrata("HIGH")
     f:SetFrameLevel(999)
     f:Hide()
+    
+    -- Immersion polish (match UI scale + mouse gating on Alt+Z)
+    if parentFrame == WorldFrame then
+        f:SetFrameStrata("DIALOG")
+        f:SetToplevel(true)
+        f:SetIgnoreParentScale(true)
+
+        local function SyncScale() f:SetScale(UIParent and UIParent:GetScale() or 1) end
+        local function UpdateMouseForUIVisibility() f:EnableMouse(UIParent and UIParent:IsShown()) end
+        SyncScale(); UpdateMouseForUIVisibility()
+        UIParent:HookScript("OnShow", function() SyncScale(); UpdateMouseForUIVisibility() end)
+        UIParent:HookScript("OnHide", function() UpdateMouseForUIVisibility() end)
+    end
     
     -- Create icon texture
     local icon = f:CreateTexture(nil, "ARTWORK")

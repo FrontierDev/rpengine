@@ -1,0 +1,333 @@
+-- RPE_UI/Windows/DashboardWindow.lua
+RPE_UI          = RPE_UI or {}
+RPE_UI.Elements = RPE_UI.Elements or {}
+RPE_UI.Windows  = RPE_UI.Windows or {}
+
+local Window   = RPE_UI.Elements.Window
+local Panel    = RPE_UI.Elements.Panel
+local TextBtn  = RPE_UI.Elements.TextButton
+local HBorder  = RPE_UI.Elements.HorizontalBorder
+
+---@class DashboardWindow
+---@field root Window
+---@field footer Panel
+---@field content Panel
+---@field tabs table<string, TextBtn>
+local DashboardWindow = {}
+_G.RPE_UI.Windows.DashboardWindow = DashboardWindow
+DashboardWindow.__index = DashboardWindow
+DashboardWindow.Name = "DashboardWindow"
+
+local FOOTER_COLS   = 3
+local BUTTON_HEIGHT = 26
+local BUTTON_SPACING = 4
+local FOOTER_PADDING_Y = 7
+
+local function exposeCoreWindow(self)
+    _G.RPE       = _G.RPE or {}
+    _G.RPE.Core  = _G.RPE.Core or {}
+    _G.RPE.Core.Windows = _G.RPE.Core.Windows or {}
+    _G.RPE.Core.Windows.DashboardWindow = self
+end
+
+function DashboardWindow:BuildUI()
+    -- Root window
+    local parentFrame = (RPE.Core and RPE.Core.ImmersionMode) and WorldFrame or UIParent
+    self.root = Window:New("RPE_Dashboard_Window", {
+        parent = parentFrame,
+        width  = 480,
+        height = 680,
+        point  = "CENTER",
+        autoSize = false, -- fixed size
+    })
+
+    if parentFrame == WorldFrame then
+        local f = self.root.frame
+        f:SetFrameStrata("DIALOG")
+        f:SetToplevel(true)
+        f:SetIgnoreParentScale(true)
+
+        local function SyncScale() f:SetScale(UIParent and UIParent:GetScale() or 1) end
+        local function UpdateMouseForUIVisibility() f:EnableMouse(UIParent and UIParent:IsShown()) end
+        SyncScale(); UpdateMouseForUIVisibility()
+        UIParent:HookScript("OnShow", function() SyncScale(); UpdateMouseForUIVisibility() end)
+        UIParent:HookScript("OnHide", function() UpdateMouseForUIVisibility() end)
+
+        self._persistScaleProxy = self._persistScaleProxy or CreateFrame("Frame")
+        self._persistScaleProxy:RegisterEvent("UI_SCALE_CHANGED")
+        self._persistScaleProxy:RegisterEvent("DISPLAY_SIZE_CHANGED")
+        self._persistScaleProxy:SetScript("OnEvent", SyncScale)
+    end
+
+    -- Close button (top-right)
+    self.closeBtn = CreateFrame("Button", "RPE_Dashboard_CloseBtn", self.root.frame)
+    self.closeBtn:SetSize(24, 24)
+    self.closeBtn:SetPoint("TOPRIGHT", self.root.frame, "TOPRIGHT", -8, -12)
+    self.closeBtn:SetFrameStrata("DIALOG")
+    self.closeBtn:SetFrameLevel(100)
+    self.closeBtn:SetText("×")
+    self.closeBtn:SetNormalFontObject("GameFontHighlightLarge")
+    self.closeBtn:GetFontString():SetTextColor(0.9, 0.9, 0.95, 1.0)
+    
+    -- Background texture (uses palette color)
+    local closeBg = self.closeBtn:CreateTexture(nil, "BACKGROUND")
+    closeBg:SetAllPoints()
+    self.closeBtn._bgTex = closeBg
+    
+    -- Hover texture
+    local closeHover = self.closeBtn:CreateTexture(nil, "BORDER")
+    closeHover:SetAllPoints()
+    closeHover:SetColorTexture(0.3, 0.3, 0.35, 0)
+    self.closeBtn._hoverTex = closeHover
+    
+    -- Apply initial palette colors
+    local C = _G.RPE_UI.Colors
+    if C and C.Get then
+        local bgR, bgG, bgB, bgA = C.Get("background")
+        if bgR then
+            closeBg:SetColorTexture(bgR, bgG, bgB, bgA or 0.9)
+        else
+            closeBg:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+        end
+    else
+        closeBg:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+    end
+    
+    self.closeBtn:SetScript("OnEnter", function(btn)
+        btn._hoverTex:SetColorTexture(0.3, 0.3, 0.35, 0.5)
+    end)
+    self.closeBtn:SetScript("OnLeave", function(btn)
+        btn._hoverTex:SetColorTexture(0.3, 0.3, 0.35, 0)
+    end)
+    self.closeBtn:SetScript("OnClick", function()
+        self:Hide()
+    end)
+
+    -- Top border (stretched full width)
+    self.topBorder = HBorder:New("RPE_Dashboard_TopBorder", {
+        parent        = self.root,
+        stretch       = true,
+        thickness     = 5,
+        y             = 0,
+        layer         = "BORDER",
+    })
+    self.topBorder.frame:ClearAllPoints()
+    self.topBorder.frame:SetPoint("TOPLEFT", self.root.frame, "TOPLEFT", 0, 3)
+    self.topBorder.frame:SetPoint("TOPRIGHT", self.root.frame, "TOPRIGHT", 0, 3)
+    _G.RPE_UI.Colors.ApplyHighlight(self.topBorder)
+
+    -- Bottom border (stretched full width)
+    self.bottomBorder = HBorder:New("RPE_Dashboard_BottomBorder", {
+        parent        = self.root,
+        stretch       = true,
+        thickness     = 5,
+        y             = 0,
+        layer         = "BORDER",
+    })
+    self.bottomBorder.frame:ClearAllPoints()
+    self.bottomBorder.frame:SetPoint("BOTTOMLEFT", self.root.frame, "BOTTOMLEFT", 0, -3)
+    self.bottomBorder.frame:SetPoint("BOTTOMRIGHT", self.root.frame, "BOTTOMRIGHT", 0, -3)
+    _G.RPE_UI.Colors.ApplyHighlight(self.bottomBorder)
+
+    -- Content panel (fills space above footer)
+    self.content = Panel:New("RPE_Dashboard_Content", {
+        parent  = self.root,
+        autoSize = true,
+    })
+    self.root:Add(self.content)
+    self.content.frame:ClearAllPoints()
+    self.content.frame:SetPoint("TOPLEFT", self.root.frame, "TOPLEFT", 0, -0)
+    self.content.frame:SetPoint("TOPRIGHT", self.root.frame, "TOPRIGHT", 0, -0)
+    self.content.frame:SetPoint("BOTTOMLEFT", self.root.frame, "BOTTOMLEFT", 0, 0) -- will be adjusted when footer resizes
+    self.content.frame:SetPoint("BOTTOMRIGHT", self.root.frame, "BOTTOMRIGHT", 0, 0)
+
+    -- Footer panel (auto-expands in height)
+    self.footer = Panel:New("RPE_Dashboard_Footer", {
+        parent  = self.root,
+        autoSize = false,
+    })
+    self.root:Add(self.footer)
+    self.footer.frame:ClearAllPoints()
+    self.footer.frame:SetPoint("BOTTOMLEFT", self.root.frame, "BOTTOMLEFT", 0, 0)
+    self.footer.frame:SetPoint("BOTTOMRIGHT", self.root.frame, "BOTTOMRIGHT", 0, 0)
+    self.footer.frame:SetHeight(40) -- initial, will expand
+
+    self.tabs = {}
+    self.pages = {}
+    self._colHeights = { [1] = 0, [2] = 0, [3] = 0 } -- track Y offset per column
+
+    -- Add buttons
+    self:AddTabButton(1, "dashboard",      "Dashboard")
+    self:AddTabButton(2, "armory",         "Armory")
+
+    -- Add sheets
+    local control = _G.RPE_UI.Windows.DashboardControlSheet.New({ parent = self.content})
+    self.pages["dashboard"] = control
+
+    local armory = _G.RPE_UI.Windows.DashboardArmorySheet.New({ parent = self.content})
+    self.pages["armory"] = armory
+    armory.sheet:Hide()
+
+    if self.content and self.content.SetSize and control.sheet and control.sheet.frame then
+        local w = control.sheet.frame:GetWidth() + 12
+        local h = control.sheet.frame:GetHeight() + 12
+        if w and h then
+            local padX = self.content.autoSizePadX or 0
+            local padY = self.content.autoSizePadY or 0
+            local minW = self.footer.frame:GetWidth() or 0
+
+            -- apply padding and enforce minimum width
+            local cw = math.max(w + padX, minW)
+            local ch = h + padY
+
+            self.content:SetSize(cw, ch)
+            self.root:SetSize(cw, ch + self.footer.frame:GetHeight())
+        end
+    end
+
+    if RPE_UI.Common and RPE_UI.Common.RegisterWindow then
+        RPE_UI.Common:RegisterWindow(self)
+    end
+    exposeCoreWindow(self)
+end
+
+function DashboardWindow:ShowTab(key)
+    -- Hide all pages first
+    for k, page in pairs(self.pages or {}) do
+        if page.sheet and page.sheet.Hide then
+            page.sheet:Hide()
+        elseif page.root and page.root.Hide then
+            page.root:Hide()
+        end
+    end
+
+    -- Show the requested page
+    local page = self.pages[key]
+    if not page then
+        RPE.Debug:Error("No page registered for key: " .. tostring(key))
+        return
+    end
+
+    if page.sheet and page.sheet.Show then
+        page.sheet:Show()
+
+        RPE_UI.Windows.EventUnitsSheetInstance:Refresh()
+    elseif page.root and page.root.Show then
+        page.root:Show()
+    end
+
+    if self.content and self.content.SetSize and page.sheet and page.sheet.frame then
+        local w = page.sheet.frame:GetWidth() + 12
+        local h = page.sheet.frame:GetHeight() + 12
+        if w and h then
+            local padX = self.content.autoSizePadX or 0
+            local padY = self.content.autoSizePadY or 0
+            local minW = self.footer.frame:GetWidth() or 0
+
+            -- apply padding and enforce minimum width
+            local cw = math.max(w + padX, minW)
+            local ch = h + padY
+
+            self.content:SetSize(cw, ch)
+            self.root:SetSize(cw, ch + self.footer.frame:GetHeight())
+        end
+    end
+end
+
+--- Add a tab button into a footer column
+---@param col integer 1..3
+---@param key string
+---@param title string
+function DashboardWindow:AddTabButton(col, key, title)
+    assert(col >= 1 and col <= FOOTER_COLS, "Column index must be 1..3")
+
+    local colWidth = self.root.frame:GetWidth() / FOOTER_COLS
+    local btn = TextBtn:New("RPE_Dashboard_TabBtn_" .. key, {
+        parent  = self.footer,
+        width   = colWidth - 12,
+        height  = BUTTON_HEIGHT,
+        text    = title,
+        noBorder = true,
+        onClick = function()
+            self:ShowTab(key)  -- ✅ use instance
+        end,
+    })
+
+    -- place in correct column, stacked upward
+    local left = (col - 1) * colWidth
+    local offsetY = FOOTER_PADDING_Y + self._colHeights[col]
+    btn.frame:ClearAllPoints()
+    btn.frame:SetPoint("BOTTOMLEFT", self.footer.frame, "BOTTOMLEFT", left + 6, offsetY)
+    btn.frame:SetPoint("BOTTOMRIGHT", self.footer.frame, "BOTTOMLEFT", left + colWidth - 6, offsetY)
+
+    -- advance column height
+    self._colHeights[col] = self._colHeights[col] + BUTTON_HEIGHT + BUTTON_SPACING
+
+    self.tabs[key] = btn
+
+    -- ensure footer tall enough
+    local tallest = math.max(self._colHeights[1], self._colHeights[2], self._colHeights[3])
+    self.footer.frame:SetHeight(tallest + FOOTER_PADDING_Y + BUTTON_HEIGHT)
+
+    -- adjust content panel top of footer
+    self.content.frame:ClearAllPoints()
+    self.content.frame:SetPoint("TOPLEFT", self.root.frame, "TOPLEFT", 0, 0)
+    self.content.frame:SetPoint("TOPRIGHT", self.root.frame, "TOPRIGHT", 0, 0)
+    self.content.frame:SetPoint("BOTTOMLEFT", self.footer.frame, "TOPLEFT", 0, 0)
+    self.content.frame:SetPoint("BOTTOMRIGHT", self.footer.frame, "TOPRIGHT", 0, 0)
+
+    return btn
+end
+
+function DashboardWindow:ApplyPalette()
+    -- Update border colors from palette
+    if self.topBorder then
+        if _G.RPE_UI.Colors and _G.RPE_UI.Colors.ApplyHighlight then 
+            _G.RPE_UI.Colors.ApplyHighlight(self.topBorder) 
+        end
+    end
+    if self.bottomBorder then
+        if _G.RPE_UI.Colors and _G.RPE_UI.Colors.ApplyHighlight then 
+            _G.RPE_UI.Colors.ApplyHighlight(self.bottomBorder) 
+        end
+    end
+    
+    -- Update close button background color from palette
+    if self.closeBtn and self.closeBtn._bgTex then
+        local C = _G.RPE_UI.Colors
+        if C and C.Get then
+            local bgR, bgG, bgB, bgA = C.Get("background")
+            if bgR then
+                self.closeBtn._bgTex:SetColorTexture(bgR, bgG, bgB, bgA or 0.9)
+            else
+                self.closeBtn._bgTex:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+            end
+        else
+            self.closeBtn._bgTex:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+        end
+    end
+end
+
+
+function DashboardWindow.New()
+    local self = setmetatable({}, DashboardWindow)
+    self:BuildUI()
+    
+    -- Register as palette consumer so UI updates when palette changes
+    local C = _G.RPE_UI.Colors
+    if C and C.RegisterConsumer then
+        C.RegisterConsumer(self)
+    end
+    
+    return self
+end
+
+function DashboardWindow:Show()
+    if self.root and self.root.Show then self.root:Show() end
+end
+
+function DashboardWindow:Hide()
+    if self.root and self.root.Hide then self.root:Hide() end
+end
+
+return DashboardWindow

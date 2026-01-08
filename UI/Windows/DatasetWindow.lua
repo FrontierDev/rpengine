@@ -232,7 +232,7 @@ local function _deleteDataset(name)
     if not name or name == "" then _dprint("No name provided to delete."); return end
     
     -- Check if this is a default dataset
-    if name == "DefaultClassic" or name == "Default5e" or name == "DefaultWarcraft" then
+    if name == "DefaultClassic" then
         RPE.Debug:Warning("Cannot delete default dataset: " .. name)
         _dprint("Cannot delete default dataset: " .. name)
         return
@@ -673,7 +673,7 @@ function DatasetWindow:BuildUI()
                 end
 
                 -- Separate default datasets from custom ones
-                local defaultDatasets = { "DefaultClassic", "Default5e", "DefaultWarcraft" }
+                local defaultDatasets = { "DefaultClassic" }
                 local customDatasets = {}
                 local defaultSet = {}
                 for _, dn in ipairs(defaultDatasets) do defaultSet[dn] = true end
@@ -1119,7 +1119,7 @@ end
 function DatasetWindow:UpdateDeleteButtonState()
     if not self.btnDelete or not self.btnDelete.SetEnabled then return end
     local name = self.editingName or ""
-    local isDefault = (name == "DefaultClassic" or name == "Default5e" or name == "DefaultWarcraft")
+    local isDefault = (name == "DefaultClassic" )
     self.btnDelete:SetEnabled(not isDefault)
     if isDefault then
         self.btnDelete:SetAlpha(0.5)

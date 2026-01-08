@@ -112,12 +112,28 @@ function ProfileDB.CreateNew(name, opts)
     local db = EnsureDB()
     assert(db.profiles[name] == nil, "CreateNew: profile with this name already exists")
 
+    opts = opts or {}
+    opts.isNew = true  -- Mark as new profile
     local p = CharacterProfile:New(name, opts)
     db.profiles[name] = p:ToTable()
 
     -- *** make sure this character points at the new profile ***
     local key = GetCharacterKey()
     db.currentByChar[key] = name
+    
+    -- Activate DefaultClassic ruleset and dataset for new profiles
+    local RulesetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.RulesetDB
+    local DatasetDB = _G.RPE and _G.RPE.Profile and _G.RPE.Profile.DatasetDB
+    
+    if RulesetDB and type(RulesetDB.SetActiveForCurrentCharacter) == "function" then
+        RulesetDB.SetActiveForCurrentCharacter("DefaultClassic")
+        RPE.Debug:Internal("[ProfileDB] Set DefaultClassic ruleset for new profile")
+    end
+    
+    if DatasetDB and type(DatasetDB.SetActiveForCurrentCharacter) == "function" then
+        DatasetDB.SetActiveForCurrentCharacter("DefaultClassic", true)  -- true = activate instead of toggle
+        RPE.Debug:Internal("[ProfileDB] Set DefaultClassic dataset for new profile")
+    end
 
     return p
 end
@@ -278,6 +294,16 @@ end
 --- Initialize the UI after profile is loaded. Called by PLAYER_LOGIN.
 function ProfileDB.InitializeUI()
     local profile = ProfileDB.GetOrCreateActive()
+    local isFirstLogin = profile and profile.isNew
+    
+    if isFirstLogin then
+        RPE.Debug:Internal("[ProfileDB] First login detected for profile: " .. tostring(profile.name))
+    end
+    
+    -- Load immersion mode setting from profile
+    if profile and RPE.Core then
+        RPE.Core.ImmersionMode = profile.immersionMode or true
+    end
     
     -- Recalculate equipment stats once after profile is fully loaded and ready
     if profile and type(profile.RecalculateEquipmentStats) == "function" then
@@ -356,6 +382,25 @@ function ProfileDB.InitializeUI()
         onlyWhenUIHidden = true,  -- default: show automatically only when UI is hidden by Alt+Z
         -- onlyWhenUIHidden = false, -- uncomment if you want it visible all the time
     })
+    
+    -- Apply visibility settings for chatbox and talking heads
+    if RPE.Core.Windows.Chat then
+        if profile.showChatbox then
+            RPE.Core.Windows.Chat:Show()
+        else
+            RPE.Core.Windows.Chat:Hide()
+        end
+    end
+    
+    -- Store reference to speech bubble widget for profile-based visibility control
+    if RPE.Core.Windows.Chat and RPE.Core.Windows.Chat.speechBubbleWidget then
+        RPE.Core.Windows.SpeechBubbles = RPE.Core.Windows.Chat.speechBubbleWidget
+        if profile.showTalkingHeads then
+            RPE.Core.Windows.SpeechBubbles:Show()
+        else
+            RPE.Core.Windows.SpeechBubbles:Hide()
+        end
+    end
 
 
     RPE.Core.CombatText = RPE.Core.CombatText or {}
@@ -390,6 +435,27 @@ function ProfileDB.InitializeUI()
     if main and main.Hide then main:Hide() end
     if RPE.Core.Windows.Chat then RPE_UI.Common:Hide(RPE.Core.Windows.Chat) end
     if RPE.Core.Windows.EventWindow then RPE_UI.Common:Hide(RPE.Core.Windows.EventWindow) end
+    
+    -- Show DashboardWindow on first login only
+    if isFirstLogin then
+        RPE.Debug:Internal("[ProfileDB] Showing DashboardWindow on first login")
+        local DashboardWindowClass = RPE_UI.Windows and RPE_UI.Windows.DashboardWindow
+        if DashboardWindowClass then
+            RPE.Debug:Internal("[ProfileDB] Creating DashboardWindow instance")
+            local dashboard = DashboardWindowClass.New()
+            if dashboard and dashboard.Show then
+                RPE.Debug:Internal("[ProfileDB] Showing DashboardWindow")
+                dashboard:Show()
+            else
+                RPE.Debug:Warning("[ProfileDB] Failed to show DashboardWindow")
+            end
+        else
+            RPE.Debug:Warning("[ProfileDB] DashboardWindow class not found")
+        end
+        -- Clear the isNew flag so it only shows once
+        profile.isNew = false
+        ProfileDB.SaveProfile(profile)
+    end
 end-- Auto-save on logout
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGOUT")

@@ -12,7 +12,7 @@ local DB_SCHEMA_VERSION = 2
 local DatasetDB = {}
 RPE.Profile.DatasetDB = DatasetDB
 
-local DEFAULT_DATASETS = { "DefaultClassic", "Default5e", "DefaultWarcraft" }
+local DEFAULT_DATASETS = { "DefaultClassic" }
 
 local function _isDefaultDataset(name)
     for _, dname in ipairs(DEFAULT_DATASETS) do
@@ -547,6 +547,14 @@ if f then
             RPE.Debug:Internal("=== DatasetDB PLAYER_LOGIN START ===")
             -- Ensure default datasets exist
             _ensureDefaultDatasets()
+            
+            -- Auto-activate DefaultClassic for new characters
+            local key = GetCharacterKey()
+            local db = EnsureDB()
+            if not db.activeByChar[key] or #(db.activeByChar[key]) == 0 then
+                db.activeByChar[key] = { "DefaultClassic" }
+                RPE.Debug:Print("DatasetDB: Auto-activated DefaultClassic for new character")
+            end
             
             local ds = DatasetDB.GetOrCreateActive()
             if ds then

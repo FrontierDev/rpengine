@@ -1148,6 +1148,13 @@ function Event:Advance()
         mode = "tick"
     end
 
+    -- Clear leader's EventWidget BEFORE broadcasting to avoid portrait lag
+    -- This ensures the leader sees no old portraits when they broadcast the new tick
+    local widget = RPE.Core.Windows and RPE.Core.Windows.EventWidget
+    if widget and widget._ShowUnits then
+        widget:_ShowUnits({}, false)  -- Hide all portraits by showing empty list
+    end
+
     RPE.Core.Comms.Broadcast:Advance({
         id     = self.id,
         name   = self.name,
@@ -1173,10 +1180,55 @@ function Event:OnEndClient(opts)
     RPE_UI.Common:Hide(RPE.Core.Windows.TargetWindowInstance)
 
     -- Reset the event.
-    isRunning = false
-    isPlayerTurn = false
+    self:Reset()
+
     RPE.Core.Windows.EventControlSheet:UpdateTickButtonState()
     RPE.Core.Windows.EventControlSheet:UpdateTickButtonLabel()
+end
+
+--- Clear all event state, allowing the instance to be reused for a new event.
+--- Preserves player units but removes all NPC units.
+function Event:Reset()
+    self.id = nil
+    self.localPlayerKey = nil
+    self.readyResponses = {}
+    
+    -- Preserve player units, remove NPC units
+    if self.units then
+        local playerUnits = {}
+        for key, unit in pairs(self.units) do
+            if unit and not unit.isNPC then
+                playerUnits[key] = unit
+            end
+        end
+        self.units = playerUnits
+    else
+        self.units = {}
+    end
+    
+    self._usedIds = {}
+    self._nextId = 1
+    
+    self.turn = 0
+    self.ticks = {}
+    self.tickIndex = 0
+    
+    self._activeCasts = {}
+    self._snapshot = {}
+    self._auraManager = nil
+    
+    self.attackedThisTurn = {}
+    self.protectedThisTurn = {}
+    self.attackedLastTurn = {}
+    self.protectedLastTurn = {}
+    
+    self.stats = {}
+    self.isIntermission = nil
+    
+    isRunning = false
+    isPlayerTurn = false
+    
+    RPE.Debug:Internal("[Event:Reset] Event state cleared (player units preserved)")
 end
 
 function Event:MarkAttacked(unitId)

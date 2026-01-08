@@ -153,6 +153,10 @@ function CharacterProfile:New(name, opts)
         autoRejoinLFRP = opts.autoRejoinLFRP or false,  -- whether to auto-rejoin the last LFRP channel on login
         lfrpSettings = opts.lfrpSettings or {},  -- LFRP preferences { iAmIds, lookingForIds, broadcastLocation, recruiting, approachable }
         shopInventories = opts.shopInventories or {},  -- Shop inventories keyed by NPC GUID: { npcGuid = { storedDate, items } }
+        isNew = opts.isNew or false,  -- whether this is a newly created profile (for first-login detection)
+        showChatbox = (opts.showChatbox == true),  -- whether to show the chatbox widget (default false)
+        showTalkingHeads = (opts.showTalkingHeads == true),  -- whether to show speech bubbles (default false)
+        immersionMode = (opts.immersionMode ~= false),  -- whether to use immersion mode for UI (default true)
         _initializing = true,  -- Flag to suppress UI callbacks during initialization
     }, self)
     
@@ -1655,6 +1659,10 @@ function CharacterProfile:ToTable()
         autoRejoinLFRP = self.autoRejoinLFRP or false,
         lfrpSettings = self.lfrpSettings or {},
         shopInventories = self.shopInventories or {},
+        isNew = self.isNew or false,
+        showChatbox = self.showChatbox or false,
+        showTalkingHeads = self.showTalkingHeads or false,
+        immersionMode = self.immersionMode or true,
     }
 end
 
@@ -1690,6 +1698,9 @@ function CharacterProfile.FromTable(t)
         autoRejoinLFRP = t.autoRejoinLFRP or false,
         lfrpSettings = type(t.lfrpSettings) == "table" and t.lfrpSettings or {},
         shopInventories = type(t.shopInventories) == "table" and t.shopInventories or {},
+        showChatbox = (t.showChatbox == true),
+        showTalkingHeads = (t.showTalkingHeads == true),
+        immersionMode = (t.immersionMode ~= false),
     })
 end
 

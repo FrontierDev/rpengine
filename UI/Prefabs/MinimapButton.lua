@@ -27,12 +27,24 @@ local function GetOrCreatePaletteWindow()
     return PaletteWindowClass.instance
 end
 
-local function InitializeMinimapMenu(self, level)
+local function InitializeMinimapMenu(level)
     if level == 1 then
         local info = UIDropDownMenu_CreateInfo()
         
+        -- Main Window
+        info.text = "Character Sheet"
+        info.func = function()
+            RPE_UI.Common:Toggle(RPE.Core.Windows.MainWindow)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+        
+        -- Separator
+        UIDropDownMenu_AddSeparator(level)
+        
         -- Event
-        info.text = "Event"
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Event Window"
         info.func = function()
             if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then
                 RPE.Debug:Print("Only the supergroup leader can open the Event window.")
@@ -50,7 +62,7 @@ local function InitializeMinimapMenu(self, level)
         
         -- Datasets
         info = UIDropDownMenu_CreateInfo()
-        info.text = "Datasets"
+        info.text = "Datasets Window"
         info.func = function()
             local Datasets = RPE_UI.Common:GetWindow("DatasetWindow")
             if not Datasets then
@@ -64,7 +76,7 @@ local function InitializeMinimapMenu(self, level)
         
         -- Rulesets
         info = UIDropDownMenu_CreateInfo()
-        info.text = "Rulesets"
+        info.text = "Rulesets Window"
         info.func = function()
             if not (RPE.Core and RPE.Core.IsLeader and RPE.Core.IsLeader()) then
                 RPE.Debug:Print("Only the supergroup leader can open the Ruleset window.")
@@ -82,7 +94,7 @@ local function InitializeMinimapMenu(self, level)
         
         -- LFRP
         info = UIDropDownMenu_CreateInfo()
-        info.text = "LFRP"
+        info.text = "LFRP Window"
         info.func = function()
             local LFRPWindow = RPE_UI.Common:GetWindow("LFRPWindow")
             local isNewWindow = false
@@ -105,7 +117,7 @@ local function InitializeMinimapMenu(self, level)
         
         -- Chanter
         info = UIDropDownMenu_CreateInfo()
-        info.text = "Chanter"
+        info.text = "Chanter Window"
         info.func = function()
             local win = RPE_UI.Common:GetWindow("ChanterSenderWindow")
             local isNewWindow = false
@@ -130,7 +142,7 @@ local function InitializeMinimapMenu(self, level)
         
         -- Palette
         info = UIDropDownMenu_CreateInfo()
-        info.text = "Palette"
+        info.text = "Palette Window"
         info.func = function()
             local PaletteWindowClass = RPE_UI and RPE_UI.Windows and RPE_UI.Windows.PaletteWindow
             if not PaletteWindowClass then
@@ -157,6 +169,100 @@ local function InitializeMinimapMenu(self, level)
             end
             paletteWin.root.frame:Raise()
             CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+        
+        -- Separator
+        UIDropDownMenu_AddSeparator(level)
+        
+        -- Use Chatbox
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Use Chatbox"
+        info.func = function()
+            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
+            if not profile then
+                RPE.Debug:Error("Profile not found.")
+                CloseDropDownMenus()
+                return
+            end
+            
+            profile.showChatbox = not profile.showChatbox
+            if RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.SaveProfile then
+                RPE.Profile.DB.SaveProfile(profile)
+            end
+            
+            local chatBox = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.Chat
+            if chatBox then
+                if profile.showChatbox then
+                    chatBox:Show()
+                else
+                    chatBox:Hide()
+                end
+            end
+            CloseDropDownMenus()
+        end
+        info.checked = function()
+            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
+            return profile and profile.showChatbox
+        end
+        UIDropDownMenu_AddButton(info, level)
+        
+        -- Use Talking Heads
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Use Talking Heads"
+        info.func = function()
+            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
+            if not profile then
+                RPE.Debug:Error("Profile not found.")
+                CloseDropDownMenus()
+                return
+            end
+            
+            profile.showTalkingHeads = not profile.showTalkingHeads
+            if RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.SaveProfile then
+                RPE.Profile.DB.SaveProfile(profile)
+            end
+            
+            local speechBubbles = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.SpeechBubbles
+            if speechBubbles then
+                if profile.showTalkingHeads then
+                    speechBubbles:Show()
+                else
+                    speechBubbles:Hide()
+                end
+            end
+            CloseDropDownMenus()
+        end
+        info.checked = function()
+            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
+            return profile and profile.showTalkingHeads
+        end
+        UIDropDownMenu_AddButton(info, level)
+        
+        -- Use Immersion Mode
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Use Immersion Mode"
+        info.func = function()
+            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
+            if not profile then
+                RPE.Debug:Error("Profile not found.")
+                CloseDropDownMenus()
+                return
+            end
+            
+            profile.immersionMode = not profile.immersionMode
+            if RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.SaveProfile then
+                RPE.Profile.DB.SaveProfile(profile)
+            end
+            
+            if RPE.Core then
+                RPE.Core.ImmersionMode = profile.immersionMode
+            end
+            CloseDropDownMenus()
+        end
+        info.checked = function()
+            local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
+            return profile and profile.immersionMode
         end
         UIDropDownMenu_AddButton(info, level)
     end
@@ -235,11 +341,23 @@ function MinimapButton:New(name, opts)
         if isDragging then return end
         
         if clickedButton == "LeftButton" then
-            RPE_UI.Common:Toggle(RPE.Core.Windows.MainWindow)
+            local Dashboard = RPE_UI.Common:GetWindow("DashboardWindow")
+            local isNew = false
+            if not Dashboard then
+                if RPE_UI.Windows and RPE_UI.Windows.DashboardWindow then
+                    Dashboard = RPE_UI.Windows.DashboardWindow.New()
+                    isNew = true
+                end
+            end
+            if Dashboard then
+                if isNew then
+                    Dashboard:Show()
+                else
+                    RPE_UI.Common:Toggle(Dashboard)
+                end
+            end
         elseif clickedButton == "RightButton" then
-            UIDropDownMenu_Initialize(minimapMenuFrame, InitializeMinimapMenu, "MENU")
-            UIDropDownMenu_SetAnchor(minimapMenuFrame, 0, 0, "TOPLEFT", btn, "BOTTOMLEFT")
-            ToggleDropDownMenu(1, nil, minimapMenuFrame)
+            RPE_UI.Common:ContextMenu(btn, InitializeMinimapMenu)
         end
     end)
 
@@ -247,7 +365,7 @@ function MinimapButton:New(name, opts)
     f:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("RPEngine")
-        GameTooltip:AddLine("Left-Click: Toggle main window", 1, 1, 1)
+        GameTooltip:AddLine("Left-Click: Toggle Dashboard", 1, 1, 1)
         GameTooltip:AddLine("Right-Click: Options", 1, 1, 1)
         GameTooltip:Show()
     end)

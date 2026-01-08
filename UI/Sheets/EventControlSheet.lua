@@ -283,7 +283,13 @@ function EventControlSheet:UpdateTickButtonState()
         syncInProgress = next(RPE.Core.Comms.Broadcast._syncOperations) ~= nil
     end
     
-    if syncInProgress or not isRunning then
+    -- Check if message reassembly is in progress
+    local reassemblyInProgress = false
+    if RPE.Core and RPE.Core.Comms then
+        reassemblyInProgress = RPE.Core.Comms._reassemblyInProgress or false
+    end
+    
+    if syncInProgress or reassemblyInProgress or not isRunning then
         self.tickButton:Lock()
     else
         self.tickButton:Unlock()

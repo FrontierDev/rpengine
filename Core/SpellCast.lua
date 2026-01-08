@@ -231,12 +231,15 @@ local function runActions(ctx, cast, actions, groupId)
                 local isNPC = tgtUnit and tgtUnit.isNPC
                 
                 if isNPC then
-                    -- NPC: include if it hit (for actions that requiresHit)
-                    if not act.requiresHit then
-                        -- No hit check required, apply to all targets
+                    -- NPC: include only if hit requirement is satisfied
+                    -- Explicit false = no hit check needed; nil/true = hit check required
+                    local skipHitCheck = (act.requiresHit == false)  -- Only skip if EXPLICITLY false
+                    
+                    if skipHitCheck then
+                        -- Explicitly no hit check required, apply to all targets
                         table.insert(applyTargets, tgt)
                     elseif act.key == "DAMAGE" then
-                        -- DAMAGE always includes hits
+                        -- DAMAGE with hit check: only include targets that hit
                         if hitCache[act.key] and hitCache[act.key][tgt] == true then
                             table.insert(applyTargets, tgt)
                         end

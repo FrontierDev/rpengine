@@ -6,6 +6,33 @@ _G.RPE.Commands = Commands
 SLASH_RPE1 = "/rpe"
 SlashCmdList["RPE"] = function(msg)
     local arg, rest = msg:lower():match("^(%S+)%s*(.*)$")
+    
+    -- If no arguments provided, open the dashboard
+    if not arg or arg == "" then
+        local Dashboard = RPE_UI.Common:GetWindow("DashboardWindow")
+        local isNewWindow = false
+        if not Dashboard then
+            -- Create it if it doesn't exist yet
+            if RPE_UI.Windows and RPE_UI.Windows.DashboardWindow then
+                Dashboard = RPE_UI.Windows.DashboardWindow.New()
+                RPE_UI.Common:Show(Dashboard)
+                isNewWindow = true
+            else
+                RPE.Debug:Error("Dashboard window class not found.")
+                return
+            end
+        end
+        -- Only toggle if it wasn't just created
+        if not isNewWindow then
+            RPE_UI.Common:Toggle(Dashboard)
+        end
+        -- Default to overview tab
+        if Dashboard and Dashboard.ShowTab then
+            Dashboard:ShowTab("dashboard")
+        end
+        return
+    end
+    
     if arg == "palette" then
         local C = RPE_UI and RPE_UI.Colors
         if not C then return end
@@ -290,6 +317,28 @@ SlashCmdList["RPE"] = function(msg)
         -- Add currency to profile
         profile:AddCurrency(currencyId, amount)
         RPE.Debug:Print(string.format("Added %d %s to profile.", amount, currencyId))
+    elseif arg == "clearchar" then
+        -- Parse profile name from rest
+        local profileName = rest:match("^(%S+)")
+        if not profileName or profileName == "" then
+            RPE.Debug:Error("Usage: /rpe clearchar <profileName>")
+            return
+        end
+        
+        -- Get ProfileDB
+        local ProfileDB = RPE and RPE.Profile and RPE.Profile.DB
+        if not ProfileDB then
+            RPE.Debug:Error("ProfileDB not found.")
+            return
+        end
+        
+        -- Delete the profile
+        if ProfileDB.Delete then
+            ProfileDB.Delete(profileName)
+            RPE.Debug:Print(string.format("Cleared character profile: %s", profileName))
+        else
+            RPE.Debug:Error("Delete method not found.")
+        end
     else
     end
 end

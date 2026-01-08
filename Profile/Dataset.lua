@@ -189,25 +189,35 @@ function Dataset:Counts()
 end
 
 -- Optional: push into registries if present
-local function _applyBucket(bucket, registry)
+local function _applyBucket(bucket, registry, dataType)
     if not (bucket and registry) then return end
     if type(registry.Clear) == "function" then registry:Clear()
     elseif type(registry.Wipe) == "function" then registry:Wipe()
     elseif type(registry.Reset) == "function" then registry:Reset() end
     for id, def in pairs(bucket) do
-        if type(registry.Register) == "function" then registry:Register(id, def)
-        elseif type(registry.Set) == "function" then registry:Set(id, def)
-        elseif type(registry.Add) == "function" then registry:Add(id, def) end
+        -- Skip string IDs or incomplete data - only process table definitions
+        if type(def) == "table" then
+            local objToRegister = def
+            
+            -- Ensure it has the id field if it's a raw table
+            if not getmetatable(def) and not def.id then
+                def.id = id
+            end
+            
+            if type(registry.Register) == "function" then registry:Register(id, objToRegister)
+            elseif type(registry.Set) == "function" then registry:Set(id, objToRegister)
+            elseif type(registry.Add) == "function" then registry:Add(id, objToRegister) end
+        end
     end
 end
 
 function Dataset:ApplyToRegistries()
-    _applyBucket(self.items,  RPE.Core and RPE.Core.ItemRegistry)
-    _applyBucket(self.spells, RPE.Core and RPE.Core.SpellRegistry)
-    _applyBucket(self.auras,  RPE.Core and RPE.Core.AuraRegistry)
-    _applyBucket(self.npcs,   RPE.Core and RPE.Core.NPCRegistry)
+    _applyBucket(self.items,  RPE.Core and RPE.Core.ItemRegistry, "items")
+    _applyBucket(self.spells, RPE.Core and RPE.Core.SpellRegistry, "spells")
+    _applyBucket(self.auras,  RPE.Core and RPE.Core.AuraRegistry, "auras")
+    _applyBucket(self.npcs,   RPE.Core and RPE.Core.NPCRegistry, "npcs")
     if self.extra and self.extra.stats then
-        _applyBucket(self.extra.stats, RPE.Core and RPE.Core.StatRegistry)
+        _applyBucket(self.extra.stats, RPE.Core and RPE.Core.StatRegistry, "stats")
     end
 end
 

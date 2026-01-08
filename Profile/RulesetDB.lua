@@ -87,6 +87,18 @@ function RulesetDB.GetOrCreateActive()
     return RulesetDB.GetOrCreateByName(rsName)
 end
 
+--- Get active ruleset names for the current character as an array (for compatibility with DatasetDB pattern).
+---@return string[]
+function RulesetDB.GetActiveNamesForCurrentCharacter()
+    local db = EnsureDB()
+    local key = GetCharacterKey()
+    local rsName = db.currentByChar[key]
+    if rsName and rsName ~= "" then
+        return { rsName }
+    end
+    return {}
+end
+
 --- Save (upsert) a ruleset by name.
 ---@param ruleset RulesetProfile
 function RulesetDB.Save(ruleset)

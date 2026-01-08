@@ -90,24 +90,60 @@ end
 
 -- Show exactly the given units (array) in order; hide all others. Optional fade.
 function EventWidget:_ShowUnits(units, doFade)
-    -- 1) Hide everything; mark who will be shown
+    -- Cancel any pending fade timers from previous ShowUnits calls
+    if self._fadeTimers then
+        for _, timerId in ipairs(self._fadeTimers) do
+            C_Timer.Cancel(timerId)
+        end
+    end
+    self._fadeTimers = {}
+
+    -- Mark who should be shown
     local showSet = {}
     for _, u in ipairs(units) do showSet[u.key] = true end
 
-    for key, p in pairs(self.portraitsByKey or {}) do
-        if p and p.frame then
-            if not showSet[key] then
-                p:Hide()
+    -- 1) Hide ALL portrait frames that should NOT be shown
+    -- First, iterate through ALL children in portraitHostFrame and hide non-matching ones
+    if self.portraitHostFrame then
+        local numChildren = self.portraitHostFrame:GetNumChildren()
+        for i = 1, numChildren do
+            local child = select(i, self.portraitHostFrame:GetChildren())
+            if child then
+                -- Check if this child belongs to a unit we should show
+                local shouldHide = true
+                for key, p in pairs(self.portraitsByKey or {}) do
+                    if p and p.frame == child and showSet[key] then
+                        shouldHide = false
+                        break
+                    end
+                end
+                
+                if shouldHide then
+                    child:SetAlpha(1)
+                    child:Hide()
+                    child:ClearAllPoints()
+                    -- Also explicitly hide the model and texture inside
+                    if child.model then child.model:Hide() end
+                    if child.texture then child.texture:Hide() end
+                end
             end
-        else
+        end
+    end
+    
+    -- Clean up cache entries for portraits that shouldn't be shown
+    for key in pairs(self.portraitsByKey or {}) do
+        if not showSet[key] then
             self.portraitsByKey[key] = nil
         end
     end
 
-    -- 2) Ensure portraits for the listed units and update basic state
+    -- 2) Ensure portraits for the listed units exist and update their state
     for _, u in ipairs(units) do
         local p = self:_EnsurePortrait(u)
         if p then
+            p.frame:SetAlpha(1)  -- Reset alpha before showing
+            p:Show()  -- Show early so fade-in works
+            
             -- Always update health (in case it changed)
             if p.SetHealth then p:SetHealth(u.hp, u.hpMax) end
             
@@ -130,18 +166,17 @@ function EventWidget:_ShowUnits(units, doFade)
         end
     end
 
-    -- 3) Layout & show (with optional staggered fade)
+    -- 3) Layout & fade in (with optional staggered fade)
     self:_LayoutPortraits(units)
     for i, u in ipairs(units) do
         local p = self.portraitsByKey[u.key]
         if p and p.frame then
             if doFade then
-                p.frame:SetAlpha(0)
-                C_Timer.After((i - 1) * 0.15, function()
+                p.frame:SetAlpha(0)  -- Set to transparent
+                local timerId = C_Timer.After((i - 1) * 0.15, function()
                     FadeInFrame(p.frame, 0.3)
                 end)
-            else
-                p:Show()
+                table.insert(self._fadeTimers, timerId)
             end
         end
     end
@@ -470,7 +505,20 @@ function EventWidget:RefreshPortraitRow(doFade)
     if not self.portraitHost then return end
 
     local event = RPE.Core.ActiveEvent
-    if not (event and event.ticks and #event.ticks > 0) then return end
+    if not event then
+        RPE.Debug:Internal("[EventWidget] RefreshPortraitRow: No active event")
+        return
+    end
+    
+    if not (event.ticks and #event.ticks > 0) then
+        RPE.Debug:Internal("[EventWidget] RefreshPortraitRow: Event has no ticks yet (ticks=" .. tostring(event.ticks and #event.ticks or 0) .. ")")
+        return
+    end
+    
+    if not event.units or not next(event.units) then
+        RPE.Debug:Internal("[EventWidget] RefreshPortraitRow: Event has no units")
+        return
+    end
 
     -- Show units from the first tick (or current tick if we're mid-execution)
     local tickIndex = event.tickIndex and event.tickIndex > 0 and event.tickIndex or 1
@@ -481,7 +529,10 @@ function EventWidget:RefreshPortraitRow(doFade)
         end
     end
     
-    if #list == 0 then return end
+    if #list == 0 then
+        RPE.Debug:Internal("[EventWidget] RefreshPortraitRow: No units in tick " .. tickIndex)
+        return
+    end
     
     table.sort(list, function(a, b)
         local ai, bi = tonumber(a.initiative) or 0, tonumber(b.initiative) or 0

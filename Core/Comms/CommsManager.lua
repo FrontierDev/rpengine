@@ -19,6 +19,7 @@ Comms.incomingChunks  = {}          -- reassembly buffer
 Comms.objectTracking  = {}          -- track objects being received: sender -> msgType -> { current, total }
 Comms._msgCounter     = 0
 Comms._sending        = false
+Comms._reassemblyInProgress = false  -- track if any reassembly is incomplete
 
 ---------------------------------------------------
 -- Utilities
@@ -192,6 +193,11 @@ function Comms:_ProcessReceived(msg, sender)
     RPE.Debug:Internal(string.format("[Comms] Received %s part %d/%d from %s (msgId=%s)", msgType, part, total, sender, msgId))
 
     if total > 1 then
+        -- Show LoadingWidget and mark reassembly in progress
+        local LoadingWidget = RPE_UI and RPE_UI.Widgets and RPE_UI.Widgets.LoadingWidget
+        if LoadingWidget then LoadingWidget:Show() end
+        self._reassemblyInProgress = true
+        
         local entry = self.incomingChunks[msgId] or { total = total, parts = {}, sender = sender }
         entry.parts[part] = data
         self.incomingChunks[msgId] = entry
@@ -206,12 +212,28 @@ function Comms:_ProcessReceived(msg, sender)
             self.incomingChunks[msgId] = nil
             RPE.Debug:Internal(string.format("[Comms] Reassembled %s from %d chunks (total size: %d bytes)", msgType, total, #fullData))
             self:_Dispatch(msgType, fullData, sender)
+            
+            -- Check if any incomplete reassemblies remain
+            self._reassemblyInProgress = next(self.incomingChunks) ~= nil
+            
+            -- If reassembly is now complete, hide loading widget and update controls
+            if not self._reassemblyInProgress then
+                local LoadingWidget = RPE_UI and RPE_UI.Widgets and RPE_UI.Widgets.LoadingWidget
+                if LoadingWidget then LoadingWidget:Hide() end
+                
+                -- Update EventControlSheet's tick button
+                local ECS = RPE.Core and RPE.Core.Windows and RPE.Core.Windows.EventControlSheet
+                if ECS and ECS.UpdateTickButtonState then
+                    ECS:UpdateTickButtonState()
+                end
+            end
         else
             RPE.Debug:Internal(string.format("[Comms] Buffered chunk %d/%d for %s (msgId=%s)", part, total, msgType, msgId))
         end
     else
         RPE.Debug:Internal(string.format("[Comms] Received complete %s from %s (size: %d bytes)", msgType, sender, #data))
         self:_Dispatch(msgType, data, sender)
+        self._reassemblyInProgress = false
     end
 end
 

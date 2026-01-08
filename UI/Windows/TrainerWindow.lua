@@ -584,12 +584,23 @@ function TrainerWindow:_updateLearnButton()
     end
 end
 
----@param data { mode: string, flags: table, maxLevel: number, target: string }
+---@param data { type: string, mode: string, flags: table, tags: string|table, maxLevel: number, target: string }
 function TrainerWindow:SetTrainerData(data)
-    self.mode     = data.mode or "RECIPES"
+    -- Support both 'type' and 'mode' keys
+    self.mode     = data.type or data.mode or "RECIPES"
     self.flags    = data.flags or {}
     self.maxLevel = tonumber(data.maxLevel) or 0
     self.target   = data.target or nil
+
+    -- Handle tags - can be a string or table, store as normalized table
+    local tagsInput = data.tags or (type(self.flags) == "table" and self.flags.tags)
+    if type(tagsInput) == "string" then
+        self.flags.tags = { tagsInput }
+    elseif type(tagsInput) == "table" then
+        self.flags.tags = tagsInput
+    else
+        self.flags.tags = {}
+    end
 
     if self.mode == "SPELLS" then
         self.profName = "Spells"
@@ -738,6 +749,10 @@ function TrainerWindow:_refreshSpells(profile)
     local knownSpells = profile.spells or {}
     local tags = self.flags.tags or {}
 
+    RPE.Debug:Internal(("[TrainerWindow._refreshSpells] tags configured: %s"):format(
+        (tags and #tags > 0) and table.concat(tags, ",") or "(none)"
+    ))
+
     -- Get ruleset settings
     local useRanks = (RPE.ActiveRules:Get("use_spell_ranks") or 1) ~= 0
     local useLevels = (RPE.ActiveRules:Get("use_level_system") or 1) ~= 0
@@ -754,8 +769,15 @@ function TrainerWindow:_refreshSpells(profile)
         if tags and #tags > 0 then
             matchTag = false
             for _, want in ipairs(tags) do
-                for _, tag in ipairs(spell.tags or {}) do
+                local spellTags = spell.tags or {}
+                RPE.Debug:Internal(("[TrainerWindow._refreshSpells] Spell %s tags: %s, looking for: %s"):format(
+                    spell.id or "unknown",
+                    table.concat(spellTags, ","),
+                    want
+                ))
+                for _, tag in ipairs(spellTags) do
                     if tag:lower() == want:lower() then
+                        RPE.Debug:Internal(("[TrainerWindow._refreshSpells] MATCH! %s matches %s"):format(tag, want))
                         matchTag = true
                         break
                     end

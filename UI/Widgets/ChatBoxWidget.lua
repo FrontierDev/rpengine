@@ -1588,6 +1588,12 @@ function ChatBoxWidget.New(opts)
 end
 
 function ChatBoxWidget:Show()
+    -- Check profile setting - never show if disabled
+    local profile = RPE.Profile and RPE.Profile.DB and RPE.Profile.DB.GetOrCreateActive and RPE.Profile.DB.GetOrCreateActive()
+    if profile and not profile.showChatbox then
+        return
+    end
+    
     if self.chrome then self.chrome:Show() end
     if self.root and self.root.Show then self.root:Show() end
     if self.host then self.host:Show() end

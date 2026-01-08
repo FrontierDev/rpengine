@@ -8,6 +8,7 @@ local C = RPE_UI.Colors
 ---@class Text: FrameElement
 ---@field fs FontString
 ---@field _colorKey string
+---@field _wordWrap boolean
 local Text = setmetatable({}, { __index = FrameElement })
 Text.__index = Text
 RPE_UI.Elements.Text = Text
@@ -26,6 +27,11 @@ function Text:New(name, opts)
     local fs = f:CreateFontString(nil, "OVERLAY", opts.fontTemplate or "GameFontNormal")
     fs:SetPoint(opts.textPoint or "CENTER", f, opts.textRelativePoint or "CENTER", opts.textX or 0, opts.textY or 0)
 
+    -- If word wrap is enabled and width is specified, constrain the FontString width
+    if opts.wordWrap and opts.width and opts.width > 0 then
+        fs:SetWidth(opts.width - 4)  -- small margin
+    end
+
     -- Default colors from palette if none provided
     if opts.color then
         fs:SetTextColor(opts.color[1], opts.color[2], opts.color[3], opts.color[4] or 1)
@@ -40,14 +46,15 @@ function Text:New(name, opts)
         fs:SetShadowOffset(opts.shadow.x or 1, opts.shadow.y or -1)
         fs:SetShadowColor(opts.shadow.r or 0, opts.shadow.g or 0, opts.shadow.b or 0, opts.shadow.a or 0.75)
     end
+    if opts.wordWrap ~= nil then fs:SetWordWrap(opts.wordWrap) end
     if opts.text then fs:SetText(opts.text) end
     if opts.maxLines then fs:SetMaxLines(opts.maxLines) end
-    if opts.wordWrap ~= nil then fs:SetWordWrap(opts.wordWrap) end
 
     ---@type Text
     local o = FrameElement.New(self, "Text", f, opts.parent)
     o.fs = fs
     o._colorKey = opts.colorKey or "text"
+    o._wordWrap = opts.wordWrap or false
 
     -- Initial size to fit text
     o:ResizeToText()
@@ -71,6 +78,13 @@ function Text:SetShadow(x,y,r,g,b,a)  self.fs:SetShadowOffset(x or 1, y or -1); 
 function Text:ResizeToText()
     local w = self.fs:GetStringWidth() or 0
     local h = self.fs:GetStringHeight() or 0
+    
+    -- If word wrap is enabled, the FontString width is constrained and GetStringHeight() 
+    -- gives us the wrapped height, so use the FontString's actual width
+    if self._wordWrap then
+        w = self.fs:GetWidth() or w
+    end
+    
     self.frame:SetSize(w, h)
 end
 

@@ -1,7 +1,7 @@
 ## Interface: 110207
 ## Title: RPEngine
 ## Notes: Fully-integrated roll system and associated RP tools.
-## Version: 1.0.4
+## Version: 1.0.5
 ## Author: Ortellus @ Argent Dawn (Discord: ortellus)
 ## SavedVariables: RPEngineProfilesDB, RPEngineRulesetDB, RPEngineDatasetDB
 
@@ -212,6 +212,8 @@ UI/Sheets/InteractionEditorSheet.lua
 UI/Sheets/SetupWizardEditorSheet.lua
 UI/Sheets/LFRPSettingsSheet.lua
 UI/Sheets/LFRPBrowseSheet.lua
+UI/Sheets/DashboardControlSheet.lua
+UI/Sheets/DashboardArmorySheet.lua
 
 ## Windows
 ## UI/Windows/IntroWindow.lua
@@ -231,3 +233,4 @@ UI/Windows/ShopWindow.lua
 UI/Windows/SetupWindow.lua
 UI/Windows/LootEditorWindow.lua
 UI/Windows/LootWindow.lua
+UI/Windows/DashboardWindow.lua
