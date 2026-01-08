@@ -501,6 +501,36 @@ function DashboardControlSheet:BuildUI(opts)
     })
     buttonGroup:Add(changeSkinBtn)
 
+    -- Character Sheet button
+    local characterSheetBtn = TextButton:New("RPE_DCS_CharacterSheetBtn", {
+        parent  = buttonGroup,
+        width   = 120,
+        height  = 28,
+        text    = "Character Sheet",
+        noBorder = false,
+        onClick = function()
+            local MainWindowClass = RPE_UI.Windows and RPE_UI.Windows.MainWindow
+            if not MainWindowClass then
+                RPE.Debug:Error("MainWindow class not found.")
+                return
+            end
+            
+            local mainWin = RPE_UI.Common:GetWindow("MainWindow")
+            if not mainWin then
+                mainWin = MainWindowClass:New()
+                RPE_UI.Common:RegisterWindow(mainWin)
+            end
+            RPE_UI.Common:Show(mainWin)
+            
+            -- Hide the dashboard
+            local Dashboard = RPE_UI.Common:GetWindow("DashboardWindow")
+            if Dashboard then
+                RPE_UI.Common:Hide(Dashboard)
+            end
+        end,
+    })
+    buttonGroup:Add(characterSheetBtn)
+
     -- Separator border
     local parentWidth = self.sheet.frame:GetWidth() or 500
     local optionsBorder = HorizontalBorder:New("RPE_DCS_OptionsBorder", {

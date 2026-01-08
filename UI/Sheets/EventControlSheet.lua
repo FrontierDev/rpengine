@@ -164,12 +164,34 @@ function EventControlSheet:DrawButtons()
         onClick = function()
             RPE.Core.Comms.Request:CheckReady(
                 function(answer, sender)
-                    -- Just log the response without starting the event
+                    -- Log the response and check for dataset mismatches
                     RPE.Debug:Print(sender .. " is " .. (answer and "READY" or "NOT READY"))
+                    
+                    -- Check for dataset mismatches and warn (but don't block)
+                    if RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast and RPE.Core.Comms.Broadcast._syncOperations then
+                        for playerKey, syncOp in pairs(RPE.Core.Comms.Broadcast._syncOperations) do
+                            if syncOp.type == "dataset" and (syncOp.playerName == sender or playerKey == sender) then
+                                RPE.Debug:Warning("Dataset mismatch detected with " .. sender .. " during ready check")
+                            end
+                        end
+                    end
                 end,
                 function(missing)
                     RPE.Debug:Print("Ready check timed out. Missing:")
                     for _, key in ipairs(missing) do RPE.Debug:Print(" - "..key) end
+                    
+                    -- Check for any ongoing dataset sync operations and warn
+                    if RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast and RPE.Core.Comms.Broadcast._syncOperations then
+                        local datasetMismatches = {}
+                        for playerKey, syncOp in pairs(RPE.Core.Comms.Broadcast._syncOperations) do
+                            if syncOp.type == "dataset" then
+                                table.insert(datasetMismatches, syncOp.playerName or playerKey)
+                            end
+                        end
+                        if #datasetMismatches > 0 then
+                            RPE.Debug:Warning("Dataset mismatches remain with: " .. table.concat(datasetMismatches, ", "))
+                        end
+                    end
                 end,
                 10 -- seconds
             )
@@ -238,13 +260,19 @@ end
 --- Update Start/End Event button
 ---@param isRunning boolean
 function EventControlSheet:UpdateStartButton(isRunning)
-    -- Check if sync operations are in progress that would lock the start button
+    -- Check if sync operations are in progress that would generate warnings
     local syncInProgress = false
+    local mismatchWarning = ""
     if RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast and RPE.Core.Comms.Broadcast._syncOperations then
-        for _, syncOp in pairs(RPE.Core.Comms.Broadcast._syncOperations) do
+        for playerKey, syncOp in pairs(RPE.Core.Comms.Broadcast._syncOperations) do
             if syncOp.lockControls then
                 syncInProgress = true
-                break
+                local playerName = syncOp.playerName or playerKey
+                if syncOp.type == "dataset" then
+                    mismatchWarning = mismatchWarning .. "Dataset mismatch with " .. playerName .. "; "
+                elseif syncOp.type == "ruleset" then
+                    mismatchWarning = mismatchWarning .. "Ruleset mismatch with " .. playerName .. "; "
+                end
             end
         end
     end
@@ -260,15 +288,15 @@ function EventControlSheet:UpdateStartButton(isRunning)
     else
         self.startButton:SetText("Start Event")
         self.startButton:SetOnClick(function()
+            -- Warn about mismatches but don't block
+            if syncInProgress and mismatchWarning ~= "" then
+                RPE.Debug:Warning("Starting event with mismatches: " .. mismatchWarning:gsub("; $", ""))
+            end
             self:StartEvent()
         end)
         
-        -- Lock if hash mismatches exist (like Next Tick button behavior)
-        if syncInProgress then
-            self.startButton:Lock()
-        else
-            self.startButton:Unlock()
-        end
+        -- Always unlock the start button, just warn about mismatches
+        self.startButton:Unlock()
     end
 end
 
@@ -277,10 +305,25 @@ function EventControlSheet:UpdateTickButtonState()
     local ev = RPE.Core.ActiveEvent
     local isRunning = ev and ev.IsRunning and ev:IsRunning()
     
-    -- Check if sync operations are in progress
-    local syncInProgress = false
+    -- Check if critical sync operations are in progress (rulesets only, not datasets)
+    local criticalSyncInProgress = false
+    local datasetMismatches = {}
     if RPE.Core and RPE.Core.Comms and RPE.Core.Comms.Broadcast and RPE.Core.Comms.Broadcast._syncOperations then
-        syncInProgress = next(RPE.Core.Comms.Broadcast._syncOperations) ~= nil
+        for playerKey, syncOp in pairs(RPE.Core.Comms.Broadcast._syncOperations) do
+            if syncOp.lockControls then
+                if syncOp.type == "ruleset" then
+                    criticalSyncInProgress = true
+                elseif syncOp.type == "dataset" then
+                    -- Just track dataset mismatches for warning, don't block
+                    table.insert(datasetMismatches, syncOp.playerName or playerKey)
+                end
+            end
+        end
+    end
+    
+    -- Warn about dataset mismatches but don't block
+    if #datasetMismatches > 0 and isRunning then
+        RPE.Debug:Warning("Dataset mismatches detected with: " .. table.concat(datasetMismatches, ", "))
     end
     
     -- Check if message reassembly is in progress
@@ -289,7 +332,8 @@ function EventControlSheet:UpdateTickButtonState()
         reassemblyInProgress = RPE.Core.Comms._reassemblyInProgress or false
     end
     
-    if syncInProgress or reassemblyInProgress or not isRunning then
+    -- Only lock for critical syncs (rulesets), reassembly, or if event not running
+    if criticalSyncInProgress or reassemblyInProgress or not isRunning then
         self.tickButton:Lock()
     else
         self.tickButton:Unlock()
